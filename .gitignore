@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+dist-ssr/
+*.local
+
+# Agent / tool memory (private, not project source)
+.workbuddy/
+
+# Dev-only UI review screenshots & scripts
+ui-review/
+weatherApp-VUE3/ui-review/
+**/ui-review/*.png
+**/ui-review/*.mjs
+**/.tmp-profile/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!.env.example
