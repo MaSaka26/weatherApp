@@ -9,6 +9,7 @@ dist-ssr/
 
 # Agent / tool memory (private, not project source)
 .workbuddy/
+.claude-flow/
 
 # Dev-only UI review screenshots & scripts
 ui-review/

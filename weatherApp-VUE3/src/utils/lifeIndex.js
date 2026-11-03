@@ -1,12 +1,16 @@
 /**
  * 生活指数：把「当前实况 + 今日 / 明日预报 + 空气质量」折算成六句日常结论。
  *
- * 输出刻意只有一个字段：结论短语，不给图标、不给等级标签、不给数字依据。
- *   穿衣  ——  适宜长袖
- *   户外  ——  适合户外运动
- *   洗车  ——  不宜洗车
- *   带伞  ——  不用带伞
- *   疾病  ——  少发感冒
+ * 每项只给三个字段：结论短语 + 依据小字 + 一个 Tabler 图标名。
+ *   穿衣  ——  适宜长袖            jacket
+ *   户外  ——  适合户外运动          run
+ *   洗车  ——  不宜洗车             car-off
+ *   带伞  ——  不用带伞             umbrella-off
+ *   疾病  ——  少发感冒             thermometer
+ *
+ * 图标的取法：用「正向图标 / 否定变体」直接表达结论，不再用颜色区分好坏——
+ * 适合洗车就是 car，不宜洗车就是 car-off；跑得动是 run，出不了门是 ban。
+ * 这样即使配色主题变化，结论本身也不会读错。
  *
  * 设计原则
  * 1. 每一步都能溯源：先算出 facts（体感、温差、降水概率…），再各自打分/查表，
@@ -29,28 +33,30 @@ const r0 = (v) => Math.round(v)
 /* ===== 阈值表 ===== */
 
 // 穿衣：按「全天平均体感温度」分档，20℃ 上下最舒适
+// 图标按「越冷穿越厚」换：短袖 → 长袖外套 → 羽绒 → 别出门
 const CLOTHING = [
-  { min: 32, item: '适宜短袖短裤' },
-  { min: 28, item: '适宜短袖' },
-  { min: 24, item: '适宜薄长袖' },
-  { min: 20, item: '适宜长袖' },
-  { min: 16, item: '适宜卫衣或外套' },
-  { min: 12, item: '适宜夹克或毛衣' },
-  { min: 8, item: '适宜风衣或毛衣' },
-  { min: 4, item: '适宜棉服或大衣' },
-  { min: 0, item: '适宜羽绒加围巾' },
-  { min: -6, item: '适宜厚羽绒' },
-  { min: -Infinity, item: '不宜出门' },
+  { min: 32, item: '适宜短袖短裤', icon: 'shirt' },
+  { min: 28, item: '适宜短袖', icon: 'shirt' },
+  { min: 24, item: '适宜薄长袖', icon: 'shirt' },
+  { min: 20, item: '适宜长袖', icon: 'shirt' },
+  { min: 16, item: '适宜卫衣或外套', icon: 'jacket' },
+  { min: 12, item: '适宜夹克或毛衣', icon: 'jacket' },
+  { min: 8, item: '适宜风衣或毛衣', icon: 'jacket' },
+  { min: 4, item: '适宜棉服或大衣', icon: 'jacket' },
+  { min: 0, item: '适宜羽绒加围巾', icon: 'snowflake' },
+  { min: -6, item: '适宜厚羽绒', icon: 'snowflake' },
+  { min: -Infinity, item: '不宜出门', icon: 'door-off' },
 ]
 
 // 防晒：按当日紫外线峰值（比瞬时值有指导意义，傍晚瞬时值总是接近 0）
 // 分档边界用国际通行口径：<3 低、3–5 中等、6–7 高、8–10 很高、11+ 极高
+// 越强图标越「晒」：温和的太阳 → 小太阳 → 强太阳 → 太阳被划掉（别晒）
 const SUNSCREEN = [
-  { max: 3, action: '无需防晒' },
-  { max: 6, action: '建议防晒' },
-  { max: 8, action: '需要防晒' },
-  { max: 11, action: '加强防晒' },
-  { max: Infinity, action: '避免暴晒' },
+  { max: 3, action: '无需防晒', icon: 'sun' },
+  { max: 6, action: '建议防晒', icon: 'sun-low' },
+  { max: 8, action: '需要防晒', icon: 'sun-high' },
+  { max: 11, action: '加强防晒', icon: 'sun-high' },
+  { max: Infinity, action: '避免暴晒', icon: 'sun-off' },
 ]
 
 /* ===== 基础事实 ===== */
@@ -95,12 +101,18 @@ function readFacts(current, daily, air) {
 }
 
 // 数据缺失时也带项目名，句子只剩一行也不会不知道说的是哪项
-const EMPTY = (key, title) => ({ key, title, verdict: `暂无${title}数据`, detail: '' })
+const EMPTY = (key, title, icon) => ({
+  key,
+  title,
+  verdict: `暂无${title}数据`,
+  detail: '',
+  icon,
+})
 
 /* ===== 1. 穿衣 ===== */
 
 function clothing(f) {
-  if (f.feelsMean == null) return EMPTY('clothing', '穿衣')
+  if (f.feelsMean == null) return EMPTY('clothing', '穿衣', 'help')
   const row = CLOTHING.find((c) => f.feelsMean >= c.min)
 
   // 依据只留右下角一个数字：温差大时说温差，否则说最低温
@@ -111,13 +123,13 @@ function clothing(f) {
         ? `最低 ${r0(f.low)}°`
         : ''
 
-  return { key: 'clothing', title: '穿衣', verdict: row.item, detail }
+  return { key: 'clothing', title: '穿衣', verdict: row.item, detail, icon: row.icon }
 }
 
 /* ===== 2. 防晒 ===== */
 
 function sunscreen(f) {
-  if (f.uv == null) return EMPTY('sunscreen', '防晒')
+  if (f.uv == null) return EMPTY('sunscreen', '防晒', 'sun-off')
 
   let idx = SUNSCREEN.findIndex((s) => f.uv < s.max)
   // 雪面反射把紫外线再抬一档：晴天雪地很容易被低估
@@ -128,6 +140,7 @@ function sunscreen(f) {
     title: '防晒',
     verdict: SUNSCREEN[idx].action,
     detail: `UV ${f.uv.toFixed(1)}`,
+    icon: SUNSCREEN[idx].icon,
   }
 }
 
@@ -162,10 +175,16 @@ function outdoorReason(f) {
 }
 
 function outdoor(f) {
-  if (f.feelsMean == null && f.pop == null) return EMPTY('outdoor', '户外')
+  if (f.feelsMean == null && f.pop == null) return EMPTY('outdoor', '户外', 'ban')
 
   const detail = outdoorReason(f)
-  const no = (reason) => ({ key: 'outdoor', title: '户外运动', verdict: '不宜户外运动', detail: reason })
+  const no = (reason) => ({
+    key: 'outdoor',
+    title: '户外运动',
+    verdict: '不宜户外运动',
+    detail: reason,
+    icon: 'ban',
+  })
 
   // 一票否决：这些天气下再好的分数也不该建议出门
   if (isIn(THUNDER_CODES, f.code)) return no('雷雨')
@@ -179,6 +198,7 @@ function outdoor(f) {
   }
 
   const score = outdoorScore(f)
+  // 从「能跑」到「能走」到「别久待」到「别出门」，四个图标正好对上四档
   const verdict =
     score <= 1
       ? '适合户外运动'
@@ -187,22 +207,30 @@ function outdoor(f) {
         : score <= 4
           ? '不宜久待户外'
           : '不宜户外运动'
-  return { key: 'outdoor', title: '户外运动', verdict, detail }
+  const icon =
+    score <= 1 ? 'run' : score <= 2 ? 'walk' : score <= 4 ? 'clock-off' : 'ban'
+  return { key: 'outdoor', title: '户外运动', verdict, detail, icon }
 }
 
 /* ===== 4. 洗车 ===== */
 
 function carWash(f) {
-  if (f.pop == null && f.rainSum == null) return EMPTY('carwash', '洗车')
+  if (f.pop == null && f.rainSum == null) return EMPTY('carwash', '洗车', 'car-off')
 
   const popText = f.pop == null ? '今日有雨' : `降水 ${f.pop}%`
 
   if (f.rainingNow || (f.rainSum != null && f.rainSum >= 1) || (f.pop != null && f.pop >= 50)) {
-    return { key: 'carwash', title: '洗车', verdict: '不宜洗车', detail: popText }
+    return { key: 'carwash', title: '洗车', verdict: '不宜洗车', detail: popText, icon: 'car-off' }
   }
   // 今天洗了明天就下雨，等于白洗
   if (f.popNext != null && f.popNext >= 50) {
-    return { key: 'carwash', title: '洗车', verdict: '暂缓洗车', detail: `明日 ${f.popNext}%` }
+    return {
+      key: 'carwash',
+      title: '洗车',
+      verdict: '暂缓洗车',
+      detail: `明日 ${f.popNext}%`,
+      icon: 'calendar-off',
+    }
   }
   if (f.wind != null && f.wind >= 25) {
     return {
@@ -210,6 +238,7 @@ function carWash(f) {
       title: '洗车',
       verdict: '不宜洗车',
       detail: `风 ${r0(f.wind)}km/h`,
+      icon: 'car-off',
     }
   }
   if (f.uv != null && f.uv >= 8) {
@@ -218,26 +247,28 @@ function carWash(f) {
       title: '洗车',
       verdict: '洗后易留水痕',
       detail: `UV ${f.uv.toFixed(1)}`,
+      icon: 'droplet',
     }
   }
-  return { key: 'carwash', title: '洗车', verdict: '适合洗车', detail: '今明无雨' }
+  return { key: 'carwash', title: '洗车', verdict: '适合洗车', detail: '今明无雨', icon: 'car' }
 }
 
 /* ===== 5. 带伞 ===== */
 
 function umbrella(f) {
-  if (f.pop == null) return EMPTY('umbrella', '带伞')
+  if (f.pop == null) return EMPTY('umbrella', '带伞', 'help')
 
   const popText = `降水 ${f.pop}%`
   const base = { key: 'umbrella', title: '带伞' }
 
-  if (f.rainingNow || f.pop >= 70) return { ...base, verdict: '需要带伞', detail: popText }
-  if (f.pop >= 40) return { ...base, verdict: '建议带伞', detail: popText }
+  // 伞的四种状态正好四个图标：撑开 / 收着 / 遮阳 / 不需要
+  if (f.rainingNow || f.pop >= 70) return { ...base, verdict: '需要带伞', detail: popText, icon: 'umbrella' }
+  if (f.pop >= 40) return { ...base, verdict: '建议带伞', detail: popText, icon: 'umbrella' }
   // 不下雨但晒：遮阳伞
   if (f.uv != null && f.uv >= 8) {
-    return { ...base, verdict: '可带遮阳伞', detail: `UV ${f.uv.toFixed(1)}` }
+    return { ...base, verdict: '可带遮阳伞', detail: `UV ${f.uv.toFixed(1)}`, icon: 'sun-high' }
   }
-  return { ...base, verdict: '不用带伞', detail: popText }
+  return { ...base, verdict: '不用带伞', detail: popText, icon: 'umbrella-off' }
 }
 
 /* ===== 6. 疾病风险 ===== */
@@ -254,8 +285,19 @@ const ILLNESS_TEXT = {
   dry: ['注意补水', '注意补水', '注意补水'],
 }
 
+// 主因不同，图标也跟着换：感冒看温度计、中暑看烈日、空气看肺、潮湿看关节、干燥看水滴
+const ILLNESS_ICON = {
+  swing: 'thermometer',
+  drop: 'thermometer',
+  cold: 'thermometer',
+  heat: 'sun-high',
+  aqi: 'lungs',
+  damp: 'bone',
+  dry: 'droplet',
+}
+
 function illness(f) {
-  if (f.swing == null && f.feelsMean == null) return EMPTY('illness', '健康')
+  if (f.swing == null && f.feelsMean == null) return EMPTY('illness', '健康', 'help')
 
   let score = 0
   const drivers = []
@@ -284,7 +326,9 @@ function illness(f) {
 
   drivers.sort((a, b) => b.weight - a.weight)
   const top = drivers[0]
-  if (!top) return { key: 'illness', title: '疾病风险', verdict: '无明显风险', detail: '' }
+  if (!top) {
+    return { key: 'illness', title: '疾病风险', verdict: '无明显风险', detail: '', icon: 'circle-check' }
+  }
 
   const tier = score <= 1 ? 0 : score <= 3 ? 1 : 2
   return {
@@ -292,11 +336,13 @@ function illness(f) {
     title: '疾病风险',
     verdict: ILLNESS_TEXT[top.key][tier],
     detail: top.label,
+    icon: ILLNESS_ICON[top.key],
   }
 }
 
 /**
- * 六项建议，返回顺序即展示顺序（桌面 3 列 × 2 行：穿衣/防晒/户外 ｜ 洗车/带伞/疾病）
+ * 六项建议，返回顺序即展示顺序（手机 / 平板 3 列 × 2 行，桌面一行六列：
+ * 穿衣/防晒/户外/洗车/带伞/疾病）
  */
 export function buildLifeIndices({ current, daily, air } = {}) {
   const f = readFacts(current, daily, air)

@@ -1098,11 +1098,19 @@ body {
 .life-card {
   position: relative;
   display: flex;
+  /* 图标在上、结论在下：卡片文本可用宽在手机只有 79px，
+     图标若与文字同行会把 7 字结论挤成 3 行，所以竖向排列。
+     靠上对齐（而不是居中）是为了让同一行里折成两行的卡片和单行卡片
+     的图标落在同一条水平线上 */
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  gap: 4px;
   min-height: 62px;
-  /* 底部留出小字的高度，主句不会被右下角依据顶到上面去 */
-  padding: 12px 14px 21px;
+  /* 底部留出小字的高度，主句不会被右下角依据顶到上面去；
+     左右只留 10：手机三列每卡 112.7px，扣掉 2×10+2 边框还有 90.7，
+     刚好容下 6 个 14px 字（「不宜久待户外」=84px）不折行 */
+  padding: 12px 10px 21px;
   border-radius: var(--radius-md);
   background: var(--surface-2);
   backdrop-filter: blur(var(--glass-card));
@@ -1110,9 +1118,21 @@ body {
   transition: background 0.3s;
 }
 .life-card:hover { background-color: var(--surface-3); }
+/* 图标纯装饰（结论文字已表达语义），尺寸固定不参与压缩，
+   颜色跟随所在卡片的文字色，换主题不用改任何 SVG */
+.life-icon {
+  flex: 0 0 auto;
+  display: block;
+  /* 比结论文字淡一档：图标负责提示类别，读的是那句话 */
+  color: var(--text-4);
+}
 .life-verdict {
-  /* Chromium / Safari 支持：折行时避免第二行只剩一两个字，不支持的浏览器忽略即可 */
-  text-wrap: pretty;
+  /* 中文断行：auto-phrase 按词组切，不会「适合户 / 外运动」；
+     balance 再把两行字数拉平，7 字断成 4+3（「适宜卫衣 / 或外套」）
+     而不是贪心断成 5+2 让末行只剩「外套」。
+     两者都是渐进增强，不支持的浏览器按普通断行处理，不会更差 */
+  word-break: auto-phrase;
+  text-wrap: balance;
   font-size: 14px;
   line-height: 1.4;
   color: var(--text-1);
@@ -1338,6 +1358,9 @@ body {
   .set-row { flex-direction: column; align-items: stretch; gap: 9px; }
   .seg-ctrl { width: 100%; }
   .seg-ctrl button { flex: 1 1 0; padding: 0 6px; min-height: 36px; }
+  /* 360 级窄屏每卡只有 102.7px：左右各留 10 还剩 80.7，
+     6 个 14px 字要 84px 放不下，收到 8 刚好够，6 字结论保住单行 */
+  .life-card { padding-left: 8px; padding-right: 8px; }
 }
 
 @media (min-width: 768px) {
