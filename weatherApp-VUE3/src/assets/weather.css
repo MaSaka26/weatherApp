@@ -1098,10 +1098,10 @@ body {
 .life-card {
   position: relative;
   display: flex;
-  /* 图标在上、结论在下：卡片文本可用宽在手机只有 79px，
-     图标若与文字同行会把 7 字结论挤成 3 行，所以竖向排列。
-     靠上对齐（而不是居中）是为了让同一行里折成两行的卡片和单行卡片
-     的图标落在同一条水平线上 */
+  /* 结论在上、图标下放：卡片文本可用宽在手机只有约 79px，
+     图标若与文字同行会把 7 字结论挤成三行，所以竖向排列。
+     图标靠 margin-top:auto 压到内容区底部，这样同一行里折成两行的
+     卡片和单行卡片的图标也落在同一条水平线上 */
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
@@ -1123,6 +1123,8 @@ body {
 .life-icon {
   flex: 0 0 auto;
   display: block;
+  /* 顶到内容区底部：图标成了这一格的落脚点，一行里六张卡图标齐平 */
+  margin-top: auto;
   /* 比结论文字淡一档：图标负责提示类别，读的是那句话 */
   color: var(--text-4);
 }
