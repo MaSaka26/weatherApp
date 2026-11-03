@@ -1,0 +1,1570 @@
+/* ==========================================================================
+   设计变量（Design Tokens）
+   - 颜色按「语义 + 档位」组织；数值与原稿一致，个别就近归并偏差 ≤0.06，
+     且只向更亮/更清晰方向偏移，不会击穿已校准的 WCAG AA 对比度
+   - 设置面板改 --radius-scale / --glass-scale / --accent 即可，无需改任何选择器
+   - 天空背景的 6 套天气渐变属于「内容」而非「主题」，保持硬编码
+   ========================================================================== */
+:root {
+  /* 文字：0 最亮 → 8 最弱 */
+  --text-0: #ffffff;
+  --text-1: rgba(255, 255, 255, 0.96);
+  --text-2: rgba(255, 255, 255, 0.9);
+  --text-3: rgba(255, 255, 255, 0.78);
+  --text-4: rgba(255, 255, 255, 0.72);
+  --text-5: rgba(255, 255, 255, 0.62);
+  --text-6: rgba(255, 255, 255, 0.52);
+  --text-7: rgba(255, 255, 255, 0.45);
+  --text-8: rgba(255, 255, 255, 0.34);
+
+  /* 玻璃表面：0 最淡 → 7 最实 */
+  --surface-0: rgba(255, 255, 255, 0.03);
+  --surface-1: rgba(255, 255, 255, 0.04);
+  --surface-2: rgba(255, 255, 255, 0.06);
+  --surface-3: rgba(255, 255, 255, 0.09);
+  --surface-4: rgba(255, 255, 255, 0.13);
+  --surface-5: rgba(255, 255, 255, 0.17);
+  --surface-6: rgba(255, 255, 255, 0.21);
+  --surface-7: rgba(255, 255, 255, 0.26);
+
+  /* 描边与分隔线 */
+  --line-0: rgba(255, 255, 255, 0.04);
+  --line-1: rgba(255, 255, 255, 0.09);
+  --line-2: rgba(255, 255, 255, 0.16);
+
+  /* 强调色：换主题色只改这四个 */
+  --accent: #6db3f2;
+  --accent-bright: #7fd4f5;
+  --accent-warm: #ffc98a;
+  --accent-contrast: #0d1b2a;
+
+  /* 其他语义色 */
+  --danger-soft: rgba(255, 100, 100, 0.15);
+  --shadow-color: rgba(0, 0, 0, 0.18);
+  --bar-from: rgba(100, 180, 255, 0.6);
+  --bar-to: rgba(255, 200, 100, 0.6);
+  /* 高低温：橙 = 暖，蓝 = 冷。曲线标签与 16 天列表共用同一对值，
+     避免两处各写一份色号后改一处忘一处 */
+  --temp-high: #fb923c;
+  --temp-low: #60a5fa;
+  --scroll-thumb: rgba(255, 255, 255, 0.2);
+  --scroll-thumb-hover: rgba(255, 255, 255, 0.34);
+
+  /* 空气质量六级：沿用国标配色，但在深蓝底上提亮以保证可读性 */
+  --aqi-1: #7ed6a0;
+  --aqi-2: #f0d16b;
+  --aqi-3: #f7a45e;
+  --aqi-4: #f07676;
+  --aqi-5: #c08ae8;
+  --aqi-6: #c2667d;
+
+  /* 日出日落线 */
+  --sun-from: #f3a45c;
+  --sun-mid: #ffd08a;
+
+  /* 紫外线五档（WHO 分段）：沿用原稿饱和色，保证五档色相一眼可辨 */
+  --uv-1: #22c55e;
+  --uv-2: #eab308;
+  --uv-3: #f97316;
+  --uv-4: #ef4444;
+  --uv-5: #a855f7;
+
+  /* 圆角：--radius-scale 0.5 = 硬朗，1.5 = 圆润 */
+  --radius-scale: 1;
+  --radius-2xs: calc(4px * var(--radius-scale));
+  --radius-xs: calc(8px * var(--radius-scale));
+  --radius-sm: calc(12px * var(--radius-scale));
+  --radius-btn: calc(14px * var(--radius-scale));
+  --radius-md: calc(16px * var(--radius-scale));
+  --radius-lg: calc(20px * var(--radius-scale));
+
+  /* 玻璃模糊：--glass-scale 0 = 关闭毛玻璃
+     注意：backdrop-filter 只模糊「卡片背后」的东西，而这里背后是平滑的天空渐变，
+     模糊一块纯渐变 = 看不出任何变化。所以档位同时驱动 --glass-frost 这层白雾，
+     关掉时卡片更实、更强时更透亮，肉眼才分得出来 */
+  --glass-scale: 1;
+  --glass-soft: calc(10px * var(--glass-scale));
+  --glass-btn: calc(12px * var(--glass-scale));
+  --glass-card: calc(16px * var(--glass-scale));
+  --glass-strong: calc(20px * var(--glass-scale));
+  --glass-frost: rgba(255, 255, 255, max(0, calc((1 - var(--glass-scale)) * 0.12)));
+  /* 反方向：档位高于标准时卡片更「通透」——背景是深色，透出来的自然更暗 */
+  --glass-shade: rgba(6, 14, 26, max(0, calc((var(--glass-scale) - 1) * 0.2)));
+}
+
+/* ===== Reset & Base ===== */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html { font-size: 16px; -webkit-text-size-adjust: 100%; }
+body {
+  font-family: -apple-system, 'SF Pro Text', 'SF Pro Display', 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: #0b0e1a;
+  color: #f0f4ff;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ===== Animated Background ===== */
+.sky-bg {
+  position: fixed; inset: 0;
+  z-index: 0;
+  background: linear-gradient(170deg, #0b0e1a 0%, #141b33 30%, #1a2a4a 55%, #2a3f5e 80%, #3d5a7a 100%);
+  transition: background 1.2s ease;
+}
+.sky-bg::before {
+  content: ''; position: absolute; inset: 0;
+  /* 顶部两团光晕 + 视口底部压暗：固定背景不会随内容滚动，
+     浅色端始终落在屏幕下方，白色文字在那里会掉到 1.4:1，必须压一层暗角 */
+  background:
+    linear-gradient(180deg, rgba(6,12,28,0) 38%, rgba(6,12,28,.30) 74%, rgba(6,12,28,.44) 100%),
+    radial-gradient(ellipse at 30% 20%, rgba(100, 160, 255, 0.08) 0%, transparent 60%),
+    radial-gradient(ellipse at 70% 80%, rgba(180, 120, 255, 0.06) 0%, transparent 50%);
+}
+.sky-bg::after {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(2px 2px at 20% 30%, rgba(255,255,255,0.3), transparent),
+              radial-gradient(2px 2px at 40% 70%, rgba(255,255,255,0.2), transparent),
+              radial-gradient(1px 1px at 60% 20%, rgba(255,255,255,0.3), transparent),
+              radial-gradient(1px 1px at 80% 50%, rgba(255,255,255,0.2), transparent),
+              radial-gradient(2px 2px at 10% 80%, rgba(255,255,255,0.15), transparent),
+              radial-gradient(1px 1px at 50% 40%, rgba(255,255,255,0.25), transparent),
+              radial-gradient(1px 1px at 70% 90%, rgba(255,255,255,0.15), transparent),
+              radial-gradient(2px 2px at 90% 10%, rgba(255,255,255,0.2), transparent);
+  background-size: 200px 200px;
+  animation: twinkle 4s ease-in-out infinite alternate;
+}
+@keyframes twinkle {
+  0% { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+
+/* ===== Weather-adaptive backgrounds =====
+   浅色端统一压深一档：原来的 #a8d8ff 这类粉亮色让白色小字对比度只有 1.4:1，
+   压深后配合底部暗角，次级文字可回到 4.5:1 以上（见 .sky-bg::before）。 */
+.sky-bg.clear-day { background: linear-gradient(170deg, #0f1b3a 0%, #1b3563 25%, #2c60a0 55%, #4076b8 80%, #4f88c9 100%); }
+.sky-bg.clear-night { background: linear-gradient(170deg, #050812 0%, #0a1028 30%, #141f45 55%, #1a2a5a 80%, #2a3f6a 100%); }
+.sky-bg.cloudy { background: linear-gradient(170deg, #1a1e2e 0%, #2a3045 30%, #3a4256 55%, #4d5468 80%, #5c6379 100%); }
+.sky-bg.rainy { background: linear-gradient(170deg, #0f121f 0%, #1a1f35 30%, #2a3050 55%, #343a5a 80%, #3f4463 100%); }
+.sky-bg.snowy { background: linear-gradient(170deg, #1a1e30 0%, #2a3048 30%, #414765 55%, #565c78 80%, #666c86 100%); }
+.sky-bg.thunderstorm { background: linear-gradient(170deg, #050510 0%, #0f0f20 30%, #1a1a35 55%, #252045 80%, #2e2649 100%); }
+
+
+/* ===== Layout ===== */
+.app-container {
+  position: relative; z-index: 1;
+  max-width: 500px; margin: 0 auto;
+  padding: 0 20px 40px;
+  min-height: 100vh; min-height: 100dvh;
+}
+
+/* 搜索框与刷新按钮同一行：刷新按钮不再 fixed 悬浮，
+   避免移动端压住 16 天列表的温度数值，也避免桌面上飘在内容列外的空白处 */
+.top-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.top-bar .search-section { flex: 1; min-width: 0; }
+
+/* ===== Search Bar ===== */
+.search-section {
+  padding: 20px 0 10px;
+  position: relative;
+}
+.search-wrapper {
+  position: relative;
+  display: flex; align-items: center;
+}
+.search-wrapper .search-icon {
+  position: absolute; left: 16px;
+  padding: 0; border: none; background: none;
+  font-size: 18px; opacity: 0.5;
+  cursor: pointer; line-height: 1;
+  transition: opacity 0.3s;
+}
+.search-wrapper:focus-within .search-icon,
+.search-wrapper .search-icon:hover { opacity: 0.8; }
+.search-input {
+  width: 100%;
+  padding: 14px 40px 14px 46px;
+  border: none; border-radius: 14px;
+  background: var(--surface-3);
+  backdrop-filter: blur(var(--glass-strong));
+  color: var(--text-0);
+  font-size: 17px;
+  font-weight: 400;
+  letter-spacing: 0.3px;
+  outline: none;
+  transition: background 0.3s, box-shadow 0.3s;
+}
+.search-input::placeholder { color: var(--text-6); font-weight: 300; }
+.search-input:focus {
+  background-color: var(--surface-4);
+  box-shadow: 0 0 0 1px var(--line-1);
+}
+.search-clear {
+  position: absolute; right: 14px;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: var(--surface-5);
+  color: var(--text-0);
+  font-size: 14px;
+  cursor: pointer;
+  display: none;
+  align-items: center; justify-content: center;
+  transition: background 0.2s;
+}
+.search-clear:hover { background: var(--surface-7); }
+.search-clear.visible { display: flex; }
+
+/* ===== 搜索候选下拉（本地行政区查表，输入即显） ===== */
+.search-suggest {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0; right: 0;
+  z-index: 30;
+  margin: 0; padding: 6px;
+  list-style: none;
+  border-radius: 14px;
+  /* 浮层压在天气卡片上，白玻璃会透出下层文字；用主题深色底保证可读 */
+  background: rgba(13, 27, 42, 0.82);
+  backdrop-filter: blur(var(--glass-strong));
+  border: 1px solid var(--line-1);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.28);
+  max-height: 320px;
+  overflow-y: auto;
+}
+.suggest-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--text-5);
+  font-size: 14px;
+  line-height: 1.35;
+}
+.suggest-item.active { background: var(--surface-5); }
+.suggest-text {
+  flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.suggest-leaf { color: var(--text-0); font-weight: 500; }
+.suggest-level {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-6);
+  letter-spacing: 1px;
+}
+
+/* ===== Loading ===== */
+.loading-spinner {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 0;
+  gap: 20px;
+}
+.loading-spinner.active { display: flex; }
+.spinner-ring {
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  border: 3px solid var(--line-1);
+  border-top-color: var(--text-4);
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-spinner span { font-size: 15px; color: var(--text-6); font-weight: 300; }
+
+/* ===== Error State ===== */
+.error-message {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 60px 20px;
+  text-align: center;
+}
+.error-message.active { display: flex; }
+.error-message .error-icon {
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  background: var(--danger-soft);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px;
+}
+.error-message .error-title { font-size: 18px; font-weight: 600; color: var(--text-3); }
+.error-message .error-desc { font-size: 14px; color: var(--text-7); font-weight: 300; line-height: 1.5; }
+.error-message .error-retry {
+  margin-top: 8px;
+  padding: 10px 28px;
+  border: none; border-radius: var(--radius-lg);
+  background: var(--surface-4);
+  color: var(--text-0);
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.error-message .error-retry:hover { background: var(--surface-6); }
+
+/* ===== Weather Content ===== */
+.weather-content { display: none; animation: fadeUp 0.7s ease; }
+.weather-content.active { display: block; }
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ===== Current Weather ===== */
+/* 两层结构：地名单独一行居中；温度块与时间块在其下方并排、作为整体水平居中 */
+.current-weather {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 20px 0 10px;
+}
+.current-head {
+  margin-bottom: 6px;
+  animation: fadeUp 0.6s ease both;
+}
+/* 等宽两栏：温度与时间各占一半，分隔线正好落在中线，左右留白对称。
+   间距不用 column-gap（那会让分隔线偏右半格），改成两栏各让出 --clock-split 的内边距 */
+.current-body {
+  --clock-split: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  column-gap: 0;
+  max-width: 100%;
+}
+.current-main {
+  min-width: 0;
+  padding-right: var(--clock-split);
+}
+.current-city {
+  font-size: 28px;
+  font-weight: 300;
+  letter-spacing: 1px;
+  color: var(--text-1);
+  margin-bottom: 4px;
+}
+.current-region {
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.6px;
+  color: var(--text-4);
+  margin: -2px 0 0;
+  animation: fadeUp 0.6s 0.05s ease both;
+}
+.current-temp {
+  font-size: 82px;
+  font-weight: 200;
+  line-height: 1;
+  letter-spacing: -2px;
+  animation: fadeUp 0.6s 0.1s ease both;
+}
+.current-temp .deg-symbol {
+  font-size: 36px;
+  font-weight: 200;
+  vertical-align: super;
+}
+.current-condition {
+  font-size: 18px;
+  font-weight: 400;
+  color: var(--text-4);
+  margin-top: 6px;
+  animation: fadeUp 0.6s 0.2s ease both;
+}
+.current-highlow {
+  font-size: 17px;
+  font-weight: 300;
+  color: var(--text-6);
+  margin-top: 4px;
+  animation: fadeUp 0.6s 0.25s ease both;
+}
+.current-highlow span { margin: 0 6px; }
+.current-highlow .high { color: var(--text-2); }
+.current-highlow .low { color: var(--text-4); }
+
+/* ===== Clock Panel ===== */
+.clock-panel {
+  min-width: 0;
+  align-self: center;
+  padding-left: var(--clock-split);
+  border-left: 1px solid var(--line-2);
+  text-align: center;
+  animation: fadeUp 0.6s 0.3s ease both;
+}
+.clock-time {
+  font-size: 36px;
+  font-weight: 200;
+  line-height: 1.05;
+  letter-spacing: 0.5px;
+  color: var(--text-1);
+  /* 等宽数字：秒数跳动时整块不会左右抖 */
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+.clock-time .clock-sec {
+  color: var(--text-5);
+  font-size: 0.72em;
+  letter-spacing: 0.5px;
+}
+.clock-date {
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.6px;
+  color: var(--text-3);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.clock-doy {
+  margin-top: 3px;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.4px;
+  color: var(--text-5);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.clock-doy .clock-doy-num {
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+/* ===== Details Grid ===== */
+/* 三列 × 两行（手机/平板）；1024 起一行六张。
+   item 骨架有两套，由 .details-grid 上的布局类切换（设置 → 卡片布局），
+   手机、平板、桌面三档都听同一个设置：
+   - layout-row   左文右图（默认）
+   - layout-stack 文字在上、图形在下 */
+.details-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
+  gap: 12px;
+  margin: 20px 0 24px;
+  animation: fadeUp 0.6s 0.3s ease both;
+}
+.detail-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: var(--surface-2);
+  backdrop-filter: blur(var(--glass-card));
+  border-radius: var(--radius-md);
+  padding: 12px 8px;
+  text-align: center;
+  border: 1px solid var(--line-0);
+  transition: background 0.3s;
+}
+.detail-card:hover { background-color: var(--surface-3); }
+.detail-card .label {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-4);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 6px;
+}
+.detail-card .value {
+  font-size: 22px;
+  font-weight: 300;
+  color: var(--text-2);
+}
+.detail-card .value .unit {
+  font-size: 14px;
+  color: var(--text-5);
+  font-weight: 300;
+}
+/* item 骨架两套，由 .details-grid 上的布局类切换（设置 → 卡片布局）：
+   - 默认这套是「上下」：标签 + 主值居中在上，表盘/图形居中在下。
+     它同时就是「上下」选项的备份本体，规则不需要另写一份
+   - 「左右」（左文右图）由 .details-grid.layout-row 覆盖，见下方媒体查询 */
+.detail-card.split {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 6px;
+  min-height: 0;
+  padding: 12px 8px;
+}
+.split .card-main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 0;
+}
+.split .card-main .label {
+  margin-bottom: 0;
+  font-size: 12px;
+  letter-spacing: 0.3px;
+}
+
+/* ===== item 左右布局（layout-row）：左标签+数值，右图形 =====
+   只在 <1024 生效：桌面一行六张卡宽只有 144，上下排才放得开，固定不受设置影响。
+   三档尺寸按「图形给文字栏让多少地方」推：文字栏要站住一行「2.7 m/s」和「日出 · 日落」 */
+@media (max-width: 1023px) {
+  .details-grid.layout-row .detail-card.split {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    text-align: left;
+    padding: 10px 10px 10px 12px;
+  }
+  .details-grid.layout-row .split .card-main {
+    align-items: flex-start;
+  }
+  .details-grid.layout-row .split .card-main .label {
+    font-size: 9px;
+    letter-spacing: 0.2px;
+    line-height: 1.3;
+  }
+  .details-grid.layout-row .dial { --dial-size: 60px; }
+  .details-grid.layout-row .uv-gauge { --gauge-size: 60px; }
+  .details-grid.layout-row .detail-card .value { font-size: 17px; }
+  .details-grid.layout-row .detail-card .value .unit { font-size: 10px; }
+  .details-grid.layout-row .uv-card .uv-level { font-size: 17px; }
+  .details-grid.layout-row .sun-panel { width: 60px; }
+  .details-grid.layout-row .sun-times { font-size: 10px; }
+}
+
+/* 平板 768–1023：每卡约 190，图形和字号放开一档 */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .details-grid.layout-row .detail-card.split {
+    gap: 10px;
+    padding: 12px 14px 12px 16px;
+  }
+  .details-grid.layout-row .split .card-main .label {
+    font-size: 11px;
+    letter-spacing: 0.3px;
+  }
+  .details-grid.layout-row .dial { --dial-size: 80px; }
+  .details-grid.layout-row .uv-gauge { --gauge-size: 80px; }
+  .details-grid.layout-row .detail-card .value { font-size: 20px; }
+  .details-grid.layout-row .detail-card .value .unit { font-size: 11px; }
+  .details-grid.layout-row .uv-card .uv-level { font-size: 20px; }
+  .details-grid.layout-row .sun-panel { width: 80px; }
+  .details-grid.layout-row .sun-times { font-size: 11px; }
+}
+
+/* 手机 ≤480：三列后每卡约 104–114，图形 40 + 间隙 4，文字栏 48 才放得下一行数值。
+   日出面板要 48：8px 的「06:10」「17:04」各占 22，两个并排需要 44 */
+@media (max-width: 480px) {
+  .details-grid.layout-row .detail-card.split {
+    gap: 4px;
+    padding: 6px;
+  }
+  .details-grid.layout-row .split .card-main .label {
+    font-size: 8px;
+    letter-spacing: 0;
+  }
+  .details-grid.layout-row .dial { --dial-size: 40px; }
+  .details-grid.layout-row .uv-gauge { --gauge-size: 40px; }
+  .details-grid.layout-row .detail-card .value { font-size: 15px; }
+  .details-grid.layout-row .detail-card .value .unit { font-size: 9px; }
+  .details-grid.layout-row .uv-card .uv-level { font-size: 15px; }
+  .details-grid.layout-row .sun-panel { width: 48px; gap: 1px; }
+  .details-grid.layout-row .sun-times { font-size: 8px; }
+}
+
+/* 320 级窄屏：每卡只剩 90，图形再缩，数值收到 12 */
+@media (max-width: 344px) {
+  .details-grid.layout-row .detail-card.split {
+    gap: 3px;
+    padding: 5px;
+  }
+  .details-grid.layout-row .split .card-main .label {
+    font-size: 7px;
+  }
+  .details-grid.layout-row .dial { --dial-size: 32px; }
+  .details-grid.layout-row .uv-gauge { --gauge-size: 32px; }
+  .details-grid.layout-row .detail-card .value { font-size: 12px; }
+  .details-grid.layout-row .detail-card .value .unit { font-size: 8px; }
+  .details-grid.layout-row .uv-card .uv-level { font-size: 12px; }
+  .details-grid.layout-row .sun-panel { width: 38px; }
+  .details-grid.layout-row .sun-times { font-size: 6.5px; }
+}
+
+/* 紫外线：270° 渐变表盘（缺口朝下），环心只有数值，缺口里写着 UV。
+   同样是 SVG 描边画环，几何与湿度/气压/体感的表盘完全一致（环宽 10、半径 45、圆头），
+   所以几颗环并排时粗细、端点形状都对得上；尺寸只由 --gauge-size 控制 */
+.uv-gauge {
+  --gauge-size: 76px;
+  position: relative;
+  width: var(--gauge-size);
+  height: var(--gauge-size);
+  flex: none;
+}
+.uv-gauge .g-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.uv-gauge .g-track,
+.uv-gauge .g-seg {
+  fill: none;
+  stroke-width: 10;
+  stroke-linecap: round;
+}
+.uv-gauge .g-track { stroke: var(--line-1); }
+/* 两头各一枚圆点：起点帽和当前值点，正好把扇形裁剪的直口盖成圆头 */
+.uv-gauge .g-cap,
+.uv-gauge .g-dot { stroke: none; }
+.uv-gauge .g-value {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  font-size: calc(var(--gauge-size) * 0.24);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+  pointer-events: none;
+}
+/* 缺口高度只有 16% 的外框，字号跟着表盘走，缩到手机尺寸也不会糊 */
+.uv-gauge .g-title {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  z-index: 3;
+  text-align: center;
+  font-size: calc(var(--gauge-size) * 0.16);
+  line-height: 1;
+  letter-spacing: 0.5px;
+  color: var(--text-6);
+  pointer-events: none;
+}
+
+/* 紫外线卡的等级字与其它卡的主值同级：参考图里「弱」和数值一样大，
+   只是它在环外、数值在环内 */
+.uv-card .uv-level {
+  font-size: 22px;
+  font-weight: 300;
+  line-height: 1.1;
+  color: var(--text-2);
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+/* 环形表盘：湿度/气压是进度弧，体感是色带 + 指针，风是罗盘。
+   尺寸只由 --dial-size 控制；SVG 固定 viewBox 0 0 100 100，外径 100 = 边长 */
+.dial {
+  --dial-size: 76px;
+  position: relative;
+  width: var(--dial-size);
+  height: var(--dial-size);
+  flex: none;
+}
+.dial .d-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.dial circle { fill: none; }
+/* 环宽 10 / 外径 100，和 UV 表盘的 80% 内孔完全对齐 */
+.dial .d-track,
+.dial .d-fill,
+.dial .nd-band {
+  stroke-width: 10;
+  stroke-linecap: round;
+}
+.dial .d-track { stroke: var(--line-1); }
+.dial .d-fill { stroke: var(--accent); }
+.dial .d-center {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.dial .d-icon {
+  width: 44%;
+  height: 44%;
+  fill: var(--accent);
+}
+/* 气压的方向箭头只要描边，圆头才不会显得像根棍子 */
+.dial .d-icon-arrow {
+  width: 30%;
+  height: 30%;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* 缺口小字（潮湿 / 舒适 / hPa）落在正下方，三张环都朝下开缺口，位置完全一致 */
+.dial .d-caption {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  text-align: center;
+  font-size: calc(var(--dial-size) * 0.16);
+  line-height: 1;
+  color: var(--text-5);
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+/* 体感指针：白针 + 中心轴，压在色带上才看得清 */
+.needle-dial .nd-hand {
+  stroke: var(--text-0);
+  stroke-width: 4.5;
+  stroke-linecap: round;
+  filter: drop-shadow(0 1px 2px var(--shadow-color));
+}
+.needle-dial .nd-pin {
+  fill: var(--text-0);
+  filter: drop-shadow(0 1px 2px var(--shadow-color));
+}
+/* 风向罗盘：一圈刻度 + 四个方位字 + 中心实心圆 + 指向来风的短针
+   （62px 的表盘塞不下轨道 + 刻度，细轨省掉，反而更清爽） */
+.wind-compass .wc-tick {
+  stroke: var(--text-6);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+.wind-compass .wc-dir {
+  fill: var(--text-5);
+  font-size: 11px;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+.wind-compass .wc-hub {
+  fill: var(--accent);
+  opacity: 0.95;
+}
+/* 指针：一整根穿过小轴心的白针（箭头指风吹去的方向，尾端圆点标来风侧）。
+   之前针和轴心同色、轴心又大，整根针被圆吞掉只剩两截小头；
+   现在学体感那根指针的做法——白针 + 投影，压在深色卡上才一眼看得清 */
+.wind-compass .wc-needle {
+  stroke: var(--text-0);
+  stroke-width: 4;
+  stroke-linecap: round;
+  filter: drop-shadow(0 1px 2px var(--shadow-color));
+}
+.wind-compass .wc-head,
+.wind-compass .wc-tail {
+  fill: var(--text-0);
+  stroke: none;
+  filter: drop-shadow(0 1px 2px var(--shadow-color));
+}
+
+/* 日出日落：和其它卡同一套骨架——左边是标签 + 白昼时长，右边是一条收紧的抛物线，
+   日出/日落时间落在弧的两端下方，弧的形状本身就说明「升起到落下」 */
+.sun-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 72px;
+  flex: none;
+}
+.sun-panel.night { opacity: 0.6; }
+.sun-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.arc-track {
+  fill: none;
+  stroke: var(--line-1);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.arc-fill {
+  fill: none;
+  stroke: url(#sunArcGrad);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: var(--dash, 0 100);
+}
+.stop-a { stop-color: var(--sun-from); }
+.stop-b { stop-color: var(--sun-mid); }
+/* 光点的暖色外发光 */
+.arc-dot {
+  fill: var(--text-0);
+  filter: drop-shadow(0 0 2.5px var(--sun-mid));
+}
+/* 时间压在弧的两端：左端日出、右端日落，靠弧的走向就能分清，不用再加字 */
+.sun-times {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  font-size: 11px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+}
+
+/* ===== Hourly Forecast ===== */
+.hourly-section {
+  margin: 20px 0 24px;
+  animation: fadeUp 0.6s 0.35s ease both;
+}
+.section-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  margin-bottom: 14px;
+  padding-left: 4px;
+}
+.hourly-scroll {
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding: 4px 0;
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  backdrop-filter: blur(var(--glass-soft));
+}
+.hourly-scroll::-webkit-scrollbar { display: none; }
+.hourly-item {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  min-width: 72px;
+  transition: background 0.2s;
+  border-radius: var(--radius-sm);
+}
+.hourly-item:hover { background: var(--surface-2); }
+.hourly-item .hour-time {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-4);
+}
+.hourly-item .hour-icon { font-size: 22px; line-height: 1; }
+.hourly-item .hour-temp {
+  font-size: 18px;
+  font-weight: 400;
+  color: var(--text-2);
+}
+.hourly-item.now .hour-time { color: var(--accent); font-weight: 600; }
+.hourly-item.now .hour-temp { color: var(--accent); font-weight: 500; }
+
+/* ===== Daily Forecast ===== */
+/* 列表与曲线共用同一高度：切换视图时卡片不会跳高跳矮，超出部分滚动查看 */
+.daily-section {
+  --daily-view-h: 376px;
+  margin: 20px 0 30px;
+  animation: fadeUp 0.6s 0.4s ease both;
+}
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.section-head .section-title { margin-bottom: 0; }
+.view-switch {
+  display: flex;
+  gap: 1px;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--line-1);
+  backdrop-filter: blur(var(--glass-soft));
+}
+.view-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 4px 10px;
+  border-radius: var(--radius-xs);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  line-height: 1.4;
+  color: var(--text-6);
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+  font-family: inherit;
+}
+.view-btn:hover { color: var(--text-3); }
+.view-btn.active {
+  color: var(--accent-contrast);
+  background: linear-gradient(120deg, var(--accent-bright), var(--accent-warm));
+  box-shadow: 0 2px 10px var(--shadow-color);
+}
+
+/* 列表 / 曲线切换：两屏叠在同一个固定高的框里左右推，高度不变不会跳
+   （图表按需加载，切过去时才挂载，所以用 v-if + Transition 而不是并排轨道） */
+.daily-views {
+  position: relative;
+  height: var(--daily-view-h);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.daily-view {
+  position: absolute;
+  inset: 0;
+  transition:
+    transform 0.42s cubic-bezier(0.22, 0.61, 0.36, 1),
+    opacity 0.32s ease;
+  will-change: transform;
+}
+/* 列表 → 曲线：新屏从右推进，旧屏向左退出 */
+.view-next-enter-from { transform: translateX(100%); opacity: 0.4; }
+.view-next-leave-to { transform: translateX(-100%); opacity: 0.4; }
+/* 曲线 → 列表：反向推回 */
+.view-prev-enter-from { transform: translateX(-100%); opacity: 0.4; }
+.view-prev-leave-to { transform: translateX(100%); opacity: 0.4; }
+
+@media (prefers-reduced-motion: reduce) {
+  .daily-view { transition: none; }
+}
+.daily-list {
+  height: 100%;
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  backdrop-filter: blur(var(--glass-soft));
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+.daily-list::-webkit-scrollbar { width: 6px; }
+.daily-list::-webkit-scrollbar-track { background: transparent; }
+.daily-list::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 3px;
+}
+.daily-list::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
+.daily-item {
+  display: flex;
+  align-items: center;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line-0);
+  transition: background 0.2s;
+}
+.daily-item:last-child { border-bottom: none; }
+.daily-item:hover { background: var(--surface-0); }
+.daily-item .day-name {
+  flex: 0 0 72px;
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--text-3);
+}
+.daily-item .day-name.today { font-weight: 600; color: var(--accent); }
+.daily-item .day-icon { flex: 0 0 32px; text-align: center; font-size: 20px; }
+.daily-item .day-precip {
+  flex: 0 0 40px;
+  font-size: 13px;
+  color: var(--text-4);
+  text-align: center;
+}
+.daily-item .day-temps {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 16px;
+  font-weight: 400;
+}
+.daily-item .day-temps .high { color: var(--text-2); min-width: 36px; text-align: right; }
+.daily-item .day-temps .low { color: var(--text-4); min-width: 36px; text-align: right; }
+.daily-item .temp-bar-wrap {
+  width: 60px; height: 4px;
+  background: var(--surface-2);
+  border-radius: var(--radius-2xs);
+  position: relative;
+  overflow: hidden;
+}
+.daily-item .temp-bar-fill {
+  position: absolute; top: 0; left: 0; height: 100%;
+  border-radius: var(--radius-2xs);
+  background: linear-gradient(90deg, var(--bar-from), var(--bar-to));
+  transition: width 0.6s ease;
+}
+
+/* ===== 16 天温度曲线 ===== */
+.dc-wrap {
+  height: var(--daily-view-h);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  backdrop-filter: blur(var(--glass-soft));
+  overflow: hidden;
+  padding: 6px 0 4px;
+}
+.dc-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+  position: relative;
+}
+.dc-scroll::-webkit-scrollbar { display: none; }
+/* 宽度由组件按天数计算，横向滚动由 .dc-scroll 承担 */
+.dc-host { flex: 0 0 auto; }
+.dc-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--text-7);
+}
+.dc-failed {
+  padding: 28px 18px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-6);
+}
+.dc-hint {
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  color: var(--text-8);
+  padding: 0 0 6px;
+}
+/* X 轴四行标签：今天 / 10-30 / 图标 / 天气 */
+.dc-x {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+  line-height: 1.2;
+  padding-top: 6px;
+}
+.dc-x-day {
+  font-size: 11px;
+  color: var(--text-5);
+}
+.dc-x-day.dc-x-today {
+  color: var(--accent-bright);
+  font-weight: 600;
+}
+.dc-x-date {
+  font-size: 10px;
+  color: var(--text-8);
+  letter-spacing: 0.2px;
+}
+.dc-x-icon {
+  font-size: 15px;
+  margin: 1px 0;
+}
+.dc-x-cond {
+  font-size: 10px;
+  color: var(--text-7);
+  transform: scale(0.95);
+}
+
+/* ===== Life Index ===== */
+/* 六张独立毛玻璃卡：手机 / 平板三列 × 两行，桌面一行六列。
+   结论居中放大，判断依据缩成小字压在右下角，不抢主句 */
+.life-section {
+  margin: 20px 0 30px;
+  animation: fadeUp 0.6s 0.45s ease both;
+}
+.life-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.life-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 62px;
+  /* 底部留出小字的高度，主句不会被右下角依据顶到上面去 */
+  padding: 12px 14px 21px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  backdrop-filter: blur(var(--glass-card));
+  border: 1px solid var(--line-0);
+  transition: background 0.3s;
+}
+.life-card:hover { background-color: var(--surface-3); }
+.life-verdict {
+  /* Chromium / Safari 支持：折行时避免第二行只剩一两个字，不支持的浏览器忽略即可 */
+  text-wrap: pretty;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text-1);
+  text-align: center;
+}
+/* 判断依据：右下角小字，弱化到只做注解 */
+.life-basis {
+  position: absolute;
+  right: 10px;
+  bottom: 6px;
+  font-size: 10px;
+  line-height: 1.2;
+  letter-spacing: 0.2px;
+  color: var(--text-6);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* ===== Location Hint ===== */
+.location-hint {
+  text-align: center;
+  padding: 10px 0;
+  font-size: 12px;
+  color: var(--text-5);
+  letter-spacing: 0.5px;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 480px) {
+  .app-container { padding: 0 16px 30px; }
+  .current-temp { font-size: 68px; }
+  .current-temp .deg-symbol { font-size: 30px; }
+  .current-city { font-size: 24px; }
+  .current-body { --clock-split: 6px; }
+  .clock-time { font-size: 31px; }
+  .clock-date, .clock-doy { font-size: 13px; letter-spacing: 0.3px; }
+  /* 时钟变宽后窄屏上「最高/最低」会换行，收窄分隔符外边距换回余量 */
+  .current-highlow span { margin: 0 4px; }
+  .details-grid { gap: 8px; }
+  .detail-card { padding: 10px 6px; }
+  /* 三列后每卡约 114px，表盘收到 60，文字与表盘上下排才放得下 */
+  .detail-card.split { gap: 5px; padding: 10px 6px; }
+  .dial { --dial-size: 60px; }
+  .uv-gauge { --gauge-size: 60px; }
+  .detail-card .value { font-size: 20px; }
+  /* 「1020 hPa」在窄卡里放不下，单位收一档 */
+  .detail-card .value .unit { font-size: 12px; }
+  /* 抛物线收到 68，两端时间才有地方站 */
+  .sun-panel { width: 68px; gap: 2px; }
+  .sun-times { font-size: 10px; }
+  .hourly-item { padding: 12px 12px; min-width: 64px; }
+  .daily-item { padding: 12px 14px; }
+  .daily-item .temp-bar-wrap { width: 44px; }
+}
+
+/* 320px 级窄屏：等宽两栏各约 138px，17px 的「最高/最低」放不进半栏，收到 14px 保住单行 */
+@media (max-width: 344px) {
+  .current-highlow { font-size: 14px; }
+  .current-highlow span { margin: 0 3px; }
+}
+
+@media (min-width: 768px) {
+  .app-container { padding: 20px 20px 50px; }
+  .current-temp { font-size: 96px; }
+  .current-body { --clock-split: 12px; }
+  .clock-time { font-size: 38px; }
+  .clock-date, .clock-doy { font-size: 14px; }
+  .details-grid { gap: 14px; }
+  /* 平板三列后每卡约 233px，表盘比手机放大一档，但还不到桌面的 84 */
+  .dial { --dial-size: 88px; }
+  .uv-gauge { --gauge-size: 88px; }
+  .detail-card .value { font-size: 24px; }
+  .uv-card .uv-level { font-size: 24px; }
+  .sun-panel { width: 88px; }
+  .sun-times { font-size: 12px; }
+  .hourly-item { padding: 16px 20px; min-width: 80px; }
+  .daily-item .temp-bar-wrap { width: 80px; }
+  /* 平板起每格 291px 以上，结论放到 15px 更有分量 */
+  .life-verdict { font-size: 16px; }
+}
+
+/* ===== Refresh / Settings Buttons ===== */
+/* 与搜索框同行，尺寸对齐输入框高度（48px），触摸目标达标 */
+.refresh-btn,
+.settings-btn {
+  flex: 0 0 auto;
+  margin-top: 20px;
+  width: 48px; height: 48px;
+  border-radius: var(--radius-btn);
+  border: none;
+  background: var(--surface-3);
+  backdrop-filter: blur(var(--glass-btn));
+  color: var(--text-0);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.2s, transform 0.2s;
+  box-shadow: 0 4px 20px var(--shadow-color);
+}
+.refresh-btn:hover,
+.settings-btn:hover { background-color: var(--surface-5); transform: scale(1.05); }
+.refresh-btn:active,
+.settings-btn:active { transform: scale(0.92); }
+.refresh-btn.refreshing { animation: btnSpin 0.8s linear infinite; }
+@keyframes btnSpin { to { transform: rotate(360deg); } }
+.settings-btn svg { display: block; }
+
+/* ===== Settings Panel ===== */
+/* 移动端从底部升起，桌面居中成卡片；面板本身不再跟 --glass-scale 联动，
+   否则把毛玻璃关掉时面板会变成一块实心色板，看不出层级 */
+.settings-layer {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: flex-end; justify-content: center;
+  visibility: hidden; opacity: 0;
+  transition: opacity 0.24s ease, visibility 0.24s;
+}
+.settings-layer.open { visibility: visible; opacity: 1; }
+
+.settings-mask {
+  position: absolute; inset: 0;
+  background: rgba(4, 9, 20, 0.58);
+  backdrop-filter: blur(5px);
+}
+
+.settings-panel {
+  position: relative;
+  display: flex; flex-direction: column;
+  width: 100%; max-width: 460px;
+  max-height: 84vh; max-height: 84dvh;
+  padding: 0 20px calc(16px + env(safe-area-inset-bottom));
+  background: rgba(18, 26, 46, 0.95);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow: 0 -18px 48px rgba(0, 0, 0, 0.5);
+  transform: translateY(28px);
+  transition: transform 0.3s cubic-bezier(0.22, 0.68, 0, 1);
+}
+.settings-layer.open .settings-panel { transform: translateY(0); }
+
+.settings-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 0 6px;
+  flex: 0 0 auto;
+}
+.settings-title { font-size: 17px; font-weight: 600; color: var(--text-1); letter-spacing: 0.4px; }
+.settings-close {
+  width: 32px; height: 32px;
+  border: none; border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--text-4);
+  font-size: 13px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.2s, color 0.2s;
+}
+.settings-close:hover { background: var(--surface-5); color: var(--text-0); }
+
+.settings-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.settings-group-title {
+  padding: 14px 0 2px;
+  font-size: 12px; letter-spacing: 1.2px;
+  color: var(--text-7);
+}
+
+.set-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line-0);
+}
+.set-row:last-child { border-bottom: none; }
+.set-label { font-size: 15px; color: var(--text-1); }
+.set-hint { margin-top: 3px; font-size: 12px; line-height: 1.45; color: var(--text-7); }
+
+/* 分段控件：选中态用实心表面，不引入新的强调色，换主题也不会花 */
+.seg-ctrl {
+  flex: 0 0 auto;
+  display: flex; gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.seg-ctrl button {
+  min-height: 32px;
+  padding: 0 11px;
+  border: none;
+  border-radius: calc(var(--radius-sm) - 3px);
+  background: transparent;
+  color: var(--text-6);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s, color 0.2s;
+}
+.seg-ctrl button:hover { color: var(--text-2); }
+.seg-ctrl button.on { background: var(--surface-6); color: var(--text-0); font-weight: 500; }
+
+.settings-foot {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px; padding-top: 14px;
+  border-top: 1px solid var(--line-1);
+}
+.settings-reset {
+  padding: 8px 16px;
+  border: none; border-radius: var(--radius-btn);
+  background: var(--surface-3);
+  color: var(--text-3);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.settings-reset:hover:not(:disabled) { background: var(--surface-5); color: var(--text-0); }
+.settings-reset:disabled { opacity: 0.45; cursor: default; }
+.settings-note { font-size: 11px; color: var(--text-7); }
+
+/* 手机：标签与分段控件上下排，否则四档「毛玻璃」会把文字挤成两行 */
+@media (max-width: 400px) {
+  .set-row { flex-direction: column; align-items: stretch; gap: 9px; }
+  .seg-ctrl { width: 100%; }
+  .seg-ctrl button { flex: 1 1 0; padding: 0 6px; min-height: 36px; }
+}
+
+@media (min-width: 768px) {
+  .settings-layer { align-items: center; }
+  .settings-panel {
+    border-radius: var(--radius-lg);
+    max-width: 500px;
+    max-height: 76vh; max-height: 76dvh;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+    transform: translateY(16px) scale(0.98);
+  }
+  .settings-layer.open .settings-panel { transform: none; }
+}
+
+/* 320px 级窄屏：搜索框 + 两个 48px 方按钮在 288px 里挤不下，
+   按钮收到 44px（仍是合格触摸目标），间距也收一档。
+   必须写在这两条基础规则之后，否则会被 .refresh-btn 的 width 覆盖 */
+@media (max-width: 344px) {
+  .top-bar { gap: 6px; }
+  .refresh-btn,
+  .settings-btn { width: 44px; height: 44px; margin-top: 22px; font-size: 18px; }
+}
+
+/* ==========================================================================
+   双端适配补充
+   - 桌面：滚动条可见可拖、双栏布局、触摸目标与文案区分
+   - 移动：触摸目标放大
+   ========================================================================== */
+
+/* ===== 滚动条（仅精确指针设备：鼠标 / 触摸板） ===== */
+@media (pointer: fine) {
+  html { scrollbar-color: var(--scroll-thumb) transparent; scrollbar-width: thin; }
+
+  body::-webkit-scrollbar { width: 10px; }
+  body::-webkit-scrollbar-track { background: transparent; }
+  body::-webkit-scrollbar-thumb {
+    background: var(--scroll-thumb);
+    border-radius: var(--radius-xs);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  body::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); background-clip: padding-box; }
+
+  /* 横向列表：桌面恢复细滚动条，否则完全看不出还能往右翻
+     卡片已排满容器，不再需要横向滚动条 */
+  .hourly-scroll,
+  .dc-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scroll-thumb) transparent;
+    padding-bottom: 6px;
+  }
+  .hourly-scroll::-webkit-scrollbar,
+  .dc-scroll::-webkit-scrollbar { display: block; height: 6px; }
+  .hourly-scroll::-webkit-scrollbar-track,
+  .dc-scroll::-webkit-scrollbar-track { background: transparent; }
+  .hourly-scroll::-webkit-scrollbar-thumb,
+  .dc-scroll::-webkit-scrollbar-thumb {
+    background: var(--scroll-thumb);
+    border-radius: var(--radius-xs);
+  }
+  .hourly-scroll::-webkit-scrollbar-thumb:hover,
+  .dc-scroll::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
+}
+
+/* ===== 触摸目标（手指操作设备） ===== */
+@media (pointer: coarse) {
+  /* 分段控件收小后，触屏仍留出可点的高度（34px ≈ 拇指指尖宽度） */
+  .view-btn {
+    min-height: 34px;
+    padding: 7px 14px;
+    font-size: 12px;
+  }
+  .search-clear {
+    width: 40px; height: 40px;
+    right: 6px;
+    font-size: 16px;
+  }
+  /* 清除按钮在触摸设备上放大到 40px，输入框右侧留出等宽，长地名才不会压在 ✕ 上 */
+  .search-input { padding-right: 48px; }
+}
+
+/* ===== 平板：内容列放宽，字号降一档，避免与桌面完全同尺寸 ===== */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .app-container { max-width: 640px; padding: 12px 24px 44px; }
+  .current-temp { font-size: 84px; }
+  .current-temp .deg-symbol { font-size: 32px; }
+}
+
+/* ===== 桌面宽屏：三块纵向堆叠、同宽居中 =====
+   1) 地点·温度·时钟（保持 360px 原比例）
+   2) 六张卡一行排完，整块是一条横向卡片带
+   3) 逐小时预报（与卡片同一宽度基准）
+   16 天占满整行放在最后；不再有左右分栏造成的悬空空白 */
+@media (min-width: 1024px) {
+  /* 内容列放到 1280：六张卡一行时每张约 197–206，
+     横向排（左文右图）放得下 84 的表盘；再宽 16 天双列会被拉得发空 */
+  .app-container { max-width: 1280px; padding: 16px 24px 48px; }
+  .refresh-btn { margin-top: 20px; }
+
+  .weather-content.active {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 26px;
+    /* 「上下」排：文字 + 表盘 + 上下留白 */
+    --cards-row-h: 176px;
+  }
+  .weather-content .current-weather { width: 360px; padding-top: 4px; }
+  .weather-content .current-body { --clock-split: 9px; }
+  .weather-content .clock-time { font-size: 32px; }
+  .weather-content .clock-date, .weather-content .clock-doy { font-size: 13px; }
+
+  /* 六张卡：一行 × 六列，卡片内部排布跟随设置里的「卡片布局」 */
+  .weather-content .details-grid {
+    width: 100%;
+    height: auto;
+    margin: 0;
+    padding-bottom: 0;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-auto-rows: var(--cards-row-h);
+    gap: 10px;
+  }
+  /* 横向排时卡片比竖排矮：表盘按 clamp 缩到 56–84，行高也跟着缩 */
+  .weather-content .details-grid.layout-row {
+    grid-auto-rows: clamp(128px, 12.5vw, 152px);
+  }
+  .weather-content .detail-card {
+    grid-column: auto;
+    padding: 12px 10px;
+  }
+  .weather-content .detail-card .label {
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+  .weather-content .detail-card .value { font-size: 26px; }
+  .weather-content .detail-card .value .unit { font-size: 14px; }
+  /* 纵向骨架（layout-stack）：文字块居中在上、表盘居中在下，六张卡共用同一节奏 */
+  .weather-content .detail-card.split {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 8px;
+    min-height: 0;
+    padding: 14px 10px;
+  }
+  .weather-content .split .card-main { align-items: center; }
+  .weather-content .uv-gauge { --gauge-size: 84px; }
+  .weather-content .dial { --dial-size: 84px; }
+  .weather-content .uv-level { font-size: 26px; }
+  .weather-content .sun-panel { width: 92px; gap: 3px; }
+  .weather-content .sun-times { font-size: 11px; }
+
+  /* 横向骨架（layout-row）：左标签+数值，右图形，与手机同一套逻辑。
+     容器在 1024–1360 之间浮动，六列后每张卡 152–210，表盘不能用固定值：
+     1024 屏固定 84 会把文字栏挤到 28px，「日出 · 日落」直接折行。
+     所以尺寸全部 clamp 跟视口连续变化，中间任何宽度都不会挤压变形 */
+  .weather-content .details-grid.layout-row .detail-card.split {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    text-align: left;
+    gap: clamp(6px, 0.7vw, 10px);
+    padding: clamp(9px, 0.85vw, 12px) clamp(9px, 0.95vw, 14px)
+      clamp(9px, 0.85vw, 12px) clamp(10px, 1.1vw, 16px);
+  }
+  .weather-content .details-grid.layout-row .split .card-main { align-items: flex-start; }
+  .weather-content .details-grid.layout-row .split .card-main .label {
+    font-size: clamp(9px, 0.75vw, 11px);
+    letter-spacing: 0.3px;
+  }
+  .weather-content .details-grid.layout-row .dial { --dial-size: clamp(56px, 5.85vw, 84px); }
+  .weather-content .details-grid.layout-row .uv-gauge { --gauge-size: clamp(56px, 5.85vw, 84px); }
+  .weather-content .details-grid.layout-row .detail-card .value {
+    font-size: clamp(18px, 1.75vw, 24px);
+  }
+  .weather-content .details-grid.layout-row .detail-card .value .unit {
+    font-size: clamp(11px, 0.95vw, 13px);
+  }
+  .weather-content .details-grid.layout-row .uv-card .uv-level {
+    font-size: clamp(18px, 1.75vw, 24px);
+  }
+  .weather-content .details-grid.layout-row .sun-panel { width: clamp(54px, 5.6vw, 80px); }
+  .weather-content .details-grid.layout-row .sun-times { font-size: clamp(9px, 0.75vw, 10px); }
+
+  .weather-content .hourly-section { width: 100%; margin: 0; }
+  .weather-content .daily-section { width: 100%; margin: 0; --daily-view-h: 448px; }
+  .weather-content .location-hint { width: 100%; }
+
+  /* 生活指数：桌面一行六列（穿衣/防晒/户外/洗车/带伞/疾病） */
+  .weather-content .life-section { width: 100%; margin: 0; }
+  .weather-content .life-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .weather-content .life-card { padding: 15px 18px 23px; }
+  /* 双列填写：先读满左列 8 天，再读右列，符合「列表」的阅读顺序 */
+  .daily-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(8, auto);
+    grid-auto-flow: column;
+    gap: 0 28px;
+  }
+  .daily-item .day-temps { gap: 14px; }
+  .daily-item .temp-bar-wrap { width: 96px; }
+}
+
+/* 1024–1279 不再单独分档：横向排的尺寸已用 clamp 跟视口连续变化，
+   1024 处每卡 152、表盘约 60，1440 处每卡 210、表盘 84，中间不会跳变 */
+
+/* ===== 毛玻璃的「雾度」层 =====
+   backdrop-filter 在这套平滑渐变背景上几乎看不出变化（实测 0% 像素差异），
+   所以在同一个平面再叠一层随 --glass-scale 变白的背景图：
+   scale=0 时白雾 12%，卡片明显更实；scale=1 时 0%，与原来完全一致。
+   必须放在所有 background 简写之后，否则会被简写重置为 none */
+.detail-card,
+.hourly-scroll,
+.daily-list,
+.dc-wrap,
+.life-card,
+.view-switch,
+.search-input,
+.refresh-btn,
+.settings-btn {
+  background-image:
+    linear-gradient(var(--glass-frost), var(--glass-frost)),
+    linear-gradient(var(--glass-shade), var(--glass-shade));
+}
