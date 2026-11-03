@@ -1,0 +1,1200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#060d16">
+<meta name="color-scheme" content="dark">
+<title>雷达降水回放 · RainViewer + CARTO</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root{
+    --bg:#060d16;
+    --map-bg:#0a1420;
+    --text-0:#fff;
+    --text-2:rgba(255,255,255,.9);
+    --text-4:rgba(255,255,255,.72);
+    --text-6:rgba(255,255,255,.52);
+    --accent:#6db3f2;
+    --accent-bright:#7fd4f5;
+    --glass:rgba(13,27,42,.72);
+    --stroke:rgba(255,255,255,.10);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{
+    height:100%;
+    /* 移动端禁止下拉刷新/橡皮筋，否则在地图上竖划会连带页面滚动 */
+    overscroll-behavior:none;
+  }
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg);color:var(--text-0);overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+    -webkit-tap-highlight-color:transparent;
+  }
+  [hidden]{display:none!important}
+
+  /* ---------- 地图 ---------- */
+  #map{
+    position:absolute;inset:0;background:var(--map-bg);
+    /* 手势全部交给 Leaflet，避免浏览器把拖动理解成页面滚动 */
+    touch-action:none;
+  }
+  .leaflet-container{background:var(--map-bg);font-family:inherit;outline:none}
+  /* 只压暗底图，雨层保持原亮度，对比才出得来 */
+  .base-tiles{filter:brightness(.82) contrast(1.05)}
+  /* Esri 是无标注底图，地名靠 divIcon 自己画：
+     文字加 1px 深色描边，压在浅灰地形上也读得清 */
+  .city-label b{
+    font-size:11px;font-weight:400;letter-spacing:.5px;
+    color:rgba(255,255,255,.9);
+    text-shadow:0 0 3px rgba(0,0,0,.95),0 0 6px rgba(0,0,0,.7);
+    white-space:nowrap;margin-left:4px;
+  }
+  .city-label{display:flex;align-items:center;pointer-events:none}
+  /* 雨层的淡入淡出由脚本用 rAF 补间直接写 style.opacity：
+     不依赖 CSS transition 的绘制时机，快速连点时也不会卡在中间态。 */
+  .rf-tiles{will-change:opacity}
+
+  .leaflet-control-attribution{
+    background:rgba(6,13,22,.8)!important;color:var(--text-6)!important;
+    font-size:10px!important;line-height:1.5!important;padding:2px 7px!important;
+    border-radius:6px 0 0 0;max-width:calc(100% - 8px);
+  }
+  .leaflet-control-attribution a{color:var(--text-4)!important;text-decoration:none}
+  .leaflet-control-attribution a:hover{color:var(--accent-bright)!important}
+
+  .leaflet-control-zoom{border:none!important;box-shadow:none!important}
+  .leaflet-control-zoom a{
+    background:var(--glass)!important;color:var(--text-2)!important;
+    border:1px solid var(--stroke)!important;width:30px!important;height:30px!important;
+    line-height:28px!important;font-size:16px!important;
+    backdrop-filter:blur(20px) saturate(140%);
+    -webkit-backdrop-filter:blur(20px) saturate(140%);
+    transition:background .16s ease,color .16s ease;
+  }
+  .leaflet-control-zoom a:first-child{border-radius:10px 10px 0 0!important}
+  .leaflet-control-zoom a:last-child{border-radius:0 0 10px 10px!important;border-top:none!important}
+  .leaflet-control-zoom a:hover{background:rgba(109,179,242,.24)!important;color:#fff!important}
+
+  /* ---------- 左上信息卡 ---------- */
+  .head{
+    position:absolute;top:16px;left:16px;z-index:600;
+    background:var(--glass);backdrop-filter:blur(20px) saturate(140%);
+    -webkit-backdrop-filter:blur(20px) saturate(140%);
+    border:1px solid var(--stroke);border-radius:16px;
+    padding:14px 18px;min-width:212px;
+    box-shadow:0 8px 32px rgba(0,0,0,.4);
+  }
+  .head h1{font-size:14px;font-weight:600;letter-spacing:.3px}
+  .head .sub{font-size:11px;color:var(--text-6);margin-top:4px;font-weight:300}
+  .head .place{
+    font-size:24px;font-weight:300;letter-spacing:.5px;margin-top:10px;
+    line-height:1.2;
+  }
+  .head .coord{font-size:10px;color:var(--text-6);margin-top:2px;font-variant-numeric:tabular-nums}
+  .head .credit{font-size:9.5px;color:rgba(255,255,255,.34);margin-top:7px;letter-spacing:.2px}
+  .head .credit a{color:rgba(255,255,255,.48);text-decoration:none}
+  .head .credit a:hover{color:var(--accent-bright)}
+
+  /* ---------- 城市快选 ---------- */
+  .cities{
+    position:absolute;top:16px;right:16px;z-index:600;
+    display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;max-width:340px;
+  }
+  .city{
+    background:var(--glass);backdrop-filter:blur(20px) saturate(140%);
+    -webkit-backdrop-filter:blur(20px) saturate(140%);
+    border:1px solid var(--stroke);border-radius:999px;
+    color:var(--text-4);font-size:12px;font-weight:400;
+    padding:7px 14px;cursor:pointer;transition:background .18s ease,border-color .18s ease,color .18s ease;
+    font-family:inherit;
+  }
+  .city:hover{background:rgba(109,179,242,.18);border-color:rgba(109,179,242,.4);color:var(--text-0)}
+  .city.on{background:rgba(109,179,242,.28);border-color:rgba(127,212,245,.65);color:#fff}
+
+  /* ---------- 底部控制台 ---------- */
+  .panel{
+    position:absolute;left:50%;bottom:28px;transform:translateX(-50%);
+    z-index:600;width:min(760px,calc(100% - 32px));
+    background:var(--glass);backdrop-filter:blur(24px) saturate(150%);
+    -webkit-backdrop-filter:blur(24px) saturate(150%);
+    border:1px solid var(--stroke);border-radius:20px;
+    padding:16px 20px 14px;box-shadow:0 12px 48px rgba(0,0,0,.55);
+  }
+  .row{display:flex;align-items:center;gap:14px}
+  .play{
+    flex:0 0 auto;width:44px;height:44px;border-radius:50%;
+    border:1px solid rgba(127,212,245,.4);
+    background:rgba(109,179,242,.2);color:#fff;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    transition:background .18s ease,transform .18s ease;
+  }
+  .play:hover{background:rgba(109,179,242,.36);transform:scale(1.06)}
+  .play:active{transform:scale(.96)}
+  .play svg{width:18px;height:18px;fill:currentColor}
+
+  .track-wrap{flex:1 1 auto;min-width:0}
+  .time-row{
+    display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+    margin-bottom:8px;font-variant-numeric:tabular-nums;
+  }
+  .now-time{font-size:19px;font-weight:400;letter-spacing:.4px;white-space:nowrap}
+  .now-time .tag{
+    font-size:10px;font-weight:500;color:rgba(255,255,255,.62);
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.16);
+    border-radius:999px;padding:2px 7px;margin-left:8px;vertical-align:middle;
+    letter-spacing:.5px;transition:color .2s ease,background .2s ease,border-color .2s ease;
+  }
+  .now-time .tag.is-latest{
+    color:var(--accent-bright);
+    background:rgba(109,179,242,.16);border-color:rgba(109,179,242,.3);
+  }
+  .range{font-size:11px;color:var(--text-6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  .slider{
+    -webkit-appearance:none;appearance:none;width:100%;height:5px;
+    border-radius:3px;outline:none;cursor:pointer;
+    background:linear-gradient(to right,var(--accent) 0%,var(--accent) var(--pct,0%),rgba(255,255,255,.14) var(--pct,0%),rgba(255,255,255,.14) 100%);
+  }
+  .slider::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;width:15px;height:15px;border-radius:50%;
+    background:#fff;border:2px solid var(--accent);cursor:pointer;
+    box-shadow:0 0 0 4px rgba(109,179,242,.2);transition:box-shadow .18s;
+  }
+  .slider::-webkit-slider-thumb:hover{box-shadow:0 0 0 6px rgba(109,179,242,.3)}
+  .slider::-moz-range-thumb{
+    width:15px;height:15px;border-radius:50%;background:#fff;
+    border:2px solid var(--accent);cursor:pointer;
+  }
+
+  /* ---------- 次级控制行 ---------- */
+  .sub-row{
+    display:flex;align-items:center;justify-content:space-between;
+    margin-top:12px;padding-top:11px;border-top:1px solid rgba(255,255,255,.07);
+    gap:10px;flex-wrap:wrap;
+  }
+  .seg{display:flex;gap:4px;background:rgba(255,255,255,.05);border-radius:999px;padding:3px}
+  .seg button{
+    border:none;background:transparent;color:var(--text-6);font-family:inherit;
+    font-size:11px;padding:5px 11px;border-radius:999px;cursor:pointer;
+    transition:background .16s ease,color .16s ease;white-space:nowrap;
+  }
+  .seg button:hover{color:var(--text-2)}
+  .seg button.on{background:rgba(109,179,242,.26);color:#fff}
+  .slider-mini{
+    -webkit-appearance:none;appearance:none;width:88px;height:4px;border-radius:2px;
+    background:rgba(255,255,255,.16);outline:none;cursor:pointer;vertical-align:middle;
+  }
+  .slider-mini::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;width:12px;height:12px;border-radius:50%;
+    background:#fff;border:2px solid var(--accent);cursor:pointer;
+  }
+  .slider-mini::-moz-range-thumb{
+    width:12px;height:12px;border-radius:50%;background:#fff;
+    border:2px solid var(--accent);cursor:pointer;
+  }
+  .lbl{font-size:11px;color:var(--text-6);display:flex;align-items:center;gap:7px;white-space:nowrap}
+
+  /* ---------- 降水图例 ---------- */
+  .legend{
+    position:absolute;right:16px;bottom:168px;z-index:600;
+    background:var(--glass);backdrop-filter:blur(20px) saturate(140%);
+    -webkit-backdrop-filter:blur(20px) saturate(140%);
+    border:1px solid var(--stroke);border-radius:14px;
+    padding:11px 13px;box-shadow:0 8px 32px rgba(0,0,0,.4);width:172px;
+  }
+  .legend .t{font-size:10px;color:var(--text-6);margin-bottom:7px;letter-spacing:.4px}
+  /* 图例色条取自瓦片真实像素（用 ui-review/sample-tile.mjs 抽样统计，
+     RainViewer「通用」配色实测是 深蓝 → 亮蓝 → 浅青 → 黄 → 橙 → 红，
+     不是常见美国雷达图那套「绿→黄→红」。图例必须跟着瓦片走，
+     否则屏幕上蓝雨配绿色图例，用户会以为自己在看别的东西。 */
+  .legend .bar{
+    height:8px;border-radius:4px;margin-bottom:5px;
+    background:linear-gradient(to right,#0058a0,#0098d8,#50c8e8,#88e0f0,#fff000,#ff8c00,#d40000);
+  }
+  .legend .scale{display:flex;justify-content:space-between;font-size:9px;color:var(--text-6);font-variant-numeric:tabular-nums}
+
+  /* ---------- 加载 / 错误遮罩 ---------- */
+  .mask{
+    position:absolute;inset:0;z-index:900;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:14px;padding:24px;
+    background:rgba(6,13,22,.9);transition:opacity .45s ease;
+  }
+  .mask.hide{opacity:0;pointer-events:none}
+  .spin{
+    width:34px;height:34px;border-radius:50%;
+    border:2px solid rgba(255,255,255,.12);border-top-color:var(--accent);
+    animation:spin .85s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .mask p{font-size:13px;color:var(--text-6);font-weight:300;text-align:center}
+  .mask .hint{
+    max-width:520px;font-size:11px;line-height:1.75;color:rgba(255,255,255,.42);
+    text-align:left;white-space:pre-line;word-break:break-all;
+    background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
+    border-radius:12px;padding:12px 14px;
+  }
+  .mask .retry{
+    font-family:inherit;font-size:12px;color:#fff;cursor:pointer;
+    background:rgba(109,179,242,.26);border:1px solid rgba(127,212,245,.55);
+    border-radius:999px;padding:8px 22px;transition:background .16s ease,transform .16s ease;
+  }
+  .mask .retry:hover{background:rgba(109,179,242,.42)}
+  .mask .retry:active{transform:scale(.97)}
+
+  /* ---------- 移动端 ---------- */
+  @media (max-width:720px){
+    /* 窄屏上城市按钮原来和被信息卡挤在同一行，390 宽度下直接压在卡片标题上。
+       改成顶部一条可横向滑动的一行，信息卡整体下移到它下面，两者不再重叠。 */
+    .cities{
+      top:10px;left:10px;right:10px;max-width:none;
+      flex-wrap:nowrap;justify-content:flex-start;gap:5px;
+      overflow-x:auto;overflow-y:hidden;
+      -webkit-overflow-scrolling:touch;
+      scrollbar-width:none;padding-bottom:2px;
+      /* 右边缘淡出，提示这一行还能继续滑（滚动条已被隐藏） */
+      mask-image:linear-gradient(to right,#000 86%,transparent 100%);
+      -webkit-mask-image:linear-gradient(to right,#000 86%,transparent 100%);
+    }
+    .cities::-webkit-scrollbar{display:none}
+    .city{font-size:11px;padding:5px 11px;flex:0 0 auto}
+    .head{top:52px;left:10px;padding:11px 14px;min-width:0;border-radius:14px;max-width:calc(100% - 20px)}
+    .head h1{font-size:12px}
+    .head .place{font-size:19px;margin-top:7px}
+    .head .credit{margin-top:5px}
+    /* 贴底：圆角只留上方，底部补安全区，避免被 Home 指示条压住 */
+    .panel{
+      left:0;right:0;bottom:0;transform:none;width:auto;
+      padding:13px 15px calc(11px + env(safe-area-inset-bottom));
+      border-radius:18px 18px 0 0;border-bottom:none;
+    }
+    .legend{display:none}
+    .sub-row{display:none}
+    .now-time{font-size:16px}
+    .row{gap:11px}
+    .play{width:40px;height:40px}
+    /* 缩放按钮让开贴底控制台 */
+    .leaflet-bottom.leaflet-left{bottom:104px}
+    /* 版权行同理：它默认贴在 bottom:0，正好压在控制台的时间行上 */
+    .leaflet-bottom.leaflet-right{bottom:96px}
+    .leaflet-control-attribution{font-size:9px!important;max-width:calc(100% - 60px)}
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    .mask{transition:none}
+    .spin{animation-duration:1.6s}
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- 左上信息卡 -->
+<div class="head">
+  <h1>雷达降水回放</h1>
+  <div class="sub">RainViewer · 过去 2 小时 · 10 分钟一帧</div>
+  <div class="place" id="placeName">北京</div>
+  <div class="coord" id="placeCoord">39.90°N, 116.41°E</div>
+  <div class="credit">
+    降水数据 Weather data by
+    <a href="https://www.rainviewer.com/api.html" target="_blank" rel="noopener">RainViewer</a>
+  </div>
+</div>
+
+<!-- 城市快选 -->
+<div class="cities" id="cities"></div>
+
+<!-- 底部控制台 -->
+<div class="panel">
+  <div class="row">
+    <button class="play" id="playBtn" type="button" title="播放 / 暂停（空格）" aria-label="播放或暂停">
+      <svg id="playIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+    </button>
+    <div class="track-wrap">
+      <div class="time-row">
+        <div class="now-time"><span id="nowTime">--:--</span><span class="tag" id="nowTag">最新</span></div>
+        <div class="range" id="range">--</div>
+      </div>
+      <input type="range" class="slider" id="slider" min="0" max="0" value="0" step="1"
+             aria-label="雷达帧时间轴">
+    </div>
+  </div>
+  <div class="sub-row">
+    <div class="lbl">配色 <div class="seg" id="colorSeg"></div></div>
+    <div class="lbl">
+      透明度
+      <input type="range" class="slider-mini" id="opacity" min="20" max="100" value="80" step="1"
+             aria-label="雨层透明度">
+    </div>
+  </div>
+</div>
+
+<!-- 降水强度图例 -->
+<div class="legend">
+  <div class="t">降水强度 (dBZ)</div>
+  <div class="bar"></div>
+  <div class="scale"><span>弱</span><span>中</span><span>强</span></div>
+</div>
+
+<!-- 加载 / 错误遮罩 -->
+<div class="mask" id="mask">
+  <div class="spin" id="maskSpin"></div>
+  <p id="maskText">正在获取雷达帧…</p>
+  <div class="hint" id="maskHint" hidden></div>
+  <button class="retry" id="retryBtn" type="button" hidden>重试</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  /* ============================================================
+     常量
+     ============================================================ */
+
+  var META_DEFAULT = 'https://api.rainviewer.com/public/weather-maps.json';
+  var TILE_HOST_FALLBACK = 'https://tilecache.rainviewer.com';
+
+  var FRAME_MS = 520;        // 单帧停留：交叉淡入必须明显短于它，否则永远在渐变中
+  var FADE_MS = 120;         // 交叉淡入时长，必须明显短于单帧停留 520ms
+  // 兜底超时：整层瓦片迟迟没有全部到齐时的最终期限。
+  // 实测这台机器上 RainViewer 单块瓦片要 1.3–12 秒（并发时更慢），
+  // 所以「先到一块就换帧」必然把剩下的瓦片全部中止 —— 那正是屏幕只剩底图的原因。
+  // 现在的策略是：旧帧一直亮着，等新帧整层 load 完再交叉淡入；这里只防它永远不来。
+  var LOAD_GUARD_MS = 15000;
+  // 首帧没有旧帧垫着，等满 15 秒就是纯底图，所以到 6 秒先把已到的瓦片亮出来
+  var FIRST_GUARD_MS = 6000;
+  var META_REFRESH_MS = 10 * 60 * 1000;
+  var META_TIMEOUT_MS = 12000;
+
+  // 官方瓦片在 z8 以上返回的是拉伸空图（字节数恒为 3269），
+  // 所以原生层级封顶 7，更高的地图缩放交给 Leaflet 上采样。
+  // 注意：Leaflet 的 maxNativeZoom 处在「地图缩放」空间，而 tileSize 512 + zoomOffset -1
+  // 会让实际请求的 URL zoom = 地图 zoom - 1，因此地图 z7 只会取到 URL z6，
+  // 永远不触碰 z8 的空图；代价是比官方上限少一级原生清晰度（想更锐可改成 8）。
+  var MAX_NATIVE_ZOOM = 7;
+  var MAX_ZOOM = 19;
+  // 初始视野刻意比「城市级」低一级：tileSize 512 + zoomOffset -1 让地图 z7 只请求
+  // URL z6，而 z6 这一层的雷达回波常常是空的（实测 2026-11-03 北京一带 URL z6
+  // 的 y=23/24 全空，雨带落在 y=25 的南侧），打开就是一片干净的底图。
+  // 降到 z6 后请求 URL z5，一屏能盖住整条雨带，首屏才看得到东西。
+  var CITY_ZOOM = 6;
+
+  // 首屏默认给「全国视野」而不是城市级：地图 z5 请求 URL z4，一屏就盖住整条雨带，
+  // 打开即可看到彩色回波；瓦片数量也从 36 块降到 6 块，整层 load 快得多。
+  // 城市按钮点击后再 flyTo 到 CITY_ZOOM，看细节。
+  var START_VIEW = { lat: 35.2, lon: 105.0, zoom: 5 };
+
+  /* 城市坐标（WGS84，与 RainViewer / CARTO 同坐标系，不需要 GCJ-02 纠偏） */
+  var CITIES = [
+    { name: '北京',     lat: 39.9042, lon: 116.4074 },
+    { name: '上海',     lat: 31.2304, lon: 121.4737 },
+    { name: '广州',     lat: 23.1291, lon: 113.2644 },
+    { name: '成都',     lat: 30.5728, lon: 104.0668 },
+    { name: '武汉',     lat: 30.5928, lon: 114.3055 },
+    { name: '西安',     lat: 34.3416, lon: 108.9398 },
+    { name: '杭州',     lat: 30.2741, lon: 120.1551 },
+    { name: '哈尔滨',   lat: 45.8038, lon: 126.5350 },
+    { name: '乌鲁木齐', lat: 43.8256, lon: 87.6168 }
+  ];
+
+  /* 底图无地名标注，这几个城市做常驻标签，用来定位与遮挡参照系 */
+  var MAJOR_CITIES = [
+    { name: '北京', lat: 39.9042, lon: 116.4074 },
+    { name: '上海', lat: 31.2304, lon: 121.4737 },
+    { name: '广州', lat: 23.1291, lon: 113.2644 },
+    { name: '成都', lat: 30.5728, lon: 104.0668 },
+    { name: '武汉', lat: 30.5928, lon: 114.3055 },
+    { name: '西安', lat: 34.3416, lon: 108.9398 },
+    { name: '沈阳', lat: 41.8057, lon: 123.4315 },
+    { name: '兰州', lat: 36.0611, lon: 103.8343 },
+    { name: '昆明', lat: 25.0389, lon: 102.7183 },
+    { name: '乌鲁木齐', lat: 43.8256, lon: 87.6168 },
+    { name: '拉萨', lat: 29.6520, lon: 91.1721 },
+    { name: '台北', lat: 25.0330, lon: 121.5654 }
+  ];
+
+  /* 配色方案。
+     注意：RainViewer 的 URL 里虽然有 color 字段，但实测对当前数据完全无效 ——
+     color=0…9 同一个瓦片返回的字节数与 md5 完全一致，换色等于没换。
+     所以这里不再依赖服务端，改用 CSS filter 在前端真正换色，切换即时生效、不重载瓦片。
+     只动亮度/对比度/饱和度，不做 hue-rotate：整条色带（绿→黄→橙→红）旋转后
+     会出现绿色回波变品红这种破色，不如不转。 */
+  var COLORS = [
+    { id: 2, name: '通用', filter: 'none' },
+    { id: 4, name: '增强', filter: 'contrast(1.55) saturate(1.5) brightness(1.05)' },
+    { id: 6, name: '柔和', filter: 'saturate(.72) brightness(.95) contrast(.94)' },
+    { id: 8, name: '灰阶', filter: 'grayscale(1) brightness(1.6)' }
+  ];
+
+  var ICON_PLAY = '<path d="M8 5v14l11-7z"/>';
+  var ICON_PAUSE = '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>';
+
+  /* ============================================================
+     状态
+     ============================================================ */
+
+  // 帧数组用稳定的引用：静默刷新时原地替换内容，
+  // 外部脚本拿到的 window.__radarFrames 不会变成一份过期快照。
+  var framesRef = [];
+
+  var state = {
+    frames: framesRef,
+    host: TILE_HOST_FALLBACK,
+    idx: 0,
+    playing: false,
+    color: 2,
+    opacity: 0.8,
+    metaUrl: resolveMetaUrl(),
+    loading: false,
+    error: null,
+    playTimer: null,
+    refreshTimer: null,
+    layers: [],      // 目前留在 DOM 里的雨层，正常最多 2 个（淡入中 + 淡出中）
+    front: null,     // 正在显示的那一层
+    pending: null,   // 已加入但还没淡入完成的层
+    swapToken: 0     // 递增令牌：让过期的淡入回调自己作废
+    ,
+    firstFrameDone: false  // 首帧是否已经亮过（首帧没有旧层兜底，用的超时更短）
+  };
+
+  var map = null;
+  var baseLayer = null;
+
+  var el = {
+    placeName: document.getElementById('placeName'),
+    placeCoord: document.getElementById('placeCoord'),
+    cities: document.getElementById('cities'),
+    slider: document.getElementById('slider'),
+    nowTime: document.getElementById('nowTime'),
+    nowTag: document.getElementById('nowTag'),
+    range: document.getElementById('range'),
+    playBtn: document.getElementById('playBtn'),
+    playIcon: document.getElementById('playIcon'),
+    colorSeg: document.getElementById('colorSeg'),
+    opacity: document.getElementById('opacity'),
+    mask: document.getElementById('mask'),
+    maskSpin: document.getElementById('maskSpin'),
+    maskText: document.getElementById('maskText'),
+    maskHint: document.getElementById('maskHint'),
+    retryBtn: document.getElementById('retryBtn')
+  };
+
+  /* ============================================================
+     小工具
+     ============================================================ */
+
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+
+  // time 是 UTC 秒；必须走本地时区显示，否则用户会对不上自己的钟
+  function fmtTime(sec) {
+    var d = new Date(sec * 1000);
+    return pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  function fmtDate(sec) {
+    var d = new Date(sec * 1000);
+    return (d.getMonth() + 1) + '月' + d.getDate() + '日';
+  }
+
+  function isTypingTarget(t) {
+    if (!t) return false;
+    var tag = (t.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+    return t.isContentEditable === true;
+  }
+
+  function currentFrame() {
+    return state.frames[state.idx] || null;
+  }
+
+  /* 允许用 ?meta=<url> 临时换一个元数据源（file:// 被 CORS 拦时的兜底入口） */
+  function resolveMetaUrl() {
+    try {
+      var raw = String(location.search || '').replace(/^\?/, '');
+      if (!raw) return META_DEFAULT;
+      var pairs = raw.split('&');
+      for (var i = 0; i < pairs.length; i++) {
+        if (!pairs[i]) continue;
+        var kv = pairs[i].split('=');
+        var key = decodeURIComponent(kv[0] || '');
+        if (key !== 'meta') continue;
+        var val = decodeURIComponent(kv.slice(1).join('=') || '').trim();
+        // 只放行 http(s) 与相对路径，避免 javascript: 之类的伪协议
+        if (!val) return META_DEFAULT;
+        if (/^https?:\/\//i.test(val)) return val;
+        if (/^[./]/.test(val)) return val;
+        return META_DEFAULT;
+      }
+    } catch (e) {
+      /* 参数解析失败就用默认地址，不该因为坏参数白屏 */
+    }
+    return META_DEFAULT;
+  }
+
+  /* ============================================================
+     调试出口（外部验证脚本依赖这两个全局，不要改名）
+     ============================================================ */
+
+  var api = {};
+
+  function exposeDebug() {
+    window.__radarFrames = framesRef;
+
+    var getters = {
+      index: function () { return state.idx; },
+      count: function () { return state.frames.length; },
+      playing: function () { return state.playing; },
+      color: function () { return state.color; },
+      opacity: function () { return state.opacity; },
+      host: function () { return state.host; },
+      metaUrl: function () { return state.metaUrl; },
+      loading: function () { return state.loading; },
+      error: function () {
+        return state.error ? String(state.error.message || state.error) : null;
+      },
+      frameTime: function () {
+        var f = currentFrame();
+        return f ? f.time : null;
+      },
+      frameTimeLocal: function () {
+        var f = currentFrame();
+        return f ? new Date(f.time * 1000).toString() : null;
+      },
+      frameMs: function () { return FRAME_MS; },
+      fadeMs: function () { return FADE_MS; },
+      layerCount: function () { return state.layers.length; }
+    };
+
+    Object.keys(getters).forEach(function (k) {
+      Object.defineProperty(api, k, { get: getters[k], enumerable: true });
+    });
+
+    api.play = function () { play(); };
+    api.pause = function () { pause(); };
+    api.toggle = function () { togglePlay(); };
+    api.next = function () { step(1); };
+    api.prev = function () { step(-1); };
+    api.goto = function (i) { setIndex(i); };
+    api.retry = function () { retryLoad(); };
+
+    window.__radarState = api;
+  }
+
+  /* ============================================================
+     地图
+     ============================================================ */
+
+  function initMap() {
+    map = L.map('map', {
+      center: [START_VIEW.lat, START_VIEW.lon],
+      zoom: START_VIEW.zoom,
+      minZoom: 3,
+      maxZoom: MAX_ZOOM,
+      zoomControl: false,
+      attributionControl: true,
+      worldCopyJump: true
+    });
+
+    // Esri「Dark Gray Canvas」底图（WGS84，与雷达瓦片同坐标系）。
+    // 为什么不用 CARTO：其免费瓦片已全线下线，任何 dark_all 请求虽然返回 200，
+    // 但内容是一张印着「API KEY REQUIRED」的水印图 —— curl 看状态码完全正常，
+    // 只有把图渲染出来才能发现，所以底图选型必须眼睛验收而不是看 HTTP 码。
+    baseLayer = L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+      {
+        maxZoom: MAX_ZOOM,
+        className: 'base-tiles',
+        // Esri 这套瓦片本身不带地名，且响应慢且偶发超时：给它一个长一点的
+        // 错误重试窗口，并且用自定义城市标注补上地名（见 addCityMarkers）。
+        attribution:
+          'Tiles &copy; <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a> ' +
+          '&mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors' +
+          ' &nbsp;|&nbsp; Weather data by ' +
+          '<a href="https://www.rainviewer.com/api.html" target="_blank" rel="noopener">RainViewer</a>'
+      }
+    ).addTo(map);
+
+    addCityMarkers();
+
+    // 缩放到左下：右上被城市胶囊占了，右下要给图例留位置
+    L.control.zoom({ position: 'bottomleft' }).addTo(map);
+
+    map.on('moveend', updatePlaceLabel);
+  }
+
+  // Esri Dark Gray 是无标注底图，地名得自己画，否则缩到省级完全看不出在哪
+  function addCityMarkers() {
+    var pin = 'background:rgba(127,212,245,.9);border-radius:50%;' +
+              'box-shadow:0 0 0 3px rgba(109,179,242,.22);';
+
+    MAJOR_CITIES.forEach(function (c) {
+      L.circleMarker([c.lat, c.lon], {
+        radius: 2.6,
+        color: 'rgba(127,212,245,.85)',
+        weight: 0,
+        fillColor: '#7fd4f5',
+        fillOpacity: 0.9,
+        interactive: false
+      }).addTo(map);
+
+      L.marker([c.lat, c.lon], {
+        interactive: false,
+        keyboard: false,
+        icon: L.divIcon({
+          className: 'city-label',
+          html: '<span style="' + pin + '"></span><b>' + c.name + '</b>',
+          iconSize: [0, 0],
+          iconAnchor: [-6, 5]
+        })
+      }).addTo(map);
+    });
+  }
+
+  function updatePlaceLabel() {
+    var c = map.getCenter();
+    var near = null;
+    var best = Infinity;
+
+    for (var i = 0; i < CITIES.length; i++) {
+      var d = Math.abs(CITIES[i].lat - c.lat) + Math.abs(CITIES[i].lon - c.lng);
+      if (d < best) { best = d; near = CITIES[i]; }
+    }
+
+    // 缩到省级以上时视野里根本容不下一座城市，硬套最近城市反而误导，
+    // 直接报「全国」；放回城市级再按最近城市判定。
+    if (map.getZoom() <= 5) {
+      el.placeName.textContent = '全国';
+      markCity('');
+    } else if (near && best < 1.2) {
+      el.placeName.textContent = near.name;
+      markCity(near.name);
+    } else {
+      el.placeName.textContent = '自由浏览';
+      markCity('');
+    }
+    el.placeCoord.textContent = fmtCoord(c.lat, c.lng);
+  }
+
+  function fmtCoord(lat, lng) {
+    return Math.abs(lat).toFixed(2) + '°' + (lat >= 0 ? 'N' : 'S') + ', ' +
+           Math.abs(lng).toFixed(2) + '°' + (lng >= 0 ? 'E' : 'W');
+  }
+
+  function markCity(name) {
+    var btns = el.cities.querySelectorAll('.city');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle('on', btns[i].dataset.name === name);
+    }
+  }
+
+  function buildCities() {
+    CITIES.forEach(function (c) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'city';
+      b.textContent = c.name;          // 文本节点，不拼 innerHTML
+      b.dataset.name = c.name;
+      b.addEventListener('click', function () {
+        map.flyTo([c.lat, c.lon], CITY_ZOOM, { duration: 0.9 });
+        el.placeName.textContent = c.name;
+        el.placeCoord.textContent = fmtCoord(c.lat, c.lon);
+        markCity(c.name);
+      });
+      el.cities.appendChild(b);
+    });
+    markCity(CITIES[0].name);
+  }
+
+  function buildColors() {
+    COLORS.forEach(function (c) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = c.name;
+      b.dataset.id = String(c.id);
+      if (c.id === state.color) b.classList.add('on');
+      b.addEventListener('click', function () {
+        if (state.color === c.id) return;
+        state.color = c.id;
+        var all = el.colorSeg.querySelectorAll('button');
+        for (var i = 0; i < all.length; i++) {
+          all[i].classList.toggle('on', Number(all[i].dataset.id) === state.color);
+        }
+        // 服务端 color 参数实测无效（见 COLORS 注释），换配色只是换 CSS filter，
+        // 图层和瓦片都不动，所以这里不调 applyFrame()，切换不卡不闪。
+        applyColorFilter();
+      });
+      el.colorSeg.appendChild(b);
+    });
+  }
+
+  /* 把当前配色方案应用到所有雨层 pane 上 */
+  function applyColorFilter() {
+    var f = 'none';
+    for (var i = 0; i < COLORS.length; i++) {
+      if (COLORS[i].id === state.color) { f = COLORS[i].filter; break; }
+    }
+    var panes = document.querySelectorAll('.rf-tiles');
+    for (var j = 0; j < panes.length; j++) panes[j].style.filter = f;
+    // 图例色条跟着一起变，否则切到灰阶/冷色时图例还挂着原始彩虹色，
+    // 屏幕上和图例里的颜色对不上，比图例本身没有更糟
+    var bar = document.querySelector('.legend .bar');
+    if (bar) bar.style.filter = f;
+  }
+
+  /* ============================================================
+     雨层：双图层交叉淡入
+     ============================================================ */
+
+  function tileTemplate(frame) {
+    // {host}{path}/512/{z}/{x}/{y}/{color}/{smooth}_{snow}.png
+    return state.host + frame.path + '/512/{z}/{x}/{y}/' + state.color + '/1_1.png';
+  }
+
+  function createRadarLayer(frame) {
+    var layer = L.tileLayer(tileTemplate(frame), {
+      tileSize: 512,
+      zoomOffset: -1,
+      minNativeZoom: 0,
+      maxNativeZoom: MAX_NATIVE_ZOOM,
+      maxZoom: MAX_ZOOM,
+      opacity: 0,          // 先完全透明：新层铺满之前旧层一直可见
+      zIndex: 6,
+      className: 'rf-tiles',
+      attribution: '',     // 署名统一由底图那层提供，避免每帧重复一条
+      updateWhenIdle: false,
+      keepBuffer: 1
+    });
+    state.layers.push(layer);
+    // 新层的 pane 是新建的 DOM 节点，配色 filter 要单独补上，
+    // 否则换过配色之后新出现的帧会回到默认色（只在切换那一帧看得出来）
+    layer.once('add', applyColorFilter);
+    return layer;
+  }
+
+  function hardRemove(layer) {
+    if (!layer) return;
+    if (map && map.hasLayer(layer)) map.removeLayer(layer);
+    var i = state.layers.indexOf(layer);
+    if (i !== -1) state.layers.splice(i, 1);
+    if (state.front === layer) state.front = null;
+    if (state.pending === layer) state.pending = null;
+  }
+
+  function reduceMotion() {
+    return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  }
+
+  /* 用 rAF 直接补间图层容器的 opacity，而不是依赖 CSS transition：
+     定时器会连续换帧，CSS 过渡在后台标签页会被节流，rAF 写法时序可控。 */
+  function fadeTo(layer, from, to, ms, onDone) {
+    if (!layer) return;
+    layer.setOpacity(from);
+    if (ms <= 0 || reduceMotion()) {
+      layer.setOpacity(to);
+      if (onDone) onDone();
+      return;
+    }
+    var t0 = 0;
+    function tick(ts) {
+      if (!map || !map.hasLayer(layer)) return;   // 中途被移除就停止补间
+      if (!t0) t0 = ts;
+      var p = Math.min(1, (ts - t0) / ms);
+      layer.setOpacity(from + (to - from) * p);
+      if (p < 1) {
+        requestAnimationFrame(tick);
+      } else if (onDone) {
+        onDone();
+      }
+    }
+    requestAnimationFrame(tick);
+  }
+
+  // 关键：新层加入后不是「先删旧层」，而是让新层渐显、旧层渐隐，
+  // 两屏瓦片在整个过渡期同时存在，屏幕不会出现空白。
+  function showFrame(frame) {
+    if (!map || !frame) return;
+
+    var old = state.front;
+    var stale = state.pending;
+
+    // 上一次淡入还没完成就被新的帧顶掉：它永远等不到接管，直接清掉
+    if (stale && stale !== old) hardRemove(stale);
+    state.pending = null;
+
+    var layer = createRadarLayer(frame);
+    state.pending = layer;
+
+    var token = ++state.swapToken;
+    var settled = false;
+    var guard = null;
+
+    function settle() {
+      if (settled || token !== state.swapToken) return;
+      settled = true;
+      if (guard) clearTimeout(guard);
+
+      state.pending = null;
+      state.front = layer;
+      state.firstFrameDone = true;
+
+      // 新层渐显 + 旧层渐隐同时开始 → 整个过程屏幕始终有雨层覆盖
+      fadeTo(layer, 0, state.opacity, FADE_MS);
+      if (old && old !== layer) {
+        fadeTo(old, old.options.opacity, 0, FADE_MS, function () { hardRemove(old); });
+        // 渐隐补间若因地图交互被打断，也保证最终被摘掉
+        setTimeout(function () { hardRemove(old); }, FADE_MS + 120);
+      }
+
+      // 兜底：极端情况下（快速拖滑块）残留的层不让它堆在 DOM 里
+      if (state.layers.length > 2) {
+        state.layers.slice().forEach(function (l) {
+          if (l !== state.front && l !== state.pending) hardRemove(l);
+        });
+      }
+
+      // 这一帧已经铺在屏幕上了，此刻才开始为下一帧计时：
+      // 网络慢的时候播放会变慢，但绝不会黑屏空转。
+      armNextFrame();
+    }
+
+    layer.addTo(map);
+
+    // 只在整层瓦片全部到齐（Leaflet 的 load 事件）时才接管画面。
+    // 早先用 tileload（第一块到达）触发，结果每次都在 0.5s 内换帧，
+    // 剩下十几块瓦片全部被中止，屏幕上什么也没有。
+    // 当前视野还没铺满时旧帧继续显示，所以等待期不是空白。
+    layer.once('load', settle);
+    // 首帧没有旧帧兜底，等太久就是一片纯底图，所以给它一个更早的截止时间，
+    // 到点就把已经到的瓦片亮出来（后面几帧再补齐）。
+    guard = setTimeout(settle, state.firstFrameDone ? LOAD_GUARD_MS : FIRST_GUARD_MS);
+  }
+
+  /* ============================================================
+     帧 / 时间显示
+     ============================================================ */
+
+  function applyFrame() {
+    var f = currentFrame();
+    if (!f) return;
+    updateFrameUI(f);
+    showFrame(f);
+  }
+
+  function updateFrameUI(f) {
+    var lastIdx = state.frames.length - 1;
+    var latestTime = state.frames[lastIdx].time;
+    var lagSec = Math.max(0, latestTime - f.time);
+    var label;
+
+    if (state.idx === lastIdx) label = '最新';
+    else if (lagSec < 90) label = '刚刚';
+    else label = Math.round(lagSec / 60) + ' 分钟前';
+
+    el.nowTime.textContent = fmtTime(f.time);
+    el.nowTag.textContent = label;
+    el.nowTag.classList.toggle('is-latest', state.idx === lastIdx);
+    el.range.textContent = fmtDate(f.time) + ' · 共 ' + state.frames.length + ' 帧';
+
+    el.slider.value = String(state.idx);
+    var pct = lastIdx > 0 ? (state.idx / lastIdx * 100) : 0;
+    el.slider.style.setProperty('--pct', pct + '%');
+
+    document.title = fmtTime(f.time) + ' · 雷达降水回放';
+  }
+
+  function syncSlider() {
+    var lastIdx = Math.max(0, state.frames.length - 1);
+    el.slider.max = String(lastIdx);
+    if (state.idx > lastIdx) state.idx = lastIdx;
+    el.slider.value = String(state.idx);
+  }
+
+  function setIndex(i) {
+    if (!state.frames.length) return;
+    var n = state.frames.length;
+    i = Number(i);
+    if (!isFinite(i)) return;
+    i = Math.max(0, Math.min(n - 1, Math.round(i)));
+    if (i === state.idx) { updateFrameUI(currentFrame()); return; }
+    state.idx = i;
+    applyFrame();
+  }
+
+  function step(delta) {
+    var n = state.frames.length;
+    if (!n) return;
+    pause();                       // 手动逐帧时停掉定时器，否则下一拍就被覆盖
+    state.idx = (state.idx + delta + n) % n;
+    applyFrame();
+  }
+
+  function nearestIndex(targetTime) {
+    var best = 0;
+    var bestD = Infinity;
+    for (var i = 0; i < state.frames.length; i++) {
+      var d = Math.abs(state.frames[i].time - targetTime);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+  }
+
+  /* ============================================================
+     播放控制
+     ============================================================ */
+
+  function setPlayIcon() {
+    el.playIcon.innerHTML = state.playing ? ICON_PAUSE : ICON_PLAY;
+    el.playBtn.setAttribute('aria-label', state.playing ? '暂停' : '播放');
+  }
+
+  // 播放不是固定节拍：每一帧都要等它真正铺满（或兜底超时）之后再计时，
+  // 否则在「瓦片 2–8 秒才到」的网络里，节拍永远跑在加载前面，屏幕上一直是空的。
+  // 第一轮会明显偏慢（每帧都要等下载），之后瓦片进了浏览器缓存（RainViewer 给
+  // max-age 48h），第二圈起就接近正常回放速度。
+  function armNextFrame() {
+    if (state.playTimer) {
+      clearTimeout(state.playTimer);
+      state.playTimer = null;
+    }
+    if (!state.playing) return;
+    // 还有帧在加载中：交给它的 settle() 去排下一拍，现在排会把它顶掉
+    if (state.pending) return;
+    state.playTimer = setTimeout(function () {
+      state.playTimer = null;
+      if (!state.playing) return;
+      var n = state.frames.length;
+      if (!n) return;
+      state.idx = (state.idx + 1) % n;
+      applyFrame();
+    }, FRAME_MS);
+  }
+
+  function play() {
+    if (state.playing || state.frames.length < 2) return;
+    state.playing = true;
+    setPlayIcon();
+    // 定时器只推进索引，绝不重新拉元数据
+    armNextFrame();
+  }
+
+  function pause() {
+    if (state.playTimer) {
+      clearTimeout(state.playTimer);
+      state.playTimer = null;
+    }
+    state.playing = false;
+    setPlayIcon();
+  }
+
+  function togglePlay() {
+    if (state.playing) pause(); else play();
+  }
+
+  function bindControls() {
+    el.playBtn.addEventListener('click', togglePlay);
+
+    el.slider.addEventListener('input', function () {
+      pause();
+      setIndex(Number(el.slider.value));
+    });
+
+    el.opacity.addEventListener('input', function () {
+      state.opacity = Number(el.opacity.value) / 100;
+      // 只改可见层，正在淡入的那层会在 settle 时取到最新透明度
+      if (state.front) state.front.setOpacity(state.opacity);
+    });
+
+    el.retryBtn.addEventListener('click', retryLoad);
+
+    // 键盘：输入框聚焦时让原生行为生效，不抢键
+    document.addEventListener('keydown', function (e) {
+      if (isTypingTarget(e.target)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      if (e.code === 'Space' || e.key === ' ') {
+        e.preventDefault();
+        togglePlay();
+      } else if (e.key === 'ArrowLeft' || e.code === 'ArrowLeft') {
+        e.preventDefault();
+        step(-1);
+      } else if (e.key === 'ArrowRight' || e.code === 'ArrowRight') {
+        e.preventDefault();
+        step(1);
+      }
+    });
+  }
+
+  /* ============================================================
+     元数据
+     ============================================================ */
+
+  function showMask() {
+    el.mask.classList.remove('hide');
+    el.maskSpin.hidden = false;
+    el.maskHint.hidden = true;
+    el.retryBtn.hidden = true;
+    el.maskText.textContent = '正在获取雷达帧…';
+  }
+
+  function hideMask() {
+    el.mask.classList.add('hide');
+  }
+
+  function showError(err) {
+    var msg = (err && err.message) ? err.message : String(err);
+
+    state.error = err;
+    el.maskSpin.hidden = true;
+    el.maskText.textContent = '雷达数据加载失败';
+    el.maskHint.hidden = false;
+    // 全部走 textContent：错误信息来自接口/浏览器，绝不拼进 innerHTML
+    el.maskHint.textContent = [
+      '原因：' + msg,
+      '请求地址：' + state.metaUrl,
+      '',
+      '若通过 file:// 直接打开，浏览器会把 Origin 视为 null 并拦截跨域请求。',
+      '两种兜底方式：',
+      '1) 在本目录执行 python -m http.server 8080，再访问 http://localhost:8080/docs/radar-demo.html；',
+      '2) 在地址后追加 ?meta=<可访问的元数据地址>，手动指定数据源。'
+    ].join('\n');
+    el.retryBtn.hidden = false;
+    el.mask.classList.remove('hide');
+  }
+
+  function retryLoad() {
+    state.error = null;
+    loadMeta(false);
+  }
+
+  function loadMeta(isRefresh) {
+    if (state.loading) {
+      // 静默刷新撞上未完成的请求：一小会儿后再试，不要丢掉刷新节奏
+      if (isRefresh) scheduleRefresh();
+      return;
+    }
+
+    state.loading = true;
+    if (!isRefresh) showMask();
+
+    var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+    var timeoutId = ctrl ? setTimeout(function () {
+      try { ctrl.abort(); } catch (e) { /* 已经结束 */ }
+    }, META_TIMEOUT_MS) : null;
+
+    fetch(state.metaUrl, {
+      cache: 'no-store',
+      mode: 'cors',
+      credentials: 'omit',
+      signal: ctrl ? ctrl.signal : undefined
+    }).then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    }).then(function (json) {
+      if (timeoutId) clearTimeout(timeoutId);
+      state.loading = false;
+      state.error = null;
+
+      applyMeta(json, isRefresh);
+      syncSlider();
+
+      if (isRefresh) {
+        applyFrame();          // 保持用户当前看的时间点
+      } else {
+        state.idx = state.frames.length - 1;   // 首次进入停在最新帧
+        syncSlider();
+        applyFrame();
+        play();
+      }
+      hideMask();
+      scheduleRefresh();
+    }).catch(function (err) {
+      if (timeoutId) clearTimeout(timeoutId);
+      state.loading = false;
+
+      if (isRefresh) {
+        // 静默刷新失败不打扰用户：旧帧继续可用，下个周期再试
+        console.warn('[radar] 元数据静默刷新失败：', err && err.message);
+        scheduleRefresh();
+        return;
+      }
+
+      console.error('[radar] 元数据加载失败：', err);
+      pause();
+      showError(err);
+    });
+  }
+
+  function applyMeta(json, isRefresh) {
+    if (!json || !json.radar || !Array.isArray(json.radar.past) || !json.radar.past.length) {
+      throw new Error('元数据里没有可用的雷达帧');
+    }
+
+    var list = json.radar.past.filter(function (f) {
+      return f && typeof f.time === 'number' && typeof f.path === 'string' && f.path;
+    }).map(function (f) {
+      return { time: f.time, path: f.path };
+    }).sort(function (a, b) { return a.time - b.time; });
+
+    if (!list.length) throw new Error('元数据里的雷达帧格式不可用');
+
+    var host = (typeof json.host === 'string' && /^https?:\/\//i.test(json.host))
+      ? json.host.replace(/\/+$/, '')
+      : TILE_HOST_FALLBACK;
+
+    var prev = currentFrame();
+    var prevLatest = state.frames.length ? state.frames[state.frames.length - 1].time : null;
+
+    state.host = host;
+
+    // 原地更新，保证 window.__radarFrames 一直是同一个（有效的）数组
+    framesRef.length = 0;
+    Array.prototype.push.apply(framesRef, list);
+
+    if (isRefresh && prev && prevLatest !== null) {
+      // 保持「相对最新帧的时间偏移」而不是下标：新帧进来后下标会整体错位
+      var offset = prevLatest - prev.time;
+      state.idx = nearestIndex(framesRef[framesRef.length - 1].time - offset);
+    } else if (!isRefresh) {
+      state.idx = framesRef.length - 1;
+    }
+  }
+
+  function scheduleRefresh() {
+    if (state.refreshTimer) clearTimeout(state.refreshTimer);
+    state.refreshTimer = setTimeout(function () {
+      loadMeta(true);
+    }, META_REFRESH_MS);
+  }
+
+  /* ============================================================
+     启动
+     ============================================================ */
+
+  function boot() {
+    initMap();
+    buildCities();
+    buildColors();
+    applyColorFilter();
+    // 首屏视野是全国，左上角不能还挂着 HTML 里写死的「北京」，
+    // 交给同一个函数按地图中心算（此时中心不在任何城市附近 → 显示「自由浏览」）
+    updatePlaceLabel();
+    bindControls();
+    exposeDebug();
+    setPlayIcon();
+    loadMeta(false);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+
+})();
+</script>
+</body>
+</html>

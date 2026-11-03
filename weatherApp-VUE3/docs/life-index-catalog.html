@@ -1,0 +1,642 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>生活指数 · 全部可能结果与图标</title>
+<style>
+  :root {
+    --bg: #0d1220;
+    --bg2: #141b2c;
+    --card: rgba(255,255,255,.045);
+    --line: rgba(255,255,255,.09);
+    --text: #e8edf6;
+    --text2: #9aa8bd;
+    --text3: #6d7c93;
+    --accent: #7fb2ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 40px 20px 80px;
+    background:
+      radial-gradient(900px 500px at 12% -8%, rgba(90,130,255,.16), transparent 65%),
+      radial-gradient(800px 460px at 92% 4%, rgba(120,90,255,.12), transparent 62%),
+      var(--bg);
+    color: var(--text);
+    font: 15px/1.65 -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  .hero { margin-bottom: 34px; }
+  .hero .kicker {
+    display: inline-block; font-size: 12px; letter-spacing: .18em;
+    text-transform: uppercase; color: var(--accent); margin-bottom: 10px;
+  }
+  h1 { margin: 0 0 10px; font-size: 30px; font-weight: 650; letter-spacing: -.01em; }
+  .hero p { margin: 0; color: var(--text2); max-width: 62ch; }
+  .stats { display: flex; gap: 26px; margin-top: 22px; flex-wrap: wrap; }
+  .stat b { display: block; font-size: 24px; font-weight: 600; }
+  .stat span { font-size: 12.5px; color: var(--text3); }
+  .toc { display: flex; gap: 8px; flex-wrap: wrap; margin: 26px 0 34px; }
+  .toc a {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 7px 14px 7px 11px; border-radius: 999px;
+    border: 1px solid var(--line); background: rgba(255,255,255,.03);
+    color: var(--text2); text-decoration: none; font-size: 13px;
+    transition: .18s;
+  }
+  .toc a:hover { color: var(--text); border-color: rgba(127,178,255,.5); background: rgba(127,178,255,.09); }
+  .toc svg { opacity: .8; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 22px 24px 24px;
+    margin-bottom: 20px;
+    backdrop-filter: blur(6px);
+  }
+  .card > header { display: flex; align-items: center; gap: 13px; margin-bottom: 4px; }
+  .head-ico {
+    display: grid; place-items: center; width: 46px; height: 46px;
+    border-radius: 12px; background: rgba(127,178,255,.12); color: var(--accent);
+    flex: 0 0 auto;
+  }
+  h2 { margin: 0; font-size: 19px; font-weight: 600; }
+  .count { margin: 1px 0 0; font-size: 12.5px; color: var(--text3); }
+  .basis { margin: 12px 0 16px; font-size: 13.5px; color: var(--text2); line-height: 1.7; }
+  h3 {
+    margin: 20px 0 9px; font-size: 12.5px; font-weight: 600;
+    letter-spacing: .06em; color: var(--text3); text-transform: uppercase;
+  }
+  .rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+  .rows.tail { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); }
+  .row {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 13px;
+    border-radius: 11px;
+    background: rgba(255,255,255,.028);
+    border: 1px solid transparent;
+    transition: .16s;
+  }
+  .row:hover { background: rgba(127,178,255,.07); border-color: rgba(127,178,255,.24); }
+  .ico { display: grid; place-items: center; color: var(--text3); }
+  .row:hover .ico { color: var(--accent); }
+  .txt { display: flex; flex-direction: column; min-width: 0; }
+  .txt b { font-weight: 550; font-size: 14.5px; }
+  .txt small { color: var(--text3); font-size: 12.5px; }
+  .mark code {
+    font: 12px/1 ui-monospace, Consolas, monospace;
+    color: var(--text2); background: rgba(255,255,255,.055);
+    padding: 5px 9px; border-radius: 6px; white-space: nowrap;
+  }
+  .score { margin-top: 20px; padding-top: 16px; border-top: 1px dashed var(--line); }
+  .score table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .score th {
+    text-align: left; font-weight: 500; color: var(--text2);
+    padding: 6px 14px 6px 0; white-space: nowrap; width: 108px; vertical-align: top;
+  }
+  .score td { padding: 6px 0; color: var(--text3); }
+  footer { margin-top: 40px; color: var(--text3); font-size: 12.5px; text-align: center; }
+  @media (max-width: 700px) {
+    body { padding: 26px 14px 60px; }
+    h1 { font-size: 23px; }
+    .card { padding: 18px 15px 20px; border-radius: 13px; }
+    .row { grid-template-columns: 34px minmax(0, 1fr); gap: 10px; }
+    .mark { grid-column: 2; }
+    .mark code { padding: 3px 7px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hero">
+    <span class="kicker">Life Index</span>
+    <h1>生活指数 · 全部可能结果与对应图标</h1>
+    <p>六项指数由 <code>src/utils/lifeIndex.js</code> 依「当前实况 + 今日 / 明日预报 + 空气质量」算出。图标不表达好坏，只表达结论本身：适合洗车是 <b>car</b>，不宜洗车是 <b>car-off</b>；跑得动是 <b>run</b>，出不了门是 <b>ban</b>。配色换了也不会读错。</p>
+    <div class="stats">
+      <div class="stat"><b>54</b><span>条结果分支</span></div>
+      <div class="stat"><b>23</b><span>个 Tabler 图标</span></div>
+      <div class="stat"><b>6</b><span>项指数</span></div>
+    </div>
+  </div>
+
+  <nav class="toc">
+    <a href="#clothing"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4l6 2v5h-3v8a1 1 0 0 1 -1 1h-10a1 1 0 0 1 -1 -1v-8h-3v-5l6 -2a3 3 0 0 0 6 0"/></svg>穿衣</a><a href="#sunscreen"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 12a4 4 0 1 0 8 0a4 4 0 1 0 -8 0"/><path d="M3 12h1m8 -9v1m8 8h1m-9 8v1m-6.4 -15.4l.7 .7m12.1 -.7l-.7 .7m0 11.4l.7 .7m-12.1 -.7l-.7 .7"/></svg>防晒</a><a href="#outdoor"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.007 5a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M4 17l5 1l.75 -1.5"/><path d="M15 21v-4l-4 -3l1 -6"/><path d="M7 12v-3l5 -1l3 3l3 1"/></svg>户外运动</a><a href="#carwash"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M15 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M5 17h-2v-6l2 -5h9l4 5h1a2 2 0 0 1 2 2v4h-2m-4 0h-6m-6 -6h15m-6 0v-5"/></svg>洗车</a><a href="#umbrella"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 0 1 16 0l-16 0"/><path d="M12 12v6a2 2 0 0 0 4 0"/></svg>带伞</a><a href="#illness"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 5a2.828 2.828 0 0 1 0 4l-8 8h-4v-4l8 -8a2.828 2.828 0 0 1 4 0"/><path d="M16 7l-1.5 -1.5"/><path d="M13 10l-1.5 -1.5"/><path d="M10 13l-1.5 -1.5"/><path d="M7 17l-3 3"/></svg>疾病风险</a>
+  </nav>
+
+  
+  <section id="clothing" class="card">
+    <header>
+      <span class="head-ico"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4l6 2v5h-3v8a1 1 0 0 1 -1 1h-10a1 1 0 0 1 -1 -1v-8h-3v-5l6 -2a3 3 0 0 0 6 0"/></svg></span>
+      <div>
+        <h2>穿衣</h2>
+        <p class="count">12 种结果</p>
+      </div>
+    </header>
+    <p class="basis">按「全天平均体感温度」分档：今日高低温均值 + 半数体感偏差。右下角小字在温差 ≥10° 时显示温差，否则显示最低温。</p>
+    <ul class="rows">
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4l6 2v5h-3v8a1 1 0 0 1 -1 1h-10a1 1 0 0 1 -1 -1v-8h-3v-5l6 -2a3 3 0 0 0 6 0"/></svg></span>
+          <span class="txt">
+            <b>适宜短袖短裤</b>
+            <small>≥ 32°</small>
+          </span>
+          <span class="mark"></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4l6 2v5h-3v8a1 1 0 0 1 -1 1h-10a1 1 0 0 1 -1 -1v-8h-3v-5l6 -2a3 3 0 0 0 6 0"/></svg></span>
+          <span class="txt">
+            <b>适宜短袖</b>
+            <small>28 – 32°</small>
+          </span>
+          <span class="mark"></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4l6 2v5h-3v8a1 1 0 0 1 -1 1h-10a1 1 0 0 1 -1 -1v-8h-3v-5l6 -2a3 3 0 0 0 6 0"/></svg></span>
+          <span class="txt">
+            <b>适宜薄长袖</b>
+            <small>24 – 28°</small>
+          </span>
+          <span class="mark"></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4l6 2v5h-3v8a1 1 0 0 1 -1 1h-10a1 1 0 0 1 -1 -1v-8h-3v-5l6 -2a3 3 0 0 0 6 0"/></svg></span>
+          <span class="txt">
+            <b>适宜长袖</b>
+            <small>20 – 24°</small>
+          </span>
+          <span class="mark"></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3l-4 5l-4 -5"/><path d="M12 19a2 2 0 0 1 -2 2h-4a2 2 0 0 1 -2 -2v-8.172a2 2 0 0 1 .586 -1.414l.828 -.828a2 2 0 0 0 .586 -1.414v-2.172a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v2.172a2 2 0 0 0 .586 1.414l.828 .828a2 2 0 0 1 .586 1.414v8.172a2 2 0 0 1 -2 2h-4a2 2 0 0 1 -2 -2"/><path d="M20 13h-3a1 1 0 0 0 -1 1v2a1 1 0 0 0 1 1h3"/><path d="M4 17h3a1 1 0 0 0 1 -1v-2a1 1 0 0 0 -1 -1h-3"/><path d="M12 19v-11"/></svg></span>
+          <span class="txt">
+            <b>适宜卫衣或外套</b>
+            <small>16 – 20°</small>
+          </span>
+          <span class="mark"></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3l-4 5l-4 -5"/><path d="M12 19a2 2 0 0 1 -2 2h-4a2 2 0 0 1 -2 -2v-8.172a2 2 0 0 1 .586 -1.414l.828 -.828a2 2 0 0 0 .586 -1.414v-2.172a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v2.172a2 2 0 0 0 .586 1.414l.828 .828a2 2 0 0 1 .586 1.414v8.172a2 2 0 0 1 -2 2h-4a2 2 0 0 1 -2 -2"/><path d="M20 13h-3a1 1 0 0 0 -1 1v2a1 1 0 0 0 1 1h3"/><path d="M4 17h3a1 1 0 0 0 1 -1v-2a1 1 0 0 0 -1 -1h-3"/><path d="M12 19v-11"/></svg></span>
+          <span class="txt">
+            <b>适宜夹克或毛衣</b>
+            <small>12 – 16°</small>
+          </span>
+          <span class="mark"></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3l-4 5l-4 -5"/><path d="M12 19a2 2 0 0 1 -2 2h-4a2 2 0 0 1 -2 -2v-8.172a2 2 0 0 1 .586 -1.414l.828 -.828a2 2 0 0 0 .586 -1.414v-2.172a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v2.172a2 2 0 0 0 .586 1.414l.828 .828a2 2 0 0 1 .586 1.414v8.172a2 2 0 0 1 -2 2h-4a2 2 0 0 1 -2 -2"/><path d="M20 13h-3a1 1 0 0 0 -1 1v2a1 1 0 0 0 1 1h3"/><path d="M4 17h3a1 1 0 0 0 1 -1v-2a1 1 0 0 0 -1 -1h-3"/><path d="M12 19v-11"/></svg></span>
+          <span class="txt">
+            <b>适宜风衣或毛衣</b>
+            <small>8 – 12°</small>
+          </span>
+          <span class="mark"></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3l-4 5l-4 -5"/><path d="M12 19a2 2 0 0 1 -2 2h-4a2 2 0 0 1 -2 -2v-8.172a2 2 0 0 1 .586 -1.414l.828 -.828a2 2 0 0 0 .586 -1.414v-2.172a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v2.172a2 2 0 0 0 .586 1.414l.828 .828a2 2 0 0 1 .586 1.414v8.172a2 2 0 0 1 -2 2h-4a2 2 0 0 1 -2 -2"/><path d="M20 13h-3a1 1 0 0 0 -1 1v2a1 1 0 0 0 1 1h3"/><path d="M4 17h3a1 1 0 0 0 1 -1v-2a1 1 0 0 0 -1 -1h-3"/><path d="M12 19v-11"/></svg></span>
+          <span class="txt">
+            <b>适宜棉服或大衣</b>
+            <small>4 – 8°</small>
+          </span>
+          <span class="mark"></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 4l2 1l2 -1"/><path d="M12 2v6.5l3 1.72"/><path d="M17.928 6.268l.134 2.232l1.866 1.232"/><path d="M20.66 7l-5.629 3.25l.01 3.458"/><path d="M19.928 14.268l-1.866 1.232l-.134 2.232"/><path d="M20.66 17l-5.629 -3.25l-2.99 1.738"/><path d="M14 20l-2 -1l-2 1"/><path d="M12 22v-6.5l-3 -1.72"/><path d="M6.072 17.732l-.134 -2.232l-1.866 -1.232"/><path d="M3.34 17l5.629 -3.25l-.01 -3.458"/><path d="M4.072 9.732l1.866 -1.232l.134 -2.232"/><path d="M3.34 7l5.629 3.25l2.99 -1.738"/></svg></span>
+          <span class="txt">
+            <b>适宜羽绒加围巾</b>
+            <small>0 – 4°</small>
+          </span>
+          <span class="mark"></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 4l2 1l2 -1"/><path d="M12 2v6.5l3 1.72"/><path d="M17.928 6.268l.134 2.232l1.866 1.232"/><path d="M20.66 7l-5.629 3.25l.01 3.458"/><path d="M19.928 14.268l-1.866 1.232l-.134 2.232"/><path d="M20.66 17l-5.629 -3.25l-2.99 1.738"/><path d="M14 20l-2 -1l-2 1"/><path d="M12 22v-6.5l-3 -1.72"/><path d="M6.072 17.732l-.134 -2.232l-1.866 -1.232"/><path d="M3.34 17l5.629 -3.25l-.01 -3.458"/><path d="M4.072 9.732l1.866 -1.232l.134 -2.232"/><path d="M3.34 7l5.629 3.25l2.99 -1.738"/></svg></span>
+          <span class="txt">
+            <b>适宜厚羽绒</b>
+            <small>-6 – 0°</small>
+          </span>
+          <span class="mark"></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18"/><path d="M6 21v-15"/><path d="M7.18 3.175c.25 -.112 .528 -.175 .82 -.175h8a2 2 0 0 1 2 2v9"/><path d="M18 18v3"/><path d="M3 3l18 18"/></svg></span>
+          <span class="txt">
+            <b>不宜出门</b>
+            <small>< -6°</small>
+          </span>
+          <span class="mark"></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M12 17l0 .01"/><path d="M12 13.5a1.5 1.5 0 0 1 1 -1.5a2.6 2.6 0 1 0 -3 -4"/></svg></span>
+          <span class="txt">
+            <b>暂无穿衣数据</b>
+            <small>数据缺失</small>
+          </span>
+          <span class="mark"></span>
+        </li></ul>
+    
+  </section>
+  <section id="sunscreen" class="card">
+    <header>
+      <span class="head-ico"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 12a4 4 0 1 0 8 0a4 4 0 1 0 -8 0"/><path d="M3 12h1m8 -9v1m8 8h1m-9 8v1m-6.4 -15.4l.7 .7m12.1 -.7l-.7 .7m0 11.4l.7 .7m-12.1 -.7l-.7 .7"/></svg></span>
+      <div>
+        <h2>防晒</h2>
+        <p class="count">6 种结果</p>
+      </div>
+    </header>
+    <p class="basis">按当日紫外线峰值（不是瞬时值，傍晚瞬时值总是接近 0）分档，口径取国际通行的 UV 指数：低 / 中等 / 高 / 很高 / 极高。雪天（天气码 71 73 75 77 85 86）再整体抬一档，因为雪面反射会让紫外线被低估。</p>
+    <ul class="rows">
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 12a4 4 0 1 0 8 0a4 4 0 1 0 -8 0"/><path d="M3 12h1m8 -9v1m8 8h1m-9 8v1m-6.4 -15.4l.7 .7m12.1 -.7l-.7 .7m0 11.4l.7 .7m-12.1 -.7l-.7 .7"/></svg></span>
+          <span class="txt">
+            <b>无需防晒</b>
+            <small>UV < 3</small>
+          </span>
+          <span class="mark"><code>低</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 12a4 4 0 1 0 8 0a4 4 0 1 0 -8 0"/><path d="M4 12h.01"/><path d="M12 4v.01"/><path d="M20 12h.01"/><path d="M12 20v.01"/><path d="M6.31 6.31l-.01 -.01"/><path d="M17.71 6.31l-.01 -.01"/><path d="M17.7 17.7l.01 .01"/><path d="M6.3 17.7l.01 .01"/></svg></span>
+          <span class="txt">
+            <b>建议防晒</b>
+            <small>3 ≤ UV < 6</small>
+          </span>
+          <span class="mark"><code>中等</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.828 14.828a4 4 0 1 0 -5.656 -5.656a4 4 0 0 0 5.656 5.656"/><path d="M6.343 17.657l-1.414 1.414"/><path d="M6.343 6.343l-1.414 -1.414"/><path d="M17.657 6.343l1.414 -1.414"/><path d="M17.657 17.657l1.414 1.414"/><path d="M4 12h-2"/><path d="M12 4v-2"/><path d="M20 12h2"/><path d="M12 20v2"/></svg></span>
+          <span class="txt">
+            <b>需要防晒</b>
+            <small>6 ≤ UV < 8</small>
+          </span>
+          <span class="mark"><code>高</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.828 14.828a4 4 0 1 0 -5.656 -5.656a4 4 0 0 0 5.656 5.656"/><path d="M6.343 17.657l-1.414 1.414"/><path d="M6.343 6.343l-1.414 -1.414"/><path d="M17.657 6.343l1.414 -1.414"/><path d="M17.657 17.657l1.414 1.414"/><path d="M4 12h-2"/><path d="M12 4v-2"/><path d="M20 12h2"/><path d="M12 20v2"/></svg></span>
+          <span class="txt">
+            <b>加强防晒</b>
+            <small>8 ≤ UV < 11</small>
+          </span>
+          <span class="mark"><code>很高</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M16 12a4 4 0 0 0 -4 -4m-2.834 1.177a4 4 0 0 0 5.66 5.654"/><path d="M3 12h1m8 -9v1m8 8h1m-9 8v1m-6.4 -15.4l.7 .7m12.1 -.7l-.7 .7m0 11.4l.7 .7m-12.1 -.7l-.7 .7"/></svg></span>
+          <span class="txt">
+            <b>避免暴晒</b>
+            <small>UV ≥ 11</small>
+          </span>
+          <span class="mark"><code>极高</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M16 12a4 4 0 0 0 -4 -4m-2.834 1.177a4 4 0 0 0 5.66 5.654"/><path d="M3 12h1m8 -9v1m8 8h1m-9 8v1m-6.4 -15.4l.7 .7m12.1 -.7l-.7 .7m0 11.4l.7 .7m-12.1 -.7l-.7 .7"/></svg></span>
+          <span class="txt">
+            <b>暂无防晒数据</b>
+            <small>数据缺失</small>
+          </span>
+          <span class="mark"></span>
+        </li></ul>
+    
+  </section>
+  <section id="outdoor" class="card">
+    <header>
+      <span class="head-ico"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.007 5a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M4 17l5 1l.75 -1.5"/><path d="M15 21v-4l-4 -3l1 -6"/><path d="M7 12v-3l5 -1l3 3l3 1"/></svg></span>
+      <div>
+        <h2>户外运动</h2>
+        <p class="count">10 种结果</p>
+      </div>
+    </header>
+    <p class="basis">先走「一票否决」：命中任意一条直接判不宜户外运动，不再看分数。否则按 7 项累计扣分（分数越高越不适合），再分四档。右下角小字按「降水 → 空气 → 风 → 体感」的优先级挑一个最有解释力的数字。</p>
+    <h3>一票否决（不看分数）</h3><ul class="rows">
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M5.7 5.7l12.6 12.6"/></svg></span>
+          <span class="txt">
+            <b>不宜户外运动</b>
+            <small>雷雨（天气码 95 / 96 / 99）</small>
+          </span>
+          <span class="mark"><code>雷雨</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M5.7 5.7l12.6 12.6"/></svg></span>
+          <span class="txt">
+            <b>不宜户外运动</b>
+            <small>重雨雪码（65 67 75 82 86 96 99）或降水概率 ≥ 85%</small>
+          </span>
+          <span class="mark"><code>降水 N%</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M5.7 5.7l12.6 12.6"/></svg></span>
+          <span class="txt">
+            <b>不宜户外运动</b>
+            <small>AQI ≥ 200</small>
+          </span>
+          <span class="mark"><code>AQI N</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M5.7 5.7l12.6 12.6"/></svg></span>
+          <span class="txt">
+            <b>不宜户外运动</b>
+            <small>风速 ≥ 39 km/h</small>
+          </span>
+          <span class="mark"><code>风 N km/h</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M5.7 5.7l12.6 12.6"/></svg></span>
+          <span class="txt">
+            <b>不宜户外运动</b>
+            <small>体感 ≥ 35° 或 ≤ -8°</small>
+          </span>
+          <span class="mark"><code>体感 N°</code></span>
+        </li></ul><h3>按累计分档</h3><ul class="rows">
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.007 5a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M4 17l5 1l.75 -1.5"/><path d="M15 21v-4l-4 -3l1 -6"/><path d="M7 12v-3l5 -1l3 3l3 1"/></svg></span>
+          <span class="txt">
+            <b>适合户外运动</b>
+            <small>累计分 ≤ 1</small>
+          </span>
+          <span class="mark"></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/><path d="M7 21l3 -4"/><path d="M16 21l-2 -4l-3 -3l1 -6"/><path d="M6 12l2 -3l4 -1l3 3l3 1"/></svg></span>
+          <span class="txt">
+            <b>可以户外运动</b>
+            <small>累计分 = 2</small>
+          </span>
+          <span class="mark"></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.633 5.64a9 9 0 1 0 12.735 12.72m1.674 -2.32a9 9 0 0 0 -12.082 -12.082"/><path d="M12 7v1"/><path d="M3 3l18 18"/></svg></span>
+          <span class="txt">
+            <b>不宜久待户外</b>
+            <small>累计分 3 – 4</small>
+          </span>
+          <span class="mark"></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M5.7 5.7l12.6 12.6"/></svg></span>
+          <span class="txt">
+            <b>不宜户外运动</b>
+            <small>累计分 ≥ 5</small>
+          </span>
+          <span class="mark"></span>
+        </li></ul><ul class="rows tail">
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M5.7 5.7l12.6 12.6"/></svg></span>
+          <span class="txt">
+            <b>暂无户外数据</b>
+            <small>体感与降水概率都缺失</small>
+          </span>
+          <span class="mark"></span>
+        </li></ul>
+    <div class="score"><h3>扣分项（累计分怎么来的）</h3><table><tr><th>降水概率</th><td>≥60% 加 2 分，≥30% 加 1 分</td></tr><tr><th>日雨量</th><td>≥5mm 加 2 分，≥1mm 加 1 分</td></tr><tr><th>风速</th><td>≥25km/h 加 2 分，≥15km/h 加 1 分</td></tr><tr><th>空气质量</th><td>AQI ≥150 加 3 分，≥100 加 2 分</td></tr><tr><th>能见度</th><td><2km 加 1 分</td></tr><tr><th>体感温度</th><td>15–24° 加 0；10–15° 或 24–28° 加 1；0–10° 或 28–32° 加 2；其余加 3</td></tr></table></div>
+  </section>
+  <section id="carwash" class="card">
+    <header>
+      <span class="head-ico"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M15 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M5 17h-2v-6l2 -5h9l4 5h1a2 2 0 0 1 2 2v4h-2m-4 0h-6m-6 -6h15m-6 0v-5"/></svg></span>
+      <div>
+        <h2>洗车</h2>
+        <p class="count">6 种结果</p>
+      </div>
+    </header>
+    <p class="basis">按「今天会不会下、明天会不会下、风大不大、太阳毒不毒」的顺序逐条判，先命中的先用。</p>
+    <ul class="rows">
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M15.584 15.588a2 2 0 0 0 2.828 2.83"/><path d="M5 17h-2v-6l2 -5h1m4 0h4l4 5h1a2 2 0 0 1 2 2v4m-6 0h-6m-6 -6h8m4 0h3m-6 -3v-2"/><path d="M3 3l18 18"/></svg></span>
+          <span class="txt">
+            <b>不宜洗车</b>
+            <small>正在下雨 / 日雨量 ≥ 1mm / 降水概率 ≥ 50%</small>
+          </span>
+          <span class="mark"><code>降水 N%</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5h9a2 2 0 0 1 2 2v9m-.184 3.839a2 2 0 0 1 -1.816 1.161h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 1.158 -1.815"/><path d="M16 3v4"/><path d="M8 3v1"/><path d="M4 11h7m4 0h5"/><path d="M3 3l18 18"/></svg></span>
+          <span class="txt">
+            <b>暂缓洗车</b>
+            <small>今日无雨，但明日降水概率 ≥ 50%（洗了等于白洗）</small>
+          </span>
+          <span class="mark"><code>明日 N%</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M15.584 15.588a2 2 0 0 0 2.828 2.83"/><path d="M5 17h-2v-6l2 -5h1m4 0h4l4 5h1a2 2 0 0 1 2 2v4m-6 0h-6m-6 -6h8m4 0h3m-6 -3v-2"/><path d="M3 3l18 18"/></svg></span>
+          <span class="txt">
+            <b>不宜洗车</b>
+            <small>风速 ≥ 25 km/h（风沙扬尘）</small>
+          </span>
+          <span class="mark"><code>风 N km/h</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.502 19.423c2.602 2.105 6.395 2.105 8.996 0c2.602 -2.105 3.262 -5.708 1.566 -8.546l-4.89 -7.26c-.42 -.625 -1.287 -.803 -1.936 -.397a1.376 1.376 0 0 0 -.41 .397l-4.893 7.26c-1.695 2.838 -1.035 6.441 1.567 8.546"/></svg></span>
+          <span class="txt">
+            <b>洗后易留水痕</b>
+            <small>UV ≥ 8（水痕被晒住）</small>
+          </span>
+          <span class="mark"><code>UV N</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M15 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M5 17h-2v-6l2 -5h9l4 5h1a2 2 0 0 1 2 2v4h-2m-4 0h-6m-6 -6h15m-6 0v-5"/></svg></span>
+          <span class="txt">
+            <b>适合洗车</b>
+            <small>以上都不满足</small>
+          </span>
+          <span class="mark"><code>今明无雨</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M15.584 15.588a2 2 0 0 0 2.828 2.83"/><path d="M5 17h-2v-6l2 -5h1m4 0h4l4 5h1a2 2 0 0 1 2 2v4m-6 0h-6m-6 -6h8m4 0h3m-6 -3v-2"/><path d="M3 3l18 18"/></svg></span>
+          <span class="txt">
+            <b>暂无洗车数据</b>
+            <small>降水概率与雨量都缺失</small>
+          </span>
+          <span class="mark"></span>
+        </li></ul>
+    
+  </section>
+  <section id="umbrella" class="card">
+    <header>
+      <span class="head-ico"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 0 1 16 0l-16 0"/><path d="M12 12v6a2 2 0 0 0 4 0"/></svg></span>
+      <div>
+        <h2>带伞</h2>
+        <p class="count">5 种结果</p>
+      </div>
+    </header>
+    <p class="basis">雨与晒分开说：下雨看降水概率，不下雨但紫外线高时提示遮阳伞。</p>
+    <ul class="rows">
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 0 1 16 0l-16 0"/><path d="M12 12v6a2 2 0 0 0 4 0"/></svg></span>
+          <span class="txt">
+            <b>需要带伞</b>
+            <small>正在下雨 或 降水概率 ≥ 70%</small>
+          </span>
+          <span class="mark"><code>降水 N%</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 0 1 16 0l-16 0"/><path d="M12 12v6a2 2 0 0 0 4 0"/></svg></span>
+          <span class="txt">
+            <b>建议带伞</b>
+            <small>降水概率 40 – 69%</small>
+          </span>
+          <span class="mark"><code>降水 N%</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.828 14.828a4 4 0 1 0 -5.656 -5.656a4 4 0 0 0 5.656 5.656"/><path d="M6.343 17.657l-1.414 1.414"/><path d="M6.343 6.343l-1.414 -1.414"/><path d="M17.657 6.343l1.414 -1.414"/><path d="M17.657 17.657l1.414 1.414"/><path d="M4 12h-2"/><path d="M12 4v-2"/><path d="M20 12h2"/><path d="M12 20v2"/></svg></span>
+          <span class="txt">
+            <b>可带遮阳伞</b>
+            <small>不下雨，但 UV ≥ 8</small>
+          </span>
+          <span class="mark"><code>UV N</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 12h-8c0 -2.209 .895 -4.208 2.342 -5.656m2.382 -1.645a8 8 0 0 1 11.276 7.301l-4 0"/><path d="M12 12v6a2 2 0 1 0 4 0"/><path d="M3 3l18 18"/></svg></span>
+          <span class="txt">
+            <b>不用带伞</b>
+            <small>以上都不满足</small>
+          </span>
+          <span class="mark"><code>降水 N%</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M12 17l0 .01"/><path d="M12 13.5a1.5 1.5 0 0 1 1 -1.5a2.6 2.6 0 1 0 -3 -4"/></svg></span>
+          <span class="txt">
+            <b>暂无带伞数据</b>
+            <small>降水概率缺失</small>
+          </span>
+          <span class="mark"></span>
+        </li></ul>
+    
+  </section>
+  <section id="illness" class="card">
+    <header>
+      <span class="head-ico"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 5a2.828 2.828 0 0 1 0 4l-8 8h-4v-4l8 -8a2.828 2.828 0 0 1 4 0"/><path d="M16 7l-1.5 -1.5"/><path d="M13 10l-1.5 -1.5"/><path d="M10 13l-1.5 -1.5"/><path d="M7 17l-3 3"/></svg></span>
+      <div>
+        <h2>疾病风险</h2>
+        <p class="count">15 种结果</p>
+      </div>
+    </header>
+    <p class="basis">七个诱因各自加权累加得到总分，同时记录权重最大的那个「主因」。结论措辞取自主因（感冒 / 中暑 / 空气 / 潮湿 / 干燥说的不是同一件事），轻重则取总分：≤1 低、2–3 中、≥4 高。</p>
+    <h3>无诱因命中</h3><ul class="rows">
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M9 12l2 2l4 -4"/></svg></span>
+          <span class="txt">
+            <b>无明显风险</b>
+            <small>七项诱因全部为 0 分</small>
+          </span>
+          <span class="mark"></span>
+        </li></ul><h3>感冒类（主因：温差 / 降温 / 清晨偏冷）</h3><ul class="rows">
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 5a2.828 2.828 0 0 1 0 4l-8 8h-4v-4l8 -8a2.828 2.828 0 0 1 4 0"/><path d="M16 7l-1.5 -1.5"/><path d="M13 10l-1.5 -1.5"/><path d="M10 13l-1.5 -1.5"/><path d="M7 17l-3 3"/></svg></span>
+          <span class="txt">
+            <b>少发感冒</b>
+            <small>总分 ≤ 1</small>
+          </span>
+          <span class="mark"><code>温差 N°</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 5a2.828 2.828 0 0 1 0 4l-8 8h-4v-4l8 -8a2.828 2.828 0 0 1 4 0"/><path d="M16 7l-1.5 -1.5"/><path d="M13 10l-1.5 -1.5"/><path d="M10 13l-1.5 -1.5"/><path d="M7 17l-3 3"/></svg></span>
+          <span class="txt">
+            <b>易发感冒</b>
+            <small>总分 2 – 3</small>
+          </span>
+          <span class="mark"><code>温差 N°</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 5a2.828 2.828 0 0 1 0 4l-8 8h-4v-4l8 -8a2.828 2.828 0 0 1 4 0"/><path d="M16 7l-1.5 -1.5"/><path d="M13 10l-1.5 -1.5"/><path d="M10 13l-1.5 -1.5"/><path d="M7 17l-3 3"/></svg></span>
+          <span class="txt">
+            <b>谨防感冒</b>
+            <small>总分 ≥ 4</small>
+          </span>
+          <span class="mark"><code>温差 N°</code></span>
+        </li></ul><h3>中暑（主因：体感 ≥ 33°）</h3><ul class="rows">
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.828 14.828a4 4 0 1 0 -5.656 -5.656a4 4 0 0 0 5.656 5.656"/><path d="M6.343 17.657l-1.414 1.414"/><path d="M6.343 6.343l-1.414 -1.414"/><path d="M17.657 6.343l1.414 -1.414"/><path d="M17.657 17.657l1.414 1.414"/><path d="M4 12h-2"/><path d="M12 4v-2"/><path d="M20 12h2"/><path d="M12 20v2"/></svg></span>
+          <span class="txt">
+            <b>少发中暑</b>
+            <small>总分 ≤ 1</small>
+          </span>
+          <span class="mark"><code>体感 N°</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.828 14.828a4 4 0 1 0 -5.656 -5.656a4 4 0 0 0 5.656 5.656"/><path d="M6.343 17.657l-1.414 1.414"/><path d="M6.343 6.343l-1.414 -1.414"/><path d="M17.657 6.343l1.414 -1.414"/><path d="M17.657 17.657l1.414 1.414"/><path d="M4 12h-2"/><path d="M12 4v-2"/><path d="M20 12h2"/><path d="M12 20v2"/></svg></span>
+          <span class="txt">
+            <b>注意防暑</b>
+            <small>总分 2 – 3</small>
+          </span>
+          <span class="mark"><code>体感 N°</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.828 14.828a4 4 0 1 0 -5.656 -5.656a4 4 0 0 0 5.656 5.656"/><path d="M6.343 17.657l-1.414 1.414"/><path d="M6.343 6.343l-1.414 -1.414"/><path d="M17.657 6.343l1.414 -1.414"/><path d="M17.657 17.657l1.414 1.414"/><path d="M4 12h-2"/><path d="M12 4v-2"/><path d="M20 12h2"/><path d="M12 20v2"/></svg></span>
+          <span class="txt">
+            <b>谨防中暑</b>
+            <small>总分 ≥ 4</small>
+          </span>
+          <span class="mark"><code>体感 N°</code></span>
+        </li></ul><h3>空气（主因：AQI ≥ 100）</h3><ul class="rows">
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.081 20c1.612 0 2.919 -1.335 2.919 -2.98v-9.763c0 -.694 -.552 -1.257 -1.232 -1.257c-.205 0 -.405 .052 -.584 .15l-.13 .083c-1.46 1.059 -2.432 2.647 -3.404 5.824c-.42 1.37 -.636 2.962 -.648 4.775c-.012 1.675 1.261 3.054 2.877 3.161l.203 .007"/><path d="M17.92 20c-1.613 0 -2.92 -1.335 -2.92 -2.98v-9.763c0 -.694 .552 -1.257 1.233 -1.257c.204 0 .405 .052 .584 .15l.13 .083c1.46 1.059 2.432 2.647 3.405 5.824c.42 1.37 .636 2.962 .648 4.775c.012 1.675 -1.261 3.054 -2.878 3.161l-.202 .007"/><path d="M9 12a3 3 0 0 0 3 -3a3 3 0 0 0 3 3"/><path d="M12 4v5"/></svg></span>
+          <span class="txt">
+            <b>空气略差</b>
+            <small>总分 ≤ 1</small>
+          </span>
+          <span class="mark"><code>AQI N</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.081 20c1.612 0 2.919 -1.335 2.919 -2.98v-9.763c0 -.694 -.552 -1.257 -1.232 -1.257c-.205 0 -.405 .052 -.584 .15l-.13 .083c-1.46 1.059 -2.432 2.647 -3.404 5.824c-.42 1.37 -.636 2.962 -.648 4.775c-.012 1.675 1.261 3.054 2.877 3.161l.203 .007"/><path d="M17.92 20c-1.613 0 -2.92 -1.335 -2.92 -2.98v-9.763c0 -.694 .552 -1.257 1.233 -1.257c.204 0 .405 .052 .584 .15l.13 .083c1.46 1.059 2.432 2.647 3.405 5.824c.42 1.37 .636 2.962 .648 4.775c.012 1.675 -1.261 3.054 -2.878 3.161l-.202 .007"/><path d="M9 12a3 3 0 0 0 3 -3a3 3 0 0 0 3 3"/><path d="M12 4v5"/></svg></span>
+          <span class="txt">
+            <b>呼吸道敏感</b>
+            <small>总分 2 – 3</small>
+          </span>
+          <span class="mark"><code>AQI N</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.081 20c1.612 0 2.919 -1.335 2.919 -2.98v-9.763c0 -.694 -.552 -1.257 -1.232 -1.257c-.205 0 -.405 .052 -.584 .15l-.13 .083c-1.46 1.059 -2.432 2.647 -3.404 5.824c-.42 1.37 -.636 2.962 -.648 4.775c-.012 1.675 1.261 3.054 2.877 3.161l.203 .007"/><path d="M17.92 20c-1.613 0 -2.92 -1.335 -2.92 -2.98v-9.763c0 -.694 .552 -1.257 1.233 -1.257c.204 0 .405 .052 .584 .15l.13 .083c1.46 1.059 2.432 2.647 3.405 5.824c.42 1.37 .636 2.962 .648 4.775c.012 1.675 -1.261 3.054 -2.878 3.161l-.202 .007"/><path d="M9 12a3 3 0 0 0 3 -3a3 3 0 0 0 3 3"/><path d="M12 4v5"/></svg></span>
+          <span class="txt">
+            <b>减少外出</b>
+            <small>总分 ≥ 4</small>
+          </span>
+          <span class="mark"><code>AQI N</code></span>
+        </li></ul><h3>潮湿（主因：湿度 ≥ 85% 且体感 ≤ 20°）</h3><ul class="rows">
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3a3 3 0 0 1 3 3a3 3 0 1 1 -2.12 5.122l-4.758 4.758a3 3 0 1 1 -5.117 2.297l0 -.177l-.176 0a3 3 0 1 1 2.298 -5.115l4.758 -4.758a3 3 0 0 1 2.12 -5.122l-.005 -.005"/></svg></span>
+          <span class="txt">
+            <b>注意关节</b>
+            <small>总分 ≤ 1</small>
+          </span>
+          <span class="mark"><code>湿度 N%</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3a3 3 0 0 1 3 3a3 3 0 1 1 -2.12 5.122l-4.758 4.758a3 3 0 1 1 -5.117 2.297l0 -.177l-.176 0a3 3 0 1 1 2.298 -5.115l4.758 -4.758a3 3 0 0 1 2.12 -5.122l-.005 -.005"/></svg></span>
+          <span class="txt">
+            <b>关节易不适</b>
+            <small>总分 2 – 3</small>
+          </span>
+          <span class="mark"><code>湿度 N%</code></span>
+        </li>
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3a3 3 0 0 1 3 3a3 3 0 1 1 -2.12 5.122l-4.758 4.758a3 3 0 1 1 -5.117 2.297l0 -.177l-.176 0a3 3 0 1 1 2.298 -5.115l4.758 -4.758a3 3 0 0 1 2.12 -5.122l-.005 -.005"/></svg></span>
+          <span class="txt">
+            <b>关节要保暖</b>
+            <small>总分 ≥ 4</small>
+          </span>
+          <span class="mark"><code>湿度 N%</code></span>
+        </li></ul><h3>干燥（主因：湿度 ≤ 30%）</h3><ul class="rows">
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.502 19.423c2.602 2.105 6.395 2.105 8.996 0c2.602 -2.105 3.262 -5.708 1.566 -8.546l-4.89 -7.26c-.42 -.625 -1.287 -.803 -1.936 -.397a1.376 1.376 0 0 0 -.41 .397l-4.893 7.26c-1.695 2.838 -1.035 6.441 1.567 8.546"/></svg></span>
+          <span class="txt">
+            <b>注意补水</b>
+            <small>任何分数都用这句</small>
+          </span>
+          <span class="mark"><code>干燥 N%</code></span>
+        </li></ul><ul class="rows tail">
+        <li class="row">
+          <span class="ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M12 17l0 .01"/><path d="M12 13.5a1.5 1.5 0 0 1 1 -1.5a2.6 2.6 0 1 0 -3 -4"/></svg></span>
+          <span class="txt">
+            <b>暂无健康数据</b>
+            <small>温差与体感都缺失</small>
+          </span>
+          <span class="mark"></span>
+        </li></ul>
+    <div class="score"><h3>扣分项（累计分怎么来的）</h3><table><tr><th>昼夜温差</th><td>≥12° 加 2 分，≥9° 加 1 分</td></tr><tr><th>明日降温</th><td>≥5° 加 2 分，≥3° 加 1 分</td></tr><tr><th>高温</th><td>体感 ≥33° 加 2 分</td></tr><tr><th>空气质量</th><td>AQI ≥150 加 2 分，≥100 加 1 分</td></tr><tr><th>潮湿</th><td>湿度 ≥85% 且体感 ≤20° 加 1 分</td></tr><tr><th>干燥</th><td>湿度 ≤30% 加 1 分</td></tr><tr><th>清晨偏冷</th><td>清晨体感 ≤3° 加 1 分</td></tr></table></div>
+  </section>
+
+  <footer>
+    图标来源 Tabler Icons v3.50.0（MIT）· 只内联了用到的 23 个 outline path，未引入整包
+  </footer>
+</div>
+</body>
+</html>
