@@ -322,6 +322,7 @@
     </div>
   </div>
   <div class="sub-row">
+    <div class="lbl">底图 <div class="seg" id="baseSeg"></div></div>
     <div class="lbl">配色 <div class="seg" id="colorSeg"></div></div>
     <div class="lbl">
       透明度
@@ -430,8 +431,33 @@
     { id: 8, name: '灰阶', filter: 'grayscale(1) brightness(1.6)' }
   ];
 
-  var ICON_PLAY = '<path d="M8 5v14l11-7z"/>';
-  var ICON_PAUSE = '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>';
+  /* 底图方案。可以在设置里切换，用来对比「在线栅格」与「离线矢量」两种做法。
+     - esri：原来的在线栅格底图。Esri Dark Gray Canvas，WGS84，随时联网可用；
+       但 Esri 条款禁止批量下载与再分发，所以它只能在线用。
+     - pmtiles：从 Protomaps 全球日构建里切出来的中国区 z0–z8，58 MB 单文件。
+       PMTiles 是「一个文件就是一张金字塔」，靠 HTTP Range 按需取块，
+       所以浏览器不必先下 58 MB —— 但也意味着必须有服务端支持 Range（Vite 已实测支持）。
+     - ofm：OpenFreeMap 逐块下载的中国区 z3–z8（2096 块，130 MB）。
+       它的 ToS 明确允许离线下载，条件是每批 ≤3000 块 / ≤50 MB、≤4 并发、带自定义 UA。
+       这块是纯静态文件目录，没有任何服务端要求，最接近「真正离线」。
+     三者坐标系都是 WGS84（经纬度直投），和 RainViewer 雷达瓦片一致，叠加不偏移。 */
+  var BASEMAPS = [
+    { id: 'esri', name: '在线', kind: 'raster' },
+    { id: 'pmtiles', name: 'PMTiles', kind: 'pmtiles' },
+    { id: 'ofm', name: '离线块', kind: 'static' }
+  ];
+
+  // Protomaps 归档与 OpenFreeMap 静态块的位置。
+  // 必须以「/」开头：这个页面自己就在 /docs/ 下，写相对路径 tiles/... 会被解析成
+  // /docs/tiles/...，Vite 找不到就回落到 index.html，PMTiles 读到 1135 字节的 HTML
+  // 当归档用 —— 不报错、不出图，排查起来非常费劲。
+  // 两个目录都在 weatherApp-VUE3/public/ 里，由 Vite 原样挂在站点根上。
+  var PMTILES_URL = '/tiles/china.pmtiles';
+  var OFM_DIR = '/tiles-ofm';
+
+  var PROTOTMAPS_CDN = 'https://cdn.jsdelivr.net/npm/protomaps-leaflet@5.1.0/dist/protomaps-leaflet.js';
+
+  var ICON_PLAY = '<path d="M8 5v14l11-7z"/>';  var ICON_PAUSE = '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>';
 
   /* ============================================================
      状态
@@ -456,13 +482,15 @@
     layers: [],      // 目前留在 DOM 里的雨层，正常最多 2 个（淡入中 + 淡出中）
     front: null,     // 正在显示的那一层
     pending: null,   // 已加入但还没淡入完成的层
-    swapToken: 0     // 递增令牌：让过期的淡入回调自己作废
-    ,
-    firstFrameDone: false  // 首帧是否已经亮过（首帧没有旧层兜底，用的超时更短）
+    swapToken: 0,    // 递增令牌：让过期的淡入回调自己作废
+    firstFrameDone: false, // 首帧是否已经亮过（首帧没有旧层兜底，用的超时更短）
+    base: 'esri',    // 当前底图：esri / pmtiles / ofm
+    baseToken: 0     // 底图切换令牌：连点几下只认最后一次
   };
 
   var map = null;
   var baseLayer = null;
+  var cityMarkers = [];   // 单独存着，换底图时要先清掉旧的再画新的
 
   var el = {
     placeName: document.getElementById('placeName'),
@@ -475,6 +503,7 @@
     playBtn: document.getElementById('playBtn'),
     playIcon: document.getElementById('playIcon'),
     colorSeg: document.getElementById('colorSeg'),
+    baseSeg: document.getElementById('baseSeg'),
     opacity: document.getElementById('opacity'),
     mask: document.getElementById('mask'),
     maskSpin: document.getElementById('maskSpin'),
@@ -566,7 +595,12 @@
       },
       frameMs: function () { return FRAME_MS; },
       fadeMs: function () { return FADE_MS; },
-      layerCount: function () { return state.layers.length; }
+      layerCount: function () { return state.layers.length; },
+      base: function () { return state.base; },
+      baseLayerKind: function () {
+        if (!baseLayer) return null;
+        return baseLayer.constructor && baseLayer.constructor.name || typeof baseLayer;
+      }
     };
 
     Object.keys(getters).forEach(function (k) {
@@ -599,26 +633,8 @@
       worldCopyJump: true
     });
 
-    // Esri「Dark Gray Canvas」底图（WGS84，与雷达瓦片同坐标系）。
-    // 为什么不用 CARTO：其免费瓦片已全线下线，任何 dark_all 请求虽然返回 200，
-    // 但内容是一张印着「API KEY REQUIRED」的水印图 —— curl 看状态码完全正常，
-    // 只有把图渲染出来才能发现，所以底图选型必须眼睛验收而不是看 HTTP 码。
-    baseLayer = L.tileLayer(
-      'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-      {
-        maxZoom: MAX_ZOOM,
-        className: 'base-tiles',
-        // Esri 这套瓦片本身不带地名，且响应慢且偶发超时：给它一个长一点的
-        // 错误重试窗口，并且用自定义城市标注补上地名（见 addCityMarkers）。
-        attribution:
-          'Tiles &copy; <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a> ' +
-          '&mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors' +
-          ' &nbsp;|&nbsp; Weather data by ' +
-          '<a href="https://www.rainviewer.com/api.html" target="_blank" rel="noopener">RainViewer</a>'
-      }
-    ).addTo(map);
-
-    addCityMarkers();
+    // 底图由 setBasemap 统一管理（见下方「底图」一节），这里只初始化地图自身，
+    // 具体的底图在 boot() 里通过 setBasemap(state.base) 挂上去。
 
     // 缩放到左下：右上被城市胶囊占了，右下要给图例留位置
     L.control.zoom({ position: 'bottomleft' }).addTo(map);
@@ -626,31 +642,45 @@
     map.on('moveend', updatePlaceLabel);
   }
 
-  // Esri Dark Gray 是无标注底图，地名得自己画，否则缩到省级完全看不出在哪
+  // 城市点 + 地名。Esri 是无标注底图，地名得自己画，否则缩到省级完全看不出在哪；
+  // 矢量底图自带地名，但多这一点也没坏处，保持三档底图视觉一致。
+  // 换底图时会先 clearCityMarkers() 再重画，所以句柄单独存进 cityMarkers。
+  function clearCityMarkers() {
+    for (var i = 0; i < cityMarkers.length; i++) {
+      if (map && map.hasLayer(cityMarkers[i])) map.removeLayer(cityMarkers[i]);
+    }
+    cityMarkers = [];
+  }
+
   function addCityMarkers() {
+    clearCityMarkers();
     var pin = 'background:rgba(127,212,245,.9);border-radius:50%;' +
               'box-shadow:0 0 0 3px rgba(109,179,242,.22);';
 
     MAJOR_CITIES.forEach(function (c) {
-      L.circleMarker([c.lat, c.lon], {
-        radius: 2.6,
-        color: 'rgba(127,212,245,.85)',
-        weight: 0,
-        fillColor: '#7fd4f5',
-        fillOpacity: 0.9,
-        interactive: false
-      }).addTo(map);
+      cityMarkers.push(
+        L.circleMarker([c.lat, c.lon], {
+          radius: 2.6,
+          color: 'rgba(127,212,245,.85)',
+          weight: 0,
+          fillColor: '#7fd4f5',
+          fillOpacity: 0.9,
+          interactive: false
+        }).addTo(map)
+      );
 
-      L.marker([c.lat, c.lon], {
-        interactive: false,
-        keyboard: false,
-        icon: L.divIcon({
-          className: 'city-label',
-          html: '<span style="' + pin + '"></span><b>' + c.name + '</b>',
-          iconSize: [0, 0],
-          iconAnchor: [-6, 5]
-        })
-      }).addTo(map);
+      cityMarkers.push(
+        L.marker([c.lat, c.lon], {
+          interactive: false,
+          keyboard: false,
+          icon: L.divIcon({
+            className: 'city-label',
+            html: '<span style="' + pin + '"></span><b>' + c.name + '</b>',
+            iconSize: [0, 0],
+            iconAnchor: [-6, 5]
+          })
+        }).addTo(map)
+      );
     });
   }
 
@@ -707,6 +737,138 @@
       el.cities.appendChild(b);
     });
     markCity(CITIES[0].name);
+  }
+
+  /* ============================================================
+     底图：可在设置里切换（在线栅格 / PMTiles / OpenFreeMap 静态块）
+     ============================================================ */
+
+  /* Esri Dark Gray Canvas —— 在线栅格底图（WGS84）。
+     为什么不用 CARTO：其免费瓦片已全线下线，dark_all 请求虽然返回 200，
+     但内容是一张印着「API KEY REQUIRED」的水印图 —— curl 看状态码完全正常，
+     只有把图渲染出来才能发现，所以底图选型必须眼睛验收而不是看 HTTP 码。 */
+  var ESRI_URL =
+    'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}';
+  var ESRI_ATTR =
+    'Tiles &copy; <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a> ' +
+    '&mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors';
+  var PMTILES_ATTR =
+    '<a href="https://protomaps.com/" target="_blank" rel="noopener">Protomaps</a> ' +
+    '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
+  var OFM_ATTR =
+    '<a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a> ' +
+    '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
+  var RADAR_ATTR =
+    'Weather data by <a href="https://www.rainviewer.com/api.html" target="_blank" rel="noopener">RainViewer</a>';
+
+  // 只注入一次 protomaps-leaflet（128 KB UMD，非 ESM）。矢量底图才需要它，
+  // 在线栅格档不必为它付下载代价，所以按需加载。
+  var protomapsPromise = null;
+  function loadProtomaps() {
+    if (window.protomapsL) return Promise.resolve(window.protomapsL);
+    if (protomapsPromise) return protomapsPromise;
+    protomapsPromise = new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = PROTOTMAPS_CDN;
+      s.async = true;
+      s.onload = function () {
+        if (window.protomapsL) resolve(window.protomapsL);
+        else reject(new Error('protomaps-leaflet 载入后未暴露 protomapsL'));
+      };
+      s.onerror = function () {
+        reject(new Error('protomaps-leaflet 脚本加载失败：' + PROTOTMAPS_CDN));
+      };
+      document.head.appendChild(s);
+    });
+    return protomapsPromise;
+  }
+
+  /* 建一块新底图并叠到地图最底层。zIndex 给 0，雷达层是 6，
+     城市标注在 400+（Leaflet 默认 marker pane），谁也不挤谁。 */
+  function buildBaseLayer(id) {
+    if (id === 'pmtiles') {
+      return loadProtomaps().then(function (pm) {
+        return pm.leafletLayer({
+          url: PMTILES_URL,
+          flavor: 'dark',
+          maxDataZoom: 8,   // 归档只切到 z8，再放大靠矢量拉伸
+          attribution: PMTILES_ATTR + ' &nbsp;|&nbsp; ' + RADAR_ATTR
+        });
+      });
+    }
+    if (id === 'ofm') {
+      // 静态块目录：每个 z/x/y 一个 .pbf，没有任何服务端逻辑，断网也能出图。
+      // 注意这些是**矢量**瓦片（Mapbox Vector Tile），不能用 L.tileLayer ——
+      // 那个只认 png/jpg 这类图片，给它 .pbf 什么都不会画出来。
+      // protomaps 的 ZxySource 认 {z}/{x}/{y} 模板，所以照样走 protomaps 渲染。
+      return loadProtomaps().then(function (pm) {
+        return pm.leafletLayer({
+          url: OFM_DIR + '/{z}/{x}/{y}.pbf',
+          flavor: 'dark',
+          maxDataZoom: 8,   // 只下到 z8，再放大靠矢量拉伸
+          attribution: OFM_ATTR + ' &nbsp;|&nbsp; ' + RADAR_ATTR
+        });
+      });
+    }
+    return Promise.resolve(
+      L.tileLayer(ESRI_URL, {
+        maxZoom: MAX_ZOOM,
+        className: 'base-tiles',
+        attribution: ESRI_ATTR + ' &nbsp;|&nbsp; ' + RADAR_ATTR
+      })
+    );
+  }
+
+  /* 换底图。旧层先摘掉再挂新层，中间这段是空的 —— 不做交叉淡入，
+     因为底图全屏、半透明叠加会出现两层路网重影，比短暂空白更难看。 */
+  function setBasemap(id) {
+    if (state.base === id && baseLayer) return Promise.resolve();
+    var token = ++state.baseToken;
+    state.base = id;
+    var old = baseLayer;
+    baseLayer = null;
+    if (old) {
+      if (map && map.hasLayer(old)) map.removeLayer(old);
+      // protomaps 的 leafletLayer 不是 L.TileLayer，没有 setUrl，直接丢弃即可
+    }
+    return buildBaseLayer(id)
+      .then(function (layer) {
+        if (token !== state.baseToken) return;   // 期间又切了，丢弃这次结果
+        baseLayer = layer;
+        if (map) layer.addTo(map);
+        // Esri 是无标注底图；矢量底图自带地名，但城市圆点仍有用（同一套视觉语言）
+        if (map && typeof addCityMarkers === 'function') addCityMarkers();
+      })
+      .catch(function (err) {
+        if (token !== state.baseToken) return;
+        // 底图挂了不该整页黑屏：退回在线栅格，并把原因写进控制台
+        console.warn('[base] 切换失败，回退到在线栅格：', err && err.message);
+        state.base = 'esri';
+        buildBaseLayer('esri').then(function (layer) {
+          if (token !== state.baseToken) return;
+          baseLayer = layer;
+          if (map) layer.addTo(map);
+        });
+      });
+  }
+
+  function buildBasemaps() {
+    BASEMAPS.forEach(function (b) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = b.name;
+      btn.dataset.id = b.id;
+      if (b.id === state.base) btn.classList.add('on');
+      btn.addEventListener('click', function () {
+        if (state.base === b.id) return;
+        var all = el.baseSeg.querySelectorAll('button');
+        for (var i = 0; i < all.length; i++) {
+          all[i].classList.toggle('on', all[i].dataset.id === b.id);
+        }
+        setBasemap(b.id);
+      });
+      el.baseSeg.appendChild(btn);
+    });
   }
 
   function buildColors() {
@@ -1176,6 +1338,8 @@
 
   function boot() {
     initMap();
+    buildBasemaps();
+    setBasemap(state.base);
     buildCities();
     buildColors();
     applyColorFilter();
