@@ -182,6 +182,40 @@
   }
   .seg button:hover{color:var(--text-2)}
   .seg button.on{background:rgba(109,179,242,.26);color:#fff}
+
+  /* 底图刷新按钮：一个图标就够了，不给它配文字（底部那行已经够挤）。
+     转圈表示正在重试，1.5 秒后无论如何都停，不能让按钮一直转。 */
+  .mini-refresh{
+    border:none;background:rgba(255,255,255,.05);color:var(--text-6);
+    width:26px;height:26px;border-radius:999px;cursor:pointer;padding:0;
+    display:inline-flex;align-items:center;justify-content:center;
+    transition:background .16s ease,color .16s ease;
+  }
+  .mini-refresh:hover{background:rgba(109,179,242,.22);color:#fff}
+  .mini-refresh svg{
+    width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;
+    stroke-linecap:round;stroke-linejoin:round;
+  }
+  .mini-refresh.spin svg{animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* 底图提示条：贴在顶部城市胶囊下面，不挡地图中央 */
+  .base-hint{
+    position:absolute;left:50%;top:112px;transform:translateX(-50%);z-index:900;
+    display:flex;align-items:center;gap:10px;padding:8px 14px;
+    background:rgba(60,32,32,.86);border:1px solid rgba(255,140,120,.32);
+    border-radius:999px;font-size:12px;color:var(--text-2);
+    backdrop-filter:blur(10px);box-shadow:0 6px 20px rgba(0,0,0,.4);
+  }
+  .base-hint[hidden]{display:none}
+  .base-hint button{
+    border:none;background:rgba(255,255,255,.14);color:#fff;font-family:inherit;
+    font-size:11px;padding:4px 10px;border-radius:999px;cursor:pointer;
+  }
+  .base-hint button:hover{background:rgba(255,255,255,.24)}
+  @media (max-width:720px){
+    .base-hint{top:auto;bottom:120px;font-size:11px;padding:6px 12px}
+  }
   .slider-mini{
     -webkit-appearance:none;appearance:none;width:88px;height:4px;border-radius:2px;
     background:rgba(255,255,255,.16);outline:none;cursor:pointer;vertical-align:middle;
@@ -322,7 +356,10 @@
     </div>
   </div>
   <div class="sub-row">
-    <div class="lbl">底图 <div class="seg" id="baseSeg"></div></div>
+    <div class="lbl">底图 <button class="mini-refresh" id="baseRefresh" type="button"
+        title="重新加载底图" aria-label="重新加载底图">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-.6 4"/><path d="M20 4v7h-7"/></svg>
+    </button></div>
     <div class="lbl">配色 <div class="seg" id="colorSeg"></div></div>
     <div class="lbl">
       透明度
@@ -330,6 +367,12 @@
              aria-label="雨层透明度">
     </div>
   </div>
+</div>
+
+<!-- 底图提示条：两个 Esri 入口都不通时才出现，给出手动刷新这条出路 -->
+<div class="base-hint" id="baseHint" hidden>
+  <span>底图加载失败，两个接入点都没响应</span>
+  <button type="button" id="baseHintRetry">重新加载底图</button>
 </div>
 
 <!-- 降水强度图例 -->
@@ -431,33 +474,34 @@
     { id: 8, name: '灰阶', filter: 'grayscale(1) brightness(1.6)' }
   ];
 
-  /* 底图方案。可以在设置里切换，用来对比「在线栅格」与「离线矢量」两种做法。
-     - esri：原来的在线栅格底图。Esri Dark Gray Canvas，WGS84，随时联网可用；
-       但 Esri 条款禁止批量下载与再分发，所以它只能在线用。
-     - pmtiles：从 Protomaps 全球日构建里切出来的中国区 z0–z8，58 MB 单文件。
-       PMTiles 是「一个文件就是一张金字塔」，靠 HTTP Range 按需取块，
-       所以浏览器不必先下 58 MB —— 但也意味着必须有服务端支持 Range（Vite 已实测支持）。
-     - ofm：OpenFreeMap 逐块下载的中国区 z3–z8（2096 块，130 MB）。
-       它的 ToS 明确允许离线下载，条件是每批 ≤3000 块 / ≤50 MB、≤4 并发、带自定义 UA。
-       这块是纯静态文件目录，没有任何服务端要求，最接近「真正离线」。
-     三者坐标系都是 WGS84（经纬度直投），和 RainViewer 雷达瓦片一致，叠加不偏移。 */
-  var BASEMAPS = [
-    { id: 'esri', name: '在线', kind: 'raster' },
-    { id: 'pmtiles', name: 'PMTiles', kind: 'pmtiles' },
-    { id: 'ofm', name: '离线块', kind: 'static' }
+  /* 底图：Esri Dark Gray Canvas（在线栅格，WGS84）。
+     只用在线方案 —— 离线那两套（PMTiles 58 MB / OpenFreeMap 2096 块 130 MB）
+     已经被明确放弃：它们解决的是「没网也能看」，而这个 demo 的价值全在实时雷达，
+     没有网的时候雷达本来也没有，提前背几十 MB 去换一个用不上的能力不划算。
+
+     Esri 有两个可用的同源主机名，内容是同一份数据（实测字节数完全一致）：
+       server2  10/10 成功，中位 0.78s   ← 打头阵
+       server    5/10 成功，中位 1.59s   ← 兜底
+     注意这是同一个 CDN 的两个入口，不是两套数据 —— 它能挡「单个入口连不上」，
+     挡不住 Esri 整体不可用。真整体挂了就只能靠手动刷新再碰运气。 */
+  var ESRI_HOSTS = [
+    'https://server2.arcgisonline.com',
+    'https://server.arcgisonline.com'
   ];
 
-  // Protomaps 归档与 OpenFreeMap 静态块的位置。
-  // 必须以「/」开头：这个页面自己就在 /docs/ 下，写相对路径 tiles/... 会被解析成
-  // /docs/tiles/...，Vite 找不到就回落到 index.html，PMTiles 读到 1135 字节的 HTML
-  // 当归档用 —— 不报错、不出图，排查起来非常费劲。
-  // 两个目录都在 weatherApp-VUE3/public/ 里，由 Vite 原样挂在站点根上。
-  var PMTILES_URL = '/tiles/china.pmtiles';
-  var OFM_DIR = '/tiles-ofm';
+  // 首屏瓦片失败到这个数就换入口。单块偶发失败太常见（网络抖动、连接被掐），
+  // 一块就切会来回抖；等攒够 3 块再切，说明这个入口是真有问题了。
+  var BASEMAP_FAIL_THRESHOLD = 3;
 
-  var PROTOTMAPS_CDN = 'https://cdn.jsdelivr.net/npm/protomaps-leaflet@5.1.0/dist/protomaps-leaflet.js';
+  // 底图首块瓦片的等待上限。超过就认为这个入口不通，交给兜底逻辑。
+  // 不设太长：用户宁可看到备用入口的图，也不想盯着灰屏干等。
+  var BASE_FIRST_MS = 6000;
 
-  var ICON_PLAY = '<path d="M8 5v14l11-7z"/>';  var ICON_PAUSE = '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>';
+  var ESRI_PATH =
+    '/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}';
+
+  var ICON_PLAY = '<path d="M8 5v14l11-7z"/>';
+  var ICON_PAUSE = '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>';
 
   /* ============================================================
      状态
@@ -484,8 +528,8 @@
     pending: null,   // 已加入但还没淡入完成的层
     swapToken: 0,    // 递增令牌：让过期的淡入回调自己作废
     firstFrameDone: false, // 首帧是否已经亮过（首帧没有旧层兜底，用的超时更短）
-    base: 'esri',    // 当前底图：esri / pmtiles / ofm
-    baseToken: 0     // 底图切换令牌：连点几下只认最后一次
+    baseHost: null,        // 当前底图入口（ESRI_HOSTS 里的一项）
+    baseSwitched: false    // 已经自动兜底过一次了吗：只兜一次，避免两个入口来回跳
   };
 
   var map = null;
@@ -503,7 +547,8 @@
     playBtn: document.getElementById('playBtn'),
     playIcon: document.getElementById('playIcon'),
     colorSeg: document.getElementById('colorSeg'),
-    baseSeg: document.getElementById('baseSeg'),
+    baseRefresh: document.getElementById('baseRefresh'),
+    baseHint: document.getElementById('baseHint'),
     opacity: document.getElementById('opacity'),
     mask: document.getElementById('mask'),
     maskSpin: document.getElementById('maskSpin'),
@@ -596,7 +641,11 @@
       frameMs: function () { return FRAME_MS; },
       fadeMs: function () { return FADE_MS; },
       layerCount: function () { return state.layers.length; },
-      base: function () { return state.base; },
+      baseHost: function () { return state.baseHost; },
+      baseFails: function () { return baseLayer ? (baseLayer._baseFails || 0) : -1; },
+      baseTriggered: function () { return baseLayer ? !!baseLayer._baseTriggered : null; },
+      baseBound: function () { return baseLayer ? !!baseLayer._baseBound : null; },
+      baseSwitched: function () { return state.baseSwitched; },
       baseLayerKind: function () {
         if (!baseLayer) return null;
         return baseLayer.constructor && baseLayer.constructor.name || typeof baseLayer;
@@ -633,8 +682,8 @@
       worldCopyJump: true
     });
 
-    // 底图由 setBasemap 统一管理（见下方「底图」一节），这里只初始化地图自身，
-    // 具体的底图在 boot() 里通过 setBasemap(state.base) 挂上去。
+    // 底图由 mountBaseLayer 统一管理（见下方「底图」一节），这里只初始化地图自身，
+    // 具体的底图在 boot() 里通过 mountBaseLayer(ESRI_HOSTS[0]) 挂上去。
 
     // 缩放到左下：右上被城市胶囊占了，右下要给图例留位置
     L.control.zoom({ position: 'bottomleft' }).addTo(map);
@@ -740,136 +789,122 @@
   }
 
   /* ============================================================
-     底图：可在设置里切换（在线栅格 / PMTiles / OpenFreeMap 静态块）
+     底图：Esri Dark Gray Canvas，双入口自动兜底 + 手动刷新
      ============================================================ */
 
-  /* Esri Dark Gray Canvas —— 在线栅格底图（WGS84）。
-     为什么不用 CARTO：其免费瓦片已全线下线，dark_all 请求虽然返回 200，
+  /* 为什么不用 CARTO：其免费瓦片已全线下线，dark_all 请求虽然返回 200，
      但内容是一张印着「API KEY REQUIRED」的水印图 —— curl 看状态码完全正常，
      只有把图渲染出来才能发现，所以底图选型必须眼睛验收而不是看 HTTP 码。 */
-  var ESRI_URL =
-    'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}';
   var ESRI_ATTR =
     'Tiles &copy; <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a> ' +
     '&mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors';
-  var PMTILES_ATTR =
-    '<a href="https://protomaps.com/" target="_blank" rel="noopener">Protomaps</a> ' +
-    '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
-  var OFM_ATTR =
-    '<a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a> ' +
-    '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
   var RADAR_ATTR =
     'Weather data by <a href="https://www.rainviewer.com/api.html" target="_blank" rel="noopener">RainViewer</a>';
 
-  // 只注入一次 protomaps-leaflet（128 KB UMD，非 ESM）。矢量底图才需要它，
-  // 在线栅格档不必为它付下载代价，所以按需加载。
-  var protomapsPromise = null;
-  function loadProtomaps() {
-    if (window.protomapsL) return Promise.resolve(window.protomapsL);
-    if (protomapsPromise) return protomapsPromise;
-    protomapsPromise = new Promise(function (resolve, reject) {
-      var s = document.createElement('script');
-      s.src = PROTOTMAPS_CDN;
-      s.async = true;
-      s.onload = function () {
-        if (window.protomapsL) resolve(window.protomapsL);
-        else reject(new Error('protomaps-leaflet 载入后未暴露 protomapsL'));
-      };
-      s.onerror = function () {
-        reject(new Error('protomaps-leaflet 脚本加载失败：' + PROTOTMAPS_CDN));
-      };
-      document.head.appendChild(s);
+  /* 建底图层。host 传 ESRI_HOSTS 里的某一项。失败计数挂在图层实例上。 */
+  function buildBaseLayer(host) {
+    var layer = L.tileLayer(host + ESRI_PATH, {
+      maxZoom: MAX_ZOOM,
+      className: 'base-tiles',
+      attribution: ESRI_ATTR + ' &nbsp;|&nbsp; ' + RADAR_ATTR
     });
-    return protomapsPromise;
+    layer._baseFails = 0;
+    return layer;
   }
 
-  /* 建一块新底图并叠到地图最底层。zIndex 给 0，雷达层是 6，
-     城市标注在 400+（Leaflet 默认 marker pane），谁也不挤谁。 */
-  function buildBaseLayer(id) {
-    if (id === 'pmtiles') {
-      return loadProtomaps().then(function (pm) {
-        return pm.leafletLayer({
-          url: PMTILES_URL,
-          flavor: 'dark',
-          maxDataZoom: 8,   // 归档只切到 z8，再放大靠矢量拉伸
-          attribution: PMTILES_ATTR + ' &nbsp;|&nbsp; ' + RADAR_ATTR
-        });
-      });
-    }
-    if (id === 'ofm') {
-      // 静态块目录：每个 z/x/y 一个 .pbf，没有任何服务端逻辑，断网也能出图。
-      // 注意这些是**矢量**瓦片（Mapbox Vector Tile），不能用 L.tileLayer ——
-      // 那个只认 png/jpg 这类图片，给它 .pbf 什么都不会画出来。
-      // protomaps 的 ZxySource 认 {z}/{x}/{y} 模板，所以照样走 protomaps 渲染。
-      return loadProtomaps().then(function (pm) {
-        return pm.leafletLayer({
-          url: OFM_DIR + '/{z}/{x}/{y}.pbf',
-          flavor: 'dark',
-          maxDataZoom: 8,   // 只下到 z8，再放大靠矢量拉伸
-          attribution: OFM_ATTR + ' &nbsp;|&nbsp; ' + RADAR_ATTR
-        });
-      });
-    }
-    return Promise.resolve(
-      L.tileLayer(ESRI_URL, {
-        maxZoom: MAX_ZOOM,
-        className: 'base-tiles',
-        attribution: ESRI_ATTR + ' &nbsp;|&nbsp; ' + RADAR_ATTR
-      })
-    );
-  }
-
-  /* 换底图。旧层先摘掉再挂新层，中间这段是空的 —— 不做交叉淡入，
-     因为底图全屏、半透明叠加会出现两层路网重影，比短暂空白更难看。 */
-  function setBasemap(id) {
-    if (state.base === id && baseLayer) return Promise.resolve();
-    var token = ++state.baseToken;
-    state.base = id;
+  /* 挂一个底图层。首块瓦片到达就 resolve；超时也 resolve，让兜底逻辑接手。
+     这里不等整层 load —— 一屏几十块瓦片，等到齐要好几秒，用户会先看到一片空白。 */
+  function mountBaseLayer(host) {
+    var layer = buildBaseLayer(host);
     var old = baseLayer;
-    baseLayer = null;
-    if (old) {
-      if (map && map.hasLayer(old)) map.removeLayer(old);
-      // protomaps 的 leafletLayer 不是 L.TileLayer，没有 setUrl，直接丢弃即可
-    }
-    return buildBaseLayer(id)
-      .then(function (layer) {
-        if (token !== state.baseToken) return;   // 期间又切了，丢弃这次结果
-        baseLayer = layer;
-        if (map) layer.addTo(map);
-        // Esri 是无标注底图；矢量底图自带地名，但城市圆点仍有用（同一套视觉语言）
-        if (map && typeof addCityMarkers === 'function') addCityMarkers();
-      })
-      .catch(function (err) {
-        if (token !== state.baseToken) return;
-        // 底图挂了不该整页黑屏：退回在线栅格，并把原因写进控制台
-        console.warn('[base] 切换失败，回退到在线栅格：', err && err.message);
-        state.base = 'esri';
-        buildBaseLayer('esri').then(function (layer) {
-          if (token !== state.baseToken) return;
-          baseLayer = layer;
-          if (map) layer.addTo(map);
-        });
-      });
-  }
+    if (map) layer.addTo(map);
+    baseLayer = layer;
+    state.baseHost = host;
+    // 兜底监听必须在这里挂上，不能等 mount 的 Promise resolve 之后再挂 ——
+    // 两个入口都不通时，tileerror 会在 6 秒等待窗口内全部触发完，
+    // 等 resolve 完再挂监听，那批错误事件已经过去了，兜底永远不会启动。
+    bindBaseFailover(layer);
 
-  function buildBasemaps() {
-    BASEMAPS.forEach(function (b) {
-      var btn = document.createElement('button');
-      btn.type = 'button';
-      btn.textContent = b.name;
-      btn.dataset.id = b.id;
-      if (b.id === state.base) btn.classList.add('on');
-      btn.addEventListener('click', function () {
-        if (state.base === b.id) return;
-        var all = el.baseSeg.querySelectorAll('button');
-        for (var i = 0; i < all.length; i++) {
-          all[i].classList.toggle('on', all[i].dataset.id === b.id);
-        }
-        setBasemap(b.id);
+    return new Promise(function (resolve) {
+      var done = false;
+      var guard = null;
+      function finish() {
+        if (done) return;
+        done = true;
+        if (guard) clearTimeout(guard);
+        // 旧层等新层有图之后再摘，避免中间整屏空白
+        if (old && old !== layer && map && map.hasLayer(old)) map.removeLayer(old);
+        resolve(layer);
+      }
+      layer.once('tileload', function () {
+        layer._baseGotTile = true;   // 真收到图了，和「超时兜底」区分开
+        finish();
       });
-      el.baseSeg.appendChild(btn);
+      guard = setTimeout(finish, BASE_FIRST_MS);
     });
   }
+
+  /* 给底图层装失败计数：攒够 BASEMAP_FAIL_THRESHOLD 块就换下一个入口。
+     每层只触发一次（_baseTriggered），换到新入口后由新层的监听继续接力。
+     所有入口都试完仍失败，就亮出提示条，等用户手动刷新。
+     不能用一个「切换过」的布尔量当下次判断条件 —— 那样第二个入口失败时
+     会被自己的标记挡住，提示条永远出不来。 */
+  function bindBaseFailover(target) {
+    var layer = target || baseLayer;
+    if (!layer || layer._baseBound) return;   // 同一层只挂一次
+    layer._baseBound = true;
+    layer.on('tileerror', function () {
+      if (layer !== baseLayer || layer._baseTriggered) return;
+      layer._baseFails = (layer._baseFails || 0) + 1;
+      if (layer._baseFails < BASEMAP_FAIL_THRESHOLD) return;
+
+      layer._baseTriggered = true;
+      var idx = ESRI_HOSTS.indexOf(state.baseHost);
+      var next = ESRI_HOSTS[idx + 1];
+      if (!next) {
+        // 已经没有下一个入口：明确告诉用户该怎么办，而不是留一张灰图
+        showBaseHint(true);
+        return;
+      }
+      console.warn('[base] ' + state.baseHost + ' 连续失败 ' + layer._baseFails +
+                   ' 块，切到 ' + next);
+      swapBaseHost(next);
+    });
+  }
+
+  /* 直接换到指定入口，并重新挂失败计数。 */
+  function swapBaseHost(host) {
+    mountBaseLayer(host).then(function (layer) {
+      // 只有这个入口真出图了才收起提示条。mount 的超时也会 resolve，
+      // 那说明这个入口同样不通，提示条得留着。
+      if (layer === baseLayer && layer._baseGotTile) showBaseHint(false);
+    });
+  }
+
+  /* 手动刷新：两个域名都挂了时，用户点这个从最快的入口再试一次。
+     重置「已切换」标记，否则新层不会再触发兜底。 */
+  function refreshBase() {
+    if (!map) return;
+    state.baseSwitched = false;   // 记住「自动兜底用过没有」，仅供调试观察
+    showBaseHint(false);
+    var spin = el.baseRefresh;
+    if (spin) spin.classList.add('spin');
+
+    if (baseLayer && map.hasLayer(baseLayer)) map.removeLayer(baseLayer);
+    baseLayer = null;
+
+    mountBaseLayer(ESRI_HOSTS[0]).then(function (layer) {
+      if (spin) spin.classList.remove('spin');
+      if (layer._baseGotTile) showBaseHint(false);
+    });
+  }
+
+  /* 底图提示条：只在两个入口都不通时出现。 */
+  function showBaseHint(on) {
+    if (!el.baseHint) return;
+    el.baseHint.hidden = !on;
+  }
+
 
   function buildColors() {
     COLORS.forEach(function (c) {
@@ -1338,8 +1373,14 @@
 
   function boot() {
     initMap();
-    buildBasemaps();
-    setBasemap(state.base);
+    // 底图：从最快的入口开始，失败自动兜底到第二个入口。
+    // 两个都失败时提示条会让用户手动点刷新（refreshBase）。
+    mountBaseLayer(ESRI_HOSTS[0]);
+    if (el.baseRefresh) {
+      el.baseRefresh.addEventListener('click', refreshBase);
+    }
+    var hintRetry = document.getElementById('baseHintRetry');
+    if (hintRetry) hintRetry.addEventListener('click', refreshBase);
     buildCities();
     buildColors();
     applyColorFilter();
