@@ -377,6 +377,7 @@
       <button class="mini-toggle on" id="fadeToggle" type="button"
               title="开启/关闭渐入渐出，用来对比两种换帧观感" aria-pressed="true">渐变</button>
     </div>
+    <div class="lbl">速度 <div class="seg" id="speedSeg"></div></div>
     <div class="lbl">
       透明度
       <input type="range" class="slider-mini" id="opacity" min="20" max="100" value="80" step="1"
@@ -418,8 +419,19 @@
   var META_DEFAULT = 'https://api.rainviewer.com/public/weather-maps.json';
   var TILE_HOST_FALLBACK = 'https://tilecache.rainviewer.com';
 
-  var FRAME_MS = 520;        // 单帧停留：交叉淡入必须明显短于它，否则永远在渐变中
-  var FADE_MS = 120;         // 交叉淡入时长，必须明显短于单帧停留 520ms
+  var FRAME_MS = 520;        // 单帧停留的默认值（速度档会覆盖它，见 state.frameMs）
+  var FADE_MS = 120;         // 交叉淡入时长的默认值（实际用 state.fadeMs）
+
+  /* 播放速度档。数值 = 单帧停留毫秒数，13 帧一圈的总时长随之变化。
+     用户反馈「进度条时长更短会不会更流畅」：会，但只在漂移速度上更接近真实云的
+     移动；单靠缩短间隔消不掉闪烁 —— 闪烁是过渡期的浓度凹陷，得靠下面的补偿式
+     淡入解决。两件事分开做才不互相掩盖。 */
+  var SPEEDS = [
+    { id: 'slow', name: '慢', frameMs: 700 },
+    { id: 'normal', name: '标准', frameMs: 520 },
+    { id: 'fast', name: '快', frameMs: 300 },
+    { id: 'faster', name: '更快', frameMs: 180 }
+  ];
   // 兜底超时：整层瓦片迟迟没有全部到齐时的最终期限。
   // 实测这台机器上 RainViewer 单块瓦片要 1.3–12 秒（并发时更慢），
   // 所以「先到一块就换帧」必然把剩下的瓦片全部中止 —— 那正是屏幕只剩底图的原因。
@@ -545,6 +557,9 @@
     swapToken: 0,    // 递增令牌：让过期的淡入回调自己作废
     firstFrameDone: false, // 首帧是否已经亮过（首帧没有旧层兜底，用的超时更短）
     fade: true,            // 换帧是否走交叉淡入（false = 硬切，用于对照测试）
+    speed: 'normal',       // 速度档 id（SPEEDS 里的一项）
+    frameMs: FRAME_MS,     // 当前单帧停留时长（速度档写入这里）
+    fadeMs: FADE_MS,       // 当前过渡时长
     baseHost: null,        // 当前底图入口（ESRI_HOSTS 里的一项）
     baseSwitched: false    // 已经自动兜底过一次了吗：只兜一次，避免两个入口来回跳
   };
@@ -567,6 +582,7 @@
     baseRefresh: document.getElementById('baseRefresh'),
     baseHint: document.getElementById('baseHint'),
     fadeToggle: document.getElementById('fadeToggle'),
+    speedSeg: document.getElementById('speedSeg'),
     opacity: document.getElementById('opacity'),
     mask: document.getElementById('mask'),
     maskSpin: document.getElementById('maskSpin'),
@@ -656,8 +672,9 @@
         var f = currentFrame();
         return f ? new Date(f.time * 1000).toString() : null;
       },
-      frameMs: function () { return FRAME_MS; },
-      fadeMs: function () { return FADE_MS; },
+      frameMs: function () { return state.frameMs; },
+      fadeMs: function () { return state.fadeMs; },
+      speed: function () { return state.speed; },
       fade: function () { return state.fade; },
       layerCount: function () { return state.layers.length; },
       baseHost: function () { return state.baseHost; },
@@ -684,6 +701,8 @@
     api.retry = function () { retryLoad(); };
     api.setFade = function (on) { setFade(on); };
     api.toggleFade = function () { toggleFade(); };
+    api.setSpeed = function (id) { setSpeed(id); };
+    api.speeds = function () { return SPEEDS.map(function (x) { return { id: x.id, frameMs: x.frameMs }; }); };
 
     window.__radarState = api;
   }
@@ -902,6 +921,41 @@
     });
   }
 
+  /* 速度档：直接改单帧停留时长。过渡时长跟着一起缩放（取停留的 1/4，
+     但不超过 260ms），否则快档下 120ms 的过渡会占掉半帧，画面一直在渐变里。 */
+  function setSpeed(id) {
+    var sp = null;
+    for (var i = 0; i < SPEEDS.length; i++) if (SPEEDS[i].id === id) sp = SPEEDS[i];
+    if (!sp) sp = SPEEDS[1];
+    state.speed = sp.id;
+    state.frameMs = sp.frameMs;
+    state.fadeMs = Math.min(260, Math.round(sp.frameMs * 0.25));
+
+    if (el.speedSeg) {
+      var btns = el.speedSeg.querySelectorAll('button');
+      for (var k = 0; k < btns.length; k++) {
+        btns[k].classList.toggle('on', btns[k].getAttribute('data-id') === sp.id);
+      }
+    }
+    // 正在播放就按新节奏重排下一拍，否则改完要等旧定时器走完才生效
+    if (state.playing) armNextFrame();
+  }
+
+  function buildSpeeds() {
+    if (!el.speedSeg) return;
+    el.speedSeg.textContent = '';
+    SPEEDS.forEach(function (sp) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = sp.name;
+      b.setAttribute('data-id', sp.id);
+      b.title = '每帧 ' + sp.frameMs + 'ms，13 帧一圈约 ' + ((sp.frameMs * 13) / 1000).toFixed(1) + ' 秒';
+      b.addEventListener('click', function () { setSpeed(sp.id); });
+      el.speedSeg.appendChild(b);
+    });
+    setSpeed(state.speed);
+  }
+
   /* 渐变开关：只影响「这一帧怎么接管画面」，不影响加载与兜底逻辑。
      关掉之后立刻把当前层补齐到目标透明度，避免停在过渡中间的半透明状态。 */
   function setFade(on) {
@@ -1048,6 +1102,44 @@
     requestAnimationFrame(tick);
   }
 
+  /* 补偿式交叉淡入。
+     普通交叉淡入把两层各自从 0 线性推到 T、从 T 推到 0，合成浓度是
+     1-(1-a1)(1-a2)，中途会掉到 T 的约 82%，看上去就是「暗一下」。
+     这里改成按权重分配不透明度：
+       a_new(w) = 1 - (1-T)^w
+       a_old(w) = 1 - (1-T)^(1-w)
+     于是合成浓度 = 1 - (1-T)^w * (1-T)^(1-w) = 1 - (1-T) = T，
+     整段过渡恒等于目标浓度，亮度不会凹陷，只有画面内容在按权重迁移，
+     这正是「云在无感移动」需要的效果（内容渐变，浓度不变）。
+     w=0 时 a_new=0、a_old=T（完全是旧帧）；w=1 时反过来（完全是新帧）。 */
+  function crossFadeCompensated(newLayer, oldLayer, target, ms, onDone) {
+    if (!newLayer) return;
+    var T = Math.max(0.001, Math.min(0.999, target));
+    if (!oldLayer || oldLayer === newLayer) {
+      fadeTo(newLayer, 0, T, ms, onDone);
+      return;
+    }
+    newLayer.setOpacity(0);
+    oldLayer.setOpacity(T);
+
+    function tick(ts) {
+      if (!map || !map.hasLayer(newLayer)) return;
+      if (!t0) t0 = ts;
+      var w = Math.min(1, (ts - t0) / ms);
+      newLayer.setOpacity(1 - Math.pow(1 - T, w));
+      if (map.hasLayer(oldLayer)) oldLayer.setOpacity(1 - Math.pow(1 - T, 1 - w));
+      if (w < 1) {
+        requestAnimationFrame(tick);
+      } else {
+        newLayer.setOpacity(T);
+        if (map.hasLayer(oldLayer)) oldLayer.setOpacity(0);
+        if (onDone) onDone();
+      }
+    }
+    var t0 = 0;
+    requestAnimationFrame(tick);
+  }
+
   // 关键：新层加入后不是「先删旧层」，而是让新层渐显、旧层渐隐，
   // 两屏瓦片在整个过渡期同时存在，屏幕不会出现空白。
   function showFrame(frame) {
@@ -1083,11 +1175,13 @@
       //   硬切 = 新层瞬间到位、旧层立刻移除。没有浓度凹陷，但相邻两帧之间是跳变。
       // 到底哪个更耐看必须肉眼对照，所以做成开关而不是直接定死。
       if (state.fade) {
-        fadeTo(layer, 0, state.opacity, FADE_MS);
+        // 补偿式交叉淡入：合成浓度恒等于 state.opacity，过渡期不会「暗一下」
+        crossFadeCompensated(layer, old, state.opacity, state.fadeMs, function () {
+          if (old) hardRemove(old);
+        });
+        // 补间若因地图交互被打断，也保证旧层最终被摘掉
         if (old && old !== layer) {
-          fadeTo(old, old.options.opacity, 0, FADE_MS, function () { hardRemove(old); });
-          // 渐隐补间若因地图交互被打断，也保证最终被摘掉
-          setTimeout(function () { hardRemove(old); }, FADE_MS + 120);
+          setTimeout(function () { if (old) hardRemove(old); }, state.fadeMs + 160);
         }
       } else {
         layer.setOpacity(state.opacity);
@@ -1216,7 +1310,7 @@
       if (!n) return;
       state.idx = (state.idx + 1) % n;
       applyFrame();
-    }, FRAME_MS);
+    }, state.frameMs);
   }
 
   function play() {
@@ -1435,6 +1529,7 @@
     var hintRetry = document.getElementById('baseHintRetry');
     if (hintRetry) hintRetry.addEventListener('click', refreshBase);
     buildCities();
+    buildSpeeds();
     buildColors();
     applyColorFilter();
     // 首屏视野是全国，左上角不能还挂着 HTML 里写死的「北京」，
