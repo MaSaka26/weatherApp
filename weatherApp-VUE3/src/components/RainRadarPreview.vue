@@ -36,8 +36,19 @@ const LEAFLET_JS = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js'
 // 与 Leaflet 默认的 {z}/{x}/{y} 相反，写反了整张底图会错位成噪点。
 // 不用 CARTO：其免费暗色瓦片已下线，任何 dark_all 请求都返回 200 + 「API KEY REQUIRED」水印图，
 // 只看状态码发现不了，必须看图。
-const BASE_TILES =
-  'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}'
+//
+// 双入口：Esri 有同源镜像主机名，实测 server2 明显比 server 稳（交替采样 server2 10/10、
+// 中位 0.78s；server 只有 5/10、中位 1.59s），所以快的放前面做首屏，慢的做兜底。
+// 注意这两个是「同一份数据的两个 CDN 入口」，只挡单入口故障，挡不住 Esri 整体不可用。
+const ESRI_HOSTS = [
+  'https://server2.arcgisonline.com',
+  'https://server.arcgisonline.com',
+]
+const ESRI_PATH = '/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}'
+// 首屏攒够这么多块瓦片报错才认为这个入口坏了。单块偶发失败不切，否则来回抖动。
+const BASEMAP_FAIL_THRESHOLD = 3
+// 首屏等底图出图的期限：超过就认为这次没成，但仍把层挂上（可能只是慢）
+const BASE_FIRST_MS = 6000
 
 // 署名是纯静态字符串，不含任何接口返回内容。Leaflet 的 attribution 选项只接受
 // HTML 片段（它自己走 innerHTML），这是唯一一处 HTML 字符串；接口数据一律只走
@@ -59,8 +70,17 @@ const MAX_ZOOM = 19
 const RADAR_COLOR = 2 // 2 = 原色，与组件内图例色条取自同一套瓦片像素；服务端 color 参数实测无效
 const RADAR_OPACITY = 0.82
 
-const FRAME_MS = 560 // 单帧停留：必须明显长于淡入时长，否则整段回放都停在渐变中间
-const FADE_MS = 200 // 交叉淡入：旧帧渐隐、新帧渐显同时进行，全程屏幕上都有雨层
+// 播放速度档。切换会同时改单帧停留与淡入时长（淡入取停留的 1/4，封顶 260ms）：
+// 只缩短间隔会让过渡占满整帧，画面常年停在两层都半透明的中间态，反而更糊。
+const SPEEDS = [
+  { id: 'slow', name: '慢', frameMs: 700 },
+  { id: 'normal', name: '标准', frameMs: 520 },
+  { id: 'fast', name: '快', frameMs: 300 },
+  { id: 'faster', name: '更快', frameMs: 180 },
+]
+const DEFAULT_SPEED = 'normal'
+const FADE_RATIO = 0.25
+const FADE_MAX_MS = 260
 
 // 兜底超时。实测这台机器到 RainViewer 单块瓦片要 1.3–12 秒，所以「先到一块就换帧」
 // 必然把剩下的瓦片全部中止、屏幕只剩底图。现在的策略是旧帧一直亮着等整层 load，
@@ -176,18 +196,48 @@ async function ensureLeaflet() {
 }
 
 /* ============================================================
+   速度档
+   ============================================================ */
+
+function pickSpeed(id) {
+  return SPEEDS.find((s) => s.id === id) || SPEEDS[1]
+}
+
+// 淡入取单帧停留的 1/4、封顶 260ms：快了会让每一帧都停在两层半透明的中间态，
+// 慢了又会跟下一拍接上，两种都会糊。
+function fadeMsOf(ms) {
+  return Math.min(FADE_MAX_MS, Math.round(ms * FADE_RATIO))
+}
+
+/* ============================================================
    组件状态
    ============================================================ */
 
 const mapEl = ref(null)
+const layerEl = ref(null)
+const controlsEl = ref(null)
 const status = ref('idle') // idle | loading | ready | error
 const errorMsg = ref('')
 const frames = ref([]) // [{ time: UTC 秒, path }]
 const idx = ref(0)
 const playing = ref(false)
 
+// 过渡与速度：都要驱动 UI，所以是 ref。frameMs/fadeMs 由速度档派生并把值本身存下来，
+// 换档时正在跑的定时器要能立刻读到新值。
+const fadeOn = ref(true) // true = 交叉淡入；false = 硬切（用于对照）
+const speed = ref(DEFAULT_SPEED)
+const frameMs = ref(pickSpeed(DEFAULT_SPEED).frameMs)
+const fadeMs = ref(fadeMsOf(frameMs.value))
+
+// 底图兜底状态
+const baseHostIdx = ref(0)
+const baseFailed = ref(false) // 两个入口都失败过 → 提示用户手动重试
+const baseBusy = ref(false)
+
 // 非响应式的运行时句柄：都不需要触发重渲染，放 ref 里只会多一层 .value
 let map = null
+let insetsObserver = null
+let baseLayer = null
 let frontLayer = null // 当前正在显示的那一层
 let pendingLayer = null // 已加入地图、还没等到整层 load 的那一层
 let swapToken = 0 // 递增令牌：让过期的 settle 回调自己作废
@@ -195,6 +245,8 @@ let firstFrameDone = false
 let tileHost = TILE_HOST_FALLBACK
 let alive = false // 异步回调的存活判断（关闭 / 重开都会翻转）
 let generation = 0 // 防止重复 openRadar 把两个 map 建在同一节点上
+let baseGuardTimer = null
+let baseSwappedIn = false // 本次是否已经切到过备用入口
 
 // 目前还挂在地图上的雨层（正常最多 2 个：淡入中的 + 淡出中的）。
 // 用集合而不是数组，settle 里清理残留层时不必关心顺序。
@@ -329,14 +381,7 @@ function initMap() {
     touchZoom: true,
   })
 
-  L.tileLayer(BASE_TILES, {
-    maxZoom: MAX_ZOOM,
-    // Esri 这套底图只出到 z16，再往上请求是 404（大片空白格子）。
-    // 封顶后 Leaflet 会把 z16 的瓦片放大复用，高处仍然是一张连续的地图。
-    maxNativeZoom: 16,
-    className: 'radar-base-tiles',
-    attribution: ATTRIBUTION,
-  }).addTo(map)
+  mountBaseLayer(0)
 
   // 缩放按钮放左下，右下留给图例与版权行
   L.control.zoom({ position: 'bottomleft' }).addTo(map)
@@ -348,6 +393,120 @@ function initMap() {
     if (map) map.invalidateSize()
   })
   rafIds.add(id)
+}
+
+/* ============================================================
+   底图：双入口兜底
+   ============================================================ */
+
+function buildBaseLayer(host) {
+  const layer = window.L.tileLayer(host + ESRI_PATH, {
+    maxZoom: MAX_ZOOM,
+    // Esri 这套底图只出到 z16，再往上请求是 404（大片空白格子）。
+    // 封顶后 Leaflet 会把 z16 的瓦片放大复用，高处仍然是一张连续的地图。
+    maxNativeZoom: 16,
+    className: 'radar-base-tiles',
+    attribution: ATTRIBUTION,
+  })
+  layer._baseFails = 0
+  layer._baseGotTile = false
+  return layer
+}
+
+/**
+ * 挂上一个入口的底图，并在失败时自动换下一个。
+ *
+ * 两个坑在这里踩过：
+ * 1. 失败监听必须 addTo 之后「立刻」挂，不能等 promise resolve 再挂 —— 两个入口
+ *    都不通时，所有 tileerror 会在 6 秒窗口内触发完，resolve 时已经错过，兜底永不启动。
+ * 2. 超时也要 resolve（可能只是慢），但不能因此把失败提示收掉，所以用 _baseGotTile
+ *    区分「真出图」和「超时」，只有前者才认为成功。
+ */
+function mountBaseLayer(hostIdx) {
+  if (!map) return
+  const host = ESRI_HOSTS[hostIdx]
+  if (host === undefined) return
+
+  baseHostIdx.value = hostIdx
+  baseBusy.value = true
+
+  const next = buildBaseLayer(host)
+  const prev = baseLayer
+
+  next.addTo(map)
+  bindBaseFailover(next)
+  baseLayer = next
+
+  clearBaseGuard()
+  baseGuardTimer = setTimeout(() => {
+    baseGuardTimer = null
+    if (next._baseGotTile) finish()
+    else {
+      // 超时没出图：可能是入口慢，也可能已经彻底坏了。
+      // 还有下一个入口就换，没有就亮提示让用户手动刷新。
+      if (!baseSwappedIn && hostIdx + 1 < ESRI_HOSTS.length) {
+        baseSwappedIn = true
+        mountBaseLayer(hostIdx + 1)
+      } else {
+        baseFailed.value = true
+        baseBusy.value = false
+      }
+    }
+  }, BASE_FIRST_MS)
+
+  function finish() {
+    baseFailed.value = false
+    baseBusy.value = false
+    if (prev && prev !== next && map && map.hasLayer(prev)) {
+      try {
+        map.removeLayer(prev)
+      } catch {
+        /* 容器已销毁 */
+      }
+    }
+  }
+
+  next.once('tileload', () => {
+    next._baseGotTile = true
+    if (next === baseLayer) finish()
+  })
+}
+
+function bindBaseFailover(layer) {
+  if (layer._baseBound) return
+  layer._baseBound = true
+  layer.on('tileerror', () => {
+    // 只处理当前生效的那一层，旧层的迟到错误不该触发二次切换
+    if (layer !== baseLayer || layer._baseTriggered) return
+    layer._baseFails += 1
+    if (layer._baseFails < BASEMAP_FAIL_THRESHOLD) return
+    layer._baseTriggered = true
+
+    if (!baseSwappedIn && baseHostIdx.value + 1 < ESRI_HOSTS.length) {
+      baseSwappedIn = true
+      mountBaseLayer(baseHostIdx.value + 1)
+    } else {
+      baseFailed.value = true
+      baseBusy.value = false
+    }
+  })
+}
+
+function clearBaseGuard() {
+  if (baseGuardTimer) {
+    clearTimeout(baseGuardTimer)
+    baseGuardTimer = null
+  }
+}
+
+// 手动刷新：两个入口都试过失败后，用户点这里重走一遍首屏流程
+function refreshBase() {
+  if (!map) return
+  baseSwappedIn = false
+  baseFailed.value = false
+  baseHostIdx.value = 0
+  clearBaseGuard()
+  mountBaseLayer(0)
 }
 
 function destroyMap() {
@@ -501,6 +660,62 @@ function hardRemove(layer) {
 }
 
 /**
+ * 补偿式交叉淡入。
+ *
+ * 普通交叉淡入（新层 0→T 的同时旧层 T→0）在过渡中点会让画面「暗一下」：
+ * 两层各 0.4 不透明度叠加的合成浓度只有 1-(1-0.4)(1-0.4)=0.64，比稳定态 0.8 低 20%，
+ * 每帧都这么抖一次，观感就是闪烁 —— 实测确认过这是闪烁的真正成因，不是错觉。
+ *
+ * 这里让两层的透明度按下面的曲线走：
+ *   a_new(w) = 1-(1-T)^w
+ *   a_old(w) = 1-(1-T)^(1-w)
+ * 于是合成浓度 = 1-(1-T)^w·(1-T)^(1-w) = 1-(1-T) = T，与 w 无关，恒定等于目标值。
+ * 内容仍在按权重迁移（w=0 全是旧帧，w=1 全是新帧），但亮度不抖。
+ */
+function crossFadeCompensated(newLayer, oldLayer, target, ms, onDone) {
+  if (!newLayer) return
+  const T = Math.min(0.999, Math.max(0.001, target))
+
+  if (!oldLayer || oldLayer === newLayer) {
+    fadeLayer(newLayer, 0, T, ms, onDone)
+    return
+  }
+
+  newLayer.setOpacity(0)
+  oldLayer.setOpacity(T)
+
+  if (ms <= 0 || prefersReducedMotion()) {
+    newLayer.setOpacity(T)
+    oldLayer.setOpacity(0)
+    if (onDone) onDone()
+    return
+  }
+
+  const start = performance.now()
+  const keep = 1 - T
+  let rafId = 0
+
+  const tick = (now) => {
+    rafIds.delete(rafId)
+    if (!map || !map.hasLayer(newLayer)) return
+    const w = Math.min(1, (now - start) / ms)
+    newLayer.setOpacity(1 - Math.pow(keep, w))
+    if (map.hasLayer(oldLayer)) oldLayer.setOpacity(1 - Math.pow(keep, 1 - w))
+    if (w < 1) {
+      rafId = requestAnimationFrame(tick)
+      rafIds.add(rafId)
+    } else {
+      newLayer.setOpacity(T)
+      if (map.hasLayer(oldLayer)) oldLayer.setOpacity(0)
+      if (onDone) onDone()
+    }
+  }
+
+  rafId = requestAnimationFrame(tick)
+  rafIds.add(rafId)
+}
+
+/**
  * 用 rAF 直接补间图层的 opacity，而不是 CSS transition：
  * 回放会连续换帧，后台标签页里 CSS 过渡会被节流，补间时长就不可控了；
  * rAF 还能在中途 map 被销毁时立刻退出，不会往已移除的节点写样式。
@@ -570,24 +785,28 @@ function showFrame(frame) {
     frontLayer = layer
     firstFrameDone = true
 
-    // 新层渐显 + 旧层渐隐同时开始，整个过渡期屏幕上都有雨层。
-    // 旧的从它「此刻真实的透明度」开始渐隐：连点滑块时它可能正停在 0.4 这种中间值上，
+    // 换帧：渐变走补偿式交叉淡入（合成浓度恒定，不闪），硬切直接用目标值。
+    // 旧的从它「此刻真实的透明度」开始算：连点滑块时它可能正停在 0.4 这种中间值上，
     // 从固定值起步会看到亮度突跳。
-    fadeLayer(layer, 0, RADAR_OPACITY, FADE_MS)
+    const ms = fadeOn.value ? fadeMs.value : 0
     if (old && old !== layer) {
-      const from = typeof old.options.opacity === 'number' ? old.options.opacity : RADAR_OPACITY
       fadingOut.add(old)
-      fadeLayer(old, from, 0, FADE_MS, () => {
+      crossFadeCompensated(layer, old, RADAR_OPACITY, ms, () => {
         fadingOut.delete(old)
         hardRemove(old)
       })
-      // 渐隐补间若因地图交互或标签页挂起被打断，也保证最终被摘掉，不留在 DOM 里
-      const timer = setTimeout(() => {
-        fadeTimers.delete(timer)
-        fadingOut.delete(old)
-        hardRemove(old)
-      }, FADE_MS + 160)
+      // 补间若因地图交互或标签页挂起被打断，也保证最终被摘掉，不留在 DOM 里
+      const timer = setTimeout(
+        () => {
+          fadeTimers.delete(timer)
+          fadingOut.delete(old)
+          hardRemove(old)
+        },
+        ms + 160,
+      )
       fadeTimers.add(timer)
+    } else {
+      crossFadeCompensated(layer, null, RADAR_OPACITY, ms)
     }
 
     // 极端情况（快速拖滑块）下不让残留层堆在 DOM 里。
@@ -640,7 +859,23 @@ function armNextFrame() {
     if (!n) return
     idx.value = (idx.value + 1) % n // 首尾闭环
     applyFrame()
-  }, FRAME_MS)
+  }, frameMs.value)
+}
+
+// 换速度档：同时改单帧停留与淡入时长，正在播放时立刻按新节奏重排下一拍
+function setSpeed(id) {
+  const s = pickSpeed(id)
+  speed.value = s.id
+  frameMs.value = s.frameMs
+  fadeMs.value = fadeMsOf(s.frameMs)
+  if (playing.value) armNextFrame()
+}
+
+// 渐变 / 硬切切换。关掉时把当前层拉回目标不透明度，
+// 否则会停在过渡中间那个半透明状态上。
+function toggleFade() {
+  fadeOn.value = !fadeOn.value
+  if (!fadeOn.value && frontLayer) frontLayer.setOpacity(RADAR_OPACITY)
 }
 
 function play() {
@@ -687,6 +922,10 @@ function onSlide(event) {
    ============================================================ */
 
 function teardown() {
+  if (insetsObserver) {
+    insetsObserver.disconnect()
+    insetsObserver = null
+  }
   alive = false
   swapToken++ // 让所有在途的 settle 回调作废
   clearAllTimers()
@@ -697,6 +936,26 @@ function teardown() {
   firstFrameDone = false
   status.value = 'idle'
   errorMsg.value = ''
+}
+
+/* 控制条的高度会随窗口宽度变化：窄屏下 .radar-row-sub 会折成两行，
+   整条从 114px 长到 148px。图例和 Leaflet 控件如果继续用写死的 bottom，
+   就会被压在控制条下面。所以实测控制条顶边到容器底部的距离，写进 CSS 变量，
+   由 CSS 用 calc 跟随，任何宽度都不用再改常量。 */
+function syncBottomInsets() {
+  const layer = layerEl.value
+  const ctrl = controlsEl.value
+  if (!layer || !ctrl) return
+  const top = Math.max(0, Math.round(layer.getBoundingClientRect().bottom - ctrl.getBoundingClientRect().top))
+  layer.style.setProperty('--rr-ctrl-top', top + 'px')
+}
+
+function watchBottomInsets() {
+  if (insetsObserver) insetsObserver.disconnect()
+  if (!controlsEl.value || typeof ResizeObserver === 'undefined') return
+  insetsObserver = new ResizeObserver(syncBottomInsets)
+  insetsObserver.observe(controlsEl.value)
+  syncBottomInsets()
 }
 
 async function openRadar() {
@@ -737,6 +996,7 @@ async function openRadar() {
   }
 
   await loadMeta()
+  watchBottomInsets()
 }
 
 function close() {
@@ -812,7 +1072,14 @@ watch(
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="radar-layer" role="dialog" aria-modal="true" aria-label="降水雷达回放">
+    <div
+      v-if="open"
+      ref="layerEl"
+      class="radar-layer"
+      role="dialog"
+      aria-modal="true"
+      aria-label="降水雷达回放"
+    >
       <div ref="mapEl" class="radar-map" :aria-busy="status === 'loading'"></div>
 
       <header class="radar-top">
@@ -857,59 +1124,110 @@ watch(
         <button class="radar-retry" type="button" @click="retry">重试</button>
       </div>
 
-      <footer class="radar-controls">
-        <button
-          class="radar-play"
-          type="button"
-          :disabled="!ready"
-          :aria-label="playing ? '暂停回放' : '播放回放'"
-          @click="togglePlay"
-        >
-          <svg
-            v-if="playing"
-            viewBox="0 0 24 24"
-            width="18"
-            height="18"
-            fill="currentColor"
-            aria-hidden="true"
+      <footer ref="controlsEl" class="radar-controls">
+        <div class="radar-row-main">
+          <button
+            class="radar-play"
+            type="button"
+            :disabled="!ready"
+            :aria-label="playing ? '暂停回放' : '播放回放'"
+            @click="togglePlay"
           >
-            <path d="M6 5h4v14H6zM14 5h4v14h-4z" />
-          </svg>
-          <svg
-            v-else
-            viewBox="0 0 24 24"
-            width="18"
-            height="18"
-            fill="currentColor"
-            aria-hidden="true"
-          >
-            <path d="M8 5v14l11-7z" />
-          </svg>
-        </button>
+            <svg
+              v-if="playing"
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path d="M6 5h4v14H6zM14 5h4v14h-4z" />
+            </svg>
+            <svg
+              v-else
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </button>
 
-        <div class="radar-track">
-          <div class="radar-time-row">
-            <span class="radar-clock">{{ timeText }}</span>
-            <span class="radar-tag" :class="{ latest: isLatest }">{{ relLabel }}</span>
-            <span class="radar-meta">{{ rangeText }}</span>
+          <div class="radar-track">
+            <div class="radar-time-row">
+              <span class="radar-clock">{{ timeText }}</span>
+              <span class="radar-tag" :class="{ latest: isLatest }">{{ relLabel }}</span>
+              <span class="radar-meta">{{ rangeText }}</span>
+            </div>
+
+            <input
+              class="radar-slider"
+              type="range"
+              min="0"
+              :max="maxIdx"
+              step="1"
+              :value="idx"
+              :disabled="!ready"
+              :style="{ '--pct': pct + '%' }"
+              aria-label="雷达帧时间轴"
+              @input="onSlide"
+            />
           </div>
 
-          <input
-            class="radar-slider"
-            type="range"
-            min="0"
-            :max="maxIdx"
-            step="1"
-            :value="idx"
-            :disabled="!ready"
-            :style="{ '--pct': pct + '%' }"
-            aria-label="雷达帧时间轴"
-            @input="onSlide"
-          />
+          <button class="radar-close" type="button" @click="close">关闭</button>
         </div>
 
-        <button class="radar-close" type="button" @click="close">关闭</button>
+        <div class="radar-row-sub">
+          <div class="radar-group">
+            <span class="radar-group-label">过渡</span>
+            <button
+              class="radar-toggle"
+              :class="{ on: fadeOn }"
+              type="button"
+              :aria-pressed="fadeOn ? 'true' : 'false'"
+              title="开启 = 交叉淡入；关闭 = 直接硬切，用于对比"
+              @click="toggleFade"
+            >
+              {{ fadeOn ? '渐变' : '硬切' }}
+            </button>
+          </div>
+
+          <div class="radar-group">
+            <span class="radar-group-label">速度</span>
+            <div class="radar-seg" role="group" aria-label="回放速度">
+              <button
+                v-for="s in SPEEDS"
+                :key="s.id"
+                class="radar-seg-btn"
+                :class="{ on: speed === s.id }"
+                type="button"
+                :title="`每帧 ${s.frameMs}ms`"
+                @click="setSpeed(s.id)"
+              >
+                {{ s.name }}
+              </button>
+            </div>
+          </div>
+
+          <button
+            class="radar-toggle"
+            type="button"
+            :class="{ 'is-busy': baseBusy }"
+            :disabled="baseBusy"
+            title="重新加载底图（两个接入点都失败时用这个）"
+            @click="refreshBase"
+          >
+            刷新底图
+          </button>
+        </div>
       </footer>
+
+      <div v-if="baseFailed" class="radar-base-hint" role="status">
+        <span>底图加载失败，两个接入点都没有响应</span>
+        <button type="button" class="radar-base-retry" @click="refreshBase">重新加载底图</button>
+      </div>
     </div>
   </Teleport>
 </template>
@@ -996,11 +1314,11 @@ watch(
 
 /* 版权行与缩放按钮都让开底部控制条 */
 .radar-map :deep(.leaflet-bottom.leaflet-right) {
-  bottom: 92px;
+  bottom: calc(var(--rr-ctrl-top, 148px) + 6px);
 }
 
 .radar-map :deep(.leaflet-bottom.leaflet-left) {
-  bottom: 92px;
+  bottom: calc(var(--rr-ctrl-top, 148px) + 6px);
 }
 
 .radar-map :deep(.leaflet-control-zoom) {
@@ -1143,7 +1461,8 @@ watch(
 .radar-legend {
   position: absolute;
   right: 16px;
-  bottom: 132px;
+  /* --rr-ctrl-top 由 syncBottomInsets() 实测写入（控制条高度随宽度变化） */
+  bottom: calc(var(--rr-ctrl-top, 148px) + 8px);
   z-index: 5;
   width: 152px;
   padding: 10px 12px 9px;
@@ -1197,8 +1516,8 @@ watch(
   z-index: 6;
   width: min(720px, calc(100% - 24px));
   display: flex;
-  align-items: center;
-  gap: 14px;
+  flex-direction: column;
+  gap: 10px;
   padding: 12px 16px;
   background: var(--rr-glass);
   backdrop-filter: var(--rr-blur);
@@ -1207,6 +1526,148 @@ watch(
   border-radius: 18px;
   box-shadow: var(--rr-shadow);
   touch-action: manipulation;
+}
+
+.radar-row-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* 第二行：过渡 / 速度 / 刷新底图。小按钮集中在一条，主控制区保持清爽 */
+.radar-row-sub {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-top: 9px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.radar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.radar-group-label {
+  font-size: 11px;
+  color: var(--rr-text-6);
+  letter-spacing: 0.3px;
+}
+
+.radar-toggle {
+  font-family: inherit;
+  font-size: 11px;
+  height: 26px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--rr-text-6);
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease;
+}
+
+.radar-toggle:hover:not(:disabled) {
+  color: var(--rr-text-2);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.radar-toggle.on {
+  background: rgba(109, 179, 242, 0.26);
+  color: #fff;
+}
+
+.radar-toggle:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.radar-toggle.is-busy {
+  animation: radar-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes radar-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.radar-seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.radar-seg-btn {
+  font-family: inherit;
+  font-size: 11px;
+  height: 22px;
+  padding: 0 9px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--rr-text-6);
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease;
+}
+
+.radar-seg-btn:hover {
+  color: var(--rr-text-2);
+}
+
+.radar-seg-btn.on {
+  background: rgba(109, 179, 242, 0.26);
+  color: #fff;
+}
+
+/* ---------- 底图失败提示 ---------- */
+.radar-base-hint {
+  position: absolute;
+  left: 50%;
+  top: 96px;
+  transform: translateX(-50%);
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100% - 32px);
+  padding: 9px 12px 9px 16px;
+  font-size: 12px;
+  color: var(--rr-text-2);
+  background: rgba(60, 32, 32, 0.86);
+  backdrop-filter: var(--rr-blur);
+  -webkit-backdrop-filter: var(--rr-blur);
+  border: 1px solid rgba(255, 140, 120, 0.32);
+  border-radius: 999px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.42);
+}
+
+.radar-base-retry {
+  flex: 0 0 auto;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 5px 12px;
+  border: 1px solid rgba(255, 140, 120, 0.4);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  cursor: pointer;
+}
+
+.radar-base-retry:hover {
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .radar-play {
@@ -1463,8 +1924,10 @@ watch(
   .radar-legend {
     width: 112px;
     right: 10px;
-    bottom: 112px;
     padding: 8px 10px;
+    /* 窄屏版权行（Leaflet attribution）是两行、约 31px 高，
+       图例必须让过它，否则两个色块叠在一起。 */
+    bottom: calc(var(--rr-ctrl-top, 148px) + 44px);
   }
 
   .legend-title {
@@ -1475,13 +1938,8 @@ watch(
     max-width: 30vw;
   }
 
-  .radar-map :deep(.leaflet-bottom.leaflet-right) {
-    bottom: 76px;
-  }
-
-  .radar-map :deep(.leaflet-bottom.leaflet-left) {
-    bottom: 76px;
-  }
+  /* 窄屏不再写死 bottom：控制条折成两行时高度从 114px 变 148px，
+     写死就会被压住。统一由 --rr-ctrl-top 跟随。 */
 
   .radar-map :deep(.leaflet-control-attribution) {
     font-size: 9px !important;
