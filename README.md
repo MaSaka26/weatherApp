@@ -106,7 +106,7 @@ weatherApp-VUE3/
 │   ├── api/weather.js          # 三个 Open-Meteo 接口封装
 │   ├── assets/
 │   │   ├── weather.css         # 全局样式与设计令牌（1600 行，单文件集中管理）
-│   │   ├── icons.js            # 24 个 Tabler 图标的 path 数据
+│   │   ├── icons.js            # 23 个 Tabler 图标的 path 数据
 │   │   └── icons/*.svg         # 同上，用于生成 icons.js
 │   ├── components/             # 21 个组件
 │   │   ├── CurrentWeather.vue  # 温度 + 时钟
