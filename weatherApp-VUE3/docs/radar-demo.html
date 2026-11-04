@@ -377,6 +377,10 @@
       <button class="mini-toggle on" id="fadeToggle" type="button"
               title="开启/关闭渐入渐出，用来对比两种换帧观感" aria-pressed="true">渐变</button>
     </div>
+    <div class="lbl">
+      <button class="mini-toggle on" id="motionToggle" type="button"
+              title="换帧时是否让云整体滑动（关闭 = 纯交叉淡入）" aria-pressed="true">平移</button>
+    </div>
     <div class="lbl">速度 <div class="seg" id="speedSeg"></div></div>
     <div class="lbl">
       透明度
@@ -528,6 +532,17 @@
   var ESRI_PATH =
     '/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}';
 
+  /* 平移量。相邻两帧的降水场是同一片云平移过去的结果（实测占主导），
+     纯交叉淡入等于把两张错位的图叠在一起 —— 形状对不上，眼睛读成闪烁。
+     所以在淡入的同时让两层沿运动方向整体滑动：旧层滑到 +d、新层从 -d 滑到 0，
+     结束时两者位置重合，溶解不再有重影，观感是云在走而不是在闪。
+     位移方向由 estimateMotion() 从瓦片像素里测出来（只测一次），
+     大小再乘一个增益，否则实测每帧才几个像素，肉眼感知不到。 */
+  var MOTION_GAIN = 2.6;      // 实测位移 → 屏幕像素的放大倍数
+  var MOTION_MIN = 3.5;       // 太小就看不出平移，给一个下限
+  var MOTION_MAX = 26;        // 太大就变成明显滑屏，不自然
+  var MOTION_N = 64;          // 位移估计的采样网格（64×64 足够，且够快）
+
   var ICON_PLAY = '<path d="M8 5v14l11-7z"/>';
   var ICON_PAUSE = '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>';
 
@@ -552,7 +567,8 @@
     playTimer: null,
     refreshTimer: null,
     layers: [],      // 目前留在 DOM 里的雨层，正常最多 2 个（淡入中 + 淡出中）
-    front: null,     // 正在显示的那一层
+    front: null,
+    frontFrame: null,   // 当前屏上是哪一帧（估位移要用它和下一帧配对）     // 正在显示的那一层
     pending: null,   // 已加入但还没淡入完成的层
     swapToken: 0,    // 递增令牌：让过期的淡入回调自己作废
     firstFrameDone: false, // 首帧是否已经亮过（首帧没有旧层兜底，用的超时更短）
@@ -560,6 +576,9 @@
     speed: 'normal',       // 速度档 id（SPEEDS 里的一项）
     frameMs: FRAME_MS,     // 当前单帧停留时长（速度档写入这里）
     fadeMs: FADE_MS,       // 当前过渡时长
+    motionOn: true,        // 换帧是否叠加平移（关闭 = 纯交叉淡入，用于对照）
+    motion: { dx: 0, dy: 0 }, // 每帧的屏幕位移（CSS px），由 estimateMotion 写入
+    motionReady: false,    // 位移是否已经测到
     baseHost: null,        // 当前底图入口（ESRI_HOSTS 里的一项）
     baseSwitched: false    // 已经自动兜底过一次了吗：只兜一次，避免两个入口来回跳
   };
@@ -582,6 +601,7 @@
     baseRefresh: document.getElementById('baseRefresh'),
     baseHint: document.getElementById('baseHint'),
     fadeToggle: document.getElementById('fadeToggle'),
+    motionToggle: document.getElementById('motionToggle'),
     speedSeg: document.getElementById('speedSeg'),
     opacity: document.getElementById('opacity'),
     mask: document.getElementById('mask'),
@@ -676,6 +696,9 @@
       fadeMs: function () { return state.fadeMs; },
       speed: function () { return state.speed; },
       fade: function () { return state.fade; },
+      motionOn: function () { return state.motionOn; },
+      motion: function () { return state.motion; },
+      frontFrame: function () { return state.frontFrame; },
       layerCount: function () { return state.layers.length; },
       baseHost: function () { return state.baseHost; },
       baseFails: function () { return baseLayer ? (baseLayer._baseFails || 0) : -1; },
@@ -702,6 +725,11 @@
     api.setFade = function (on) { setFade(on); };
     api.toggleFade = function () { toggleFade(); };
     api.setSpeed = function (id) { setSpeed(id); };
+    api.setMotion = function (on) { setMotion(on); };
+    api.toggleMotion = function () { toggleMotion(); };
+    api.estimateMotion = estimateMotion;
+    api.estimateGlobalMotion = estimateGlobalMotion;
+    api.clampMotion = clampMotion;
     api.speeds = function () { return SPEEDS.map(function (x) { return { id: x.id, frameMs: x.frameMs }; }); };
 
     window.__radarState = api;
@@ -973,6 +1001,40 @@
 
   function toggleFade() { setFade(!state.fade); }
 
+
+  /* 把测出来的位移夹进可用区间，并乘增益。 */
+  function clampMotion(mv) {
+    var dx = mv.dx * MOTION_GAIN;
+    var dy = mv.dy * MOTION_GAIN;
+    var len = Math.sqrt(dx * dx + dy * dy);
+    if (!len) return null;
+    if (len < MOTION_MIN) {
+      var k = MOTION_MIN / len;
+      dx *= k; dy *= k;
+    } else if (len > MOTION_MAX) {
+      var k2 = MOTION_MAX / len;
+      dx *= k2; dy *= k2;
+    }
+    return { dx: dx, dy: dy };
+  }
+
+  function setMotion(on) {
+    state.motionOn = !!on;
+    var btn = el.motionToggle;
+    if (btn) {
+      btn.classList.toggle('on', state.motionOn);
+      btn.setAttribute('aria-pressed', state.motionOn ? 'true' : 'false');
+      btn.textContent = state.motionOn ? '平移' : '溶解';
+    }
+    if (!state.motionOn) {
+      // 立刻归位，避免停在滑动中间
+      if (state.front) setLayerShift(state.front, 0, 0);
+      if (state.pending) setLayerShift(state.pending, 0, 0);
+    }
+  }
+
+  function toggleMotion() { setMotion(!state.motionOn); }
+
   /* 手动刷新：两个域名都挂了时，用户点这个从最快的入口再试一次。
      重置「已切换」标记，否则新层不会再触发兜底。 */
   function refreshBase() {
@@ -1102,6 +1164,115 @@
     requestAnimationFrame(tick);
   }
 
+
+  /* 从两帧的瓦片像素里估计降水场整体位移。
+     做法：把若干瓦片缩到 MOTION_N 网格，取 alpha 通道当权重图，
+     在 ±R 像素内做零均值归一化互相关，取相关性最高的偏移。
+     只为「方向」服务，绝对值不准也没关系（真正上屏的位移会乘 MOTION_GAIN 并夹在上下限里）。
+     失败时返回 null，调用方退回纯淡入 —— 估计不准时宁可不动，也不要乱动。 */
+  function estimateMotion(frameA, frameB, cb) {
+    if (!frameA || !frameB || typeof document === 'undefined') return cb(null);
+    var N = MOTION_N;
+    var R = 6;
+    var jobs = [];
+    var zoom = 5;
+    var mapC = map ? map.getCenter() : null;
+    if (!mapC) return cb(null);
+    // 中心附近 2×2 块瓦片就够：位移是全场一致的，不需要整屏
+    var z = zoom;
+    var n = Math.pow(2, z);
+    var xf = (mapC.lng + 180) / 360 * n;
+    var lat = mapC.lat * Math.PI / 180;
+    var yf = (1 - Math.log(Math.tan(lat) + 1 / Math.cos(lat)) / Math.PI) / 2 * n;
+    var x0 = Math.floor(xf), y0 = Math.floor(yf);
+
+    function loadImg(url) {
+      return new Promise(function (res) {
+        var im = new Image();
+        // 必须带 crossOrigin，否则画进 canvas 后 getImageData 会抛 SecurityError
+        im.crossOrigin = 'anonymous';
+        im.onload = function () { res(im); };
+        im.onerror = function () { res(null); };
+        im.src = url;
+        setTimeout(function () { res(null); }, 6000);
+      });
+    }
+
+    var list = [];
+    for (var ix = 0; ix < 2; ix++) {
+      for (var iy = 0; iy < 2; iy++) {
+        list.push({ x: (x0 + ix) % n, y: y0 + iy });
+      }
+    }
+
+    var tasks = [];
+    list.forEach(function (t) {
+      var ua = state.host + frameA.path + '/512/' + z + '/' + t.x + '/' + t.y + '/' + state.color + '/1_1.png';
+      var ub = state.host + frameB.path + '/512/' + z + '/' + t.x + '/' + t.y + '/' + state.color + '/1_1.png';
+      tasks.push(Promise.all([loadImg(ua), loadImg(ub)]));
+    });
+
+    Promise.all(tasks).then(function (pairs) {
+      var acc = { dx: 0, dy: 0, w: 0 };
+      var cv = document.createElement('canvas');
+      cv.width = N; cv.height = N;
+      var cx = cv.getContext('2d', { willReadFrequently: true });
+
+      function grab(img) {
+        cx.clearRect(0, 0, N, N);
+        try { cx.drawImage(img, 0, 0, N, N); } catch (e) { return null; }
+        var d;
+        try { d = cx.getImageData(0, 0, N, N).data; } catch (e) { return null; }
+        var a = new Float32Array(N * N);
+        var tot = 0;
+        for (var i = 0; i < N * N; i++) { a[i] = d[i * 4 + 3] / 255; tot += a[i]; }
+        return tot > 2 ? { a: a, tot: tot } : null;
+      }
+
+      function ncc(A, B, dx, dy) {
+        var num = 0, da = 0, db = 0;
+        for (var y = 0; y < N; y++) {
+          for (var x = 0; x < N; x++) {
+            var x2 = x + dx, y2 = y + dy;
+            if (x2 < 0 || y2 < 0 || x2 >= N || y2 >= N) continue;
+            var av = A[y * N + x], bv = B[y2 * N + x2];
+            num += av * bv; da += av * av; db += bv * bv;
+          }
+        }
+        return (da > 1e-9 && db > 1e-9) ? num / Math.sqrt(da * db) : -1;
+      }
+
+      pairs.forEach(function (pr) {
+        if (!pr[0] || !pr[1]) return;
+        var g0 = grab(pr[0]), g1 = grab(pr[1]);
+        if (!g0 || !g1) return;
+        var best = { c: -2, dx: 0, dy: 0 };
+        for (var dy = -R; dy <= R; dy++) {
+          for (var dx = -R; dx <= R; dx++) {
+            var c = ncc(g0.a, g1.a, dx, dy);
+            if (c > best.c) best = { c: c, dx: dx, dy: dy };
+          }
+        }
+        var zero = ncc(g0.a, g1.a, 0, 0);
+        // 只在确实比「不位移」更像的时候才采信，否则宁可当静止
+        if (best.c <= zero + 0.0012) return;
+        acc.dx += best.dx * g0.tot;
+        acc.dy += best.dy * g0.tot;
+        acc.w += g0.tot;
+      });
+
+      if (!acc.w) return cb(null);
+      // 网格像素 → 512 瓦片像素 → 屏幕 CSS 像素
+      var gridToTile = 512 / N;
+      var zMap = map ? map.getZoom() : 5;
+      // URL zoom 比地图 zoom 小 1（tileSize 512 + zoomOffset -1），放大倍数要补回来
+      var tileToScreen = 1 / Math.pow(2, Math.max(0, zMap - (z + 1)));
+      var dxs = acc.dx / acc.w * gridToTile * tileToScreen;
+      var dys = acc.dy / acc.w * gridToTile * tileToScreen;
+      cb({ dx: dxs, dy: dys });
+    }).catch(function () { cb(null); });
+  }
+
   /* 补偿式交叉淡入。
      普通交叉淡入把两层各自从 0 线性推到 T、从 T 推到 0，合成浓度是
      1-(1-a1)(1-a2)，中途会掉到 T 的约 82%，看上去就是「暗一下」。
@@ -1112,7 +1283,14 @@
      整段过渡恒等于目标浓度，亮度不会凹陷，只有画面内容在按权重迁移，
      这正是「云在无感移动」需要的效果（内容渐变，浓度不变）。
      w=0 时 a_new=0、a_old=T（完全是旧帧）；w=1 时反过来（完全是新帧）。 */
-  function crossFadeCompensated(newLayer, oldLayer, target, ms, onDone) {
+  /* 补偿式交叉淡入 + 同步平移。
+     两件事各自解决一个观感问题：
+       1) 移位对齐 —— 相邻两帧的云本来就错开 d 像素，纯淡入等于双重曝光（重影 → 读成闪）。
+          所以让旧层从 0 滑到 +d、新层从 -d 滑到 0，任何时刻两层里「同一片云」都重合。
+       2) 补偿不透明度 —— 两层叠加的合成浓度是 1-(1-a)(1-b)，线性交叉会掉到 T 的 ~82%，
+          改成 a_new=1-(1-T)^w、a_old=1-(1-T)^(1-w)，合成恒为 T，亮度不塌。
+     少了任何一个都不够：只补偿不位移仍有重影，只位移不补偿仍会暗一下。 */
+  function crossFadeCompensated(newLayer, oldLayer, target, ms, onDone, move) {
     if (!newLayer) return;
     var T = Math.max(0.001, Math.min(0.999, target));
     if (!oldLayer || oldLayer === newLayer) {
@@ -1122,22 +1300,72 @@
     newLayer.setOpacity(0);
     oldLayer.setOpacity(T);
 
+    var dx = move ? move.dx : 0;
+    var dy = move ? move.dy : 0;
+    var moving = Math.abs(dx) > 0.05 || Math.abs(dy) > 0.05;
+
+    var t0 = 0;
     function tick(ts) {
       if (!map || !map.hasLayer(newLayer)) return;
       if (!t0) t0 = ts;
       var w = Math.min(1, (ts - t0) / ms);
       newLayer.setOpacity(1 - Math.pow(1 - T, w));
       if (map.hasLayer(oldLayer)) oldLayer.setOpacity(1 - Math.pow(1 - T, 1 - w));
+
+      if (moving) {
+        // 旧层往前滑 d、新层从 -d 滑到 0：w=1 时两层重合在新层位置
+        var ox = dx * w, oy = dy * w;
+        var nx = -dx * (1 - w), ny = -dy * (1 - w);
+        setLayerShift(oldLayer, ox, oy);
+        setLayerShift(newLayer, nx, ny);
+      }
+
       if (w < 1) {
         requestAnimationFrame(tick);
       } else {
         newLayer.setOpacity(T);
         if (map.hasLayer(oldLayer)) oldLayer.setOpacity(0);
+        setLayerShift(oldLayer, 0, 0);
+        setLayerShift(newLayer, 0, 0);
         if (onDone) onDone();
       }
     }
-    var t0 = 0;
     requestAnimationFrame(tick);
+  }
+
+
+  /* 每帧位移的正式来源：相邻两帧的位移低于可测精度（实测 10 分钟云移动
+     折算到网格上不到 3 格，NCC 增益只有 1.00x），单独测永远测不出来。
+     但整段 13 帧跨 120 分钟的总位移是显著的（实测 NCC 增益 1.14x）。
+     所以拿首帧和末帧估总位移，再除以帧间隔得到每帧位移 —— 方向准，
+     幅度小的问题交给 clampMotion 的下限兜住。只算一次，之后复用。 */
+  function estimateGlobalMotion() {
+    var fr = state.frames;
+    if (!fr || fr.length < 3 || !map) return;
+    if (state.motionReady) return;
+    state.motionReady = true;  // 先置位，避免重复触发
+    estimateMotion(fr[0], fr[fr.length - 1], function (mv) {
+      if (!mv) { state.motionReady = false; return; }
+      var per = fr.length - 1;
+      state.motion = { dx: mv.dx / per, dy: mv.dy / per };
+    });
+  }
+
+  /* 给一个瓦片图层整体做平移。
+     注意目标必须是图层自己的容器（getContainer），不能是 getPane()：
+     Leaflet 里所有 L.tileLayer 默认共用同一个 leaflet-tile-pane，
+     平移那个 pane 会把底图和两层雷达一起拖走，等于整张地图在抖。
+     每个图层有自己的 _container（装着它自己的 <img>），平移它才是只动这一层。
+     也不逐个改 <img> 的 top/left —— 那些值归 Leaflet 管，下一次地图事件就被覆盖。 */
+  function setLayerShift(layer, dx, dy) {
+    if (!layer || !layer.getContainer) return;
+    var box = layer.getContainer();
+    if (!box) return;
+    if (!dx && !dy) {
+      if (box.style.transform) box.style.transform = '';
+      return;
+    }
+    box.style.transform = 'translate3d(' + dx.toFixed(2) + 'px,' + dy.toFixed(2) + 'px,0)';
   }
 
   // 关键：新层加入后不是「先删旧层」，而是让新层渐显、旧层渐隐，
@@ -1166,6 +1394,7 @@
 
       state.pending = null;
       state.front = layer;
+      state.frontFrame = frame;
       state.firstFrameDone = true;
 
       // 两种过渡模式：
@@ -1175,13 +1404,23 @@
       //   硬切 = 新层瞬间到位、旧层立刻移除。没有浓度凹陷，但相邻两帧之间是跳变。
       // 到底哪个更耐看必须肉眼对照，所以做成开关而不是直接定死。
       if (state.fade) {
-        // 补偿式交叉淡入：合成浓度恒等于 state.opacity，过渡期不会「暗一下」
-        crossFadeCompensated(layer, old, state.opacity, state.fadeMs, function () {
-          if (old) hardRemove(old);
-        });
-        // 补间若因地图交互被打断，也保证旧层最终被摘掉
-        if (old && old !== layer) {
-          setTimeout(function () { if (old) hardRemove(old); }, state.fadeMs + 160);
+        // 先估这一对帧之间的位移（首次会真的读瓦片像素，之后结果会复用）。
+        // 估不出来就退化成纯淡入 —— 宁可不动，也不要朝错方向滑。
+        var prevFrame = state.frontFrame;
+        var doFade = function (move) {
+          crossFadeCompensated(layer, old, state.opacity, state.fadeMs, function () {
+            if (old) hardRemove(old);
+          }, state.motionOn ? move : null);
+          if (old && old !== layer) {
+            setTimeout(function () { if (old) hardRemove(old); }, state.fadeMs + 160);
+          }
+        };
+        if (state.motionOn && old) {
+          // 每帧位移由 estimateGlobalMotion 一次算出；还没算好就先纯淡入，
+          // 下一帧就有值了 —— 总比让第一帧卡住等测量好
+          doFade(state.motionReady ? clampMotion(state.motion) : null);
+        } else {
+          doFade(null);
         }
       } else {
         layer.setOpacity(state.opacity);
@@ -1501,6 +1740,10 @@
     } else if (!isRefresh) {
       state.idx = framesRef.length - 1;
     }
+
+    // 帧表就绪后估一次全场每帧位移（首末帧跨 120 分钟，位移才够大到测得准）
+    state.motionReady = false;
+    estimateGlobalMotion();
   }
 
   function scheduleRefresh() {
@@ -1524,6 +1767,10 @@
     }
     if (el.fadeToggle) {
       el.fadeToggle.addEventListener('click', toggleFade);
+    }
+    if (el.motionToggle) {
+      el.motionToggle.addEventListener('click', toggleMotion);
+      setMotion(state.motionOn);
       setFade(state.fade);   // 初始化按钮文案与按下态
     }
     var hintRetry = document.getElementById('baseHintRetry');
