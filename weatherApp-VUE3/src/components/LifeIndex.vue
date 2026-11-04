@@ -24,7 +24,7 @@ const items = computed(() =>
     <div class="life-grid">
       <div v-for="item in items" :key="item.key" class="life-card">
         <p class="life-verdict">{{ item.verdict }}</p>
-        <TablerIcon class="life-icon" :name="item.icon" :size="18" />
+        <TablerIcon class="life-icon" :name="item.icon" :size="32" />
         <span v-if="item.detail" class="life-basis">{{ item.detail }}</span>
       </div>
     </div>
