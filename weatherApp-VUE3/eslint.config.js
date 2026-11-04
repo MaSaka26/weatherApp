@@ -11,7 +11,9 @@ export default defineConfig([
     files: ['**/*.{vue,js,mjs,jsx}'],
   },
 
-  globalIgnores(['**/dist/**', '**/dist-ssr/**', '**/coverage/**']),
+  // ui-review 是开发期的验证脚本与截图（Node 环境、用 process/Buffer），
+  // 不属于应用源码，也不参与构建。忽略掉它，lint 才只反映 src 的问题。
+  globalIgnores(['**/dist/**', '**/dist-ssr/**', '**/coverage/**', 'ui-review/**']),
 
   {
     languageOptions: {

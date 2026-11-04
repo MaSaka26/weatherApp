@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import { useWeatherStore } from '@/stores/weather'
 
@@ -12,6 +12,8 @@ import ErrorState from '@/components/ErrorState.vue'
 import CurrentWeather from '@/components/CurrentWeather.vue'
 import DetailCards from '@/components/DetailCards.vue'
 import HourlyForecast from '@/components/HourlyForecast.vue'
+import RainForecast from '@/components/RainForecast.vue'
+import RainRadarPreview from '@/components/RainRadarPreview.vue'
 import DailyForecast from '@/components/DailyForecast.vue'
 import LifeIndex from '@/components/LifeIndex.vue'
 
@@ -19,6 +21,10 @@ const store = useWeatherStore()
 
 const todayHigh = computed(() => store.daily?.temperature_2m_max?.[0] ?? 0)
 const todayLow = computed(() => store.daily?.temperature_2m_min?.[0] ?? 0)
+
+// 雷达预览是重资源（动态拉 Leaflet + 一次请求 13 帧），用开关控制挂载与销毁：
+// 常驻会让首屏多一个 Teleport 容器，且用户不点就白白占内存
+const radarOpen = ref(false)
 
 onMounted(() => {
   // 进入页面先尝试浏览器定位，失败则提示手动搜索
@@ -63,6 +69,14 @@ onMounted(() => {
 
       <HourlyForecast :hourly="store.hourly" :current="store.current" />
 
+      <!-- 降水预报：夹在逐小时与 16 天之间，是本次需求指定的位置 -->
+      <RainForecast
+        v-if="store.current && store.hourly"
+        :current="store.current"
+        :hourly="store.hourly"
+        @open="radarOpen = true"
+      />
+
       <DailyForecast :daily="store.daily" />
 
       <LifeIndex v-if="store.current" :current="store.current" :daily="store.daily" :air="store.air" />
@@ -70,4 +84,14 @@ onMounted(() => {
       <div class="location-hint">数据来源: Open-Meteo · {{ store.lastUpdated }}</div>
     </div>
   </div>
+
+  <!-- 雷达回放层放在 app-container 之外：它是全屏覆盖层，
+       留在内容列里会被容器的 max-width 与 padding 裁住 -->
+  <RainRadarPreview
+    :open="radarOpen"
+    :lat="store.lat"
+    :lon="store.lon"
+    :city-name="store.cityName"
+    @close="radarOpen = false"
+  />
 </template>
