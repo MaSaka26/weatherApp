@@ -183,6 +183,18 @@
   .seg button:hover{color:var(--text-2)}
   .seg button.on{background:rgba(109,179,242,.26);color:#fff}
 
+  /* 渐变开关。做成可切换而不是直接改死，是因为「闪」到底由哪一半造成
+     必须靠肉眼对照才能定论：关掉时是硬切（新层瞬间满透明度、旧层立刻移除），
+     开启时是交叉淡入。两个状态各看一遍，才能判断该保留哪种。 */
+  .mini-toggle{
+    border:none;background:rgba(255,255,255,.05);color:var(--text-6);
+    font-family:inherit;font-size:11px;line-height:1;
+    height:26px;padding:0 11px;border-radius:999px;cursor:pointer;
+    transition:background .16s ease,color .16s ease;
+  }
+  .mini-toggle:hover{color:var(--text-2)}
+  .mini-toggle.on{background:rgba(109,179,242,.26);color:#fff}
+
   /* 底图刷新按钮：一个图标就够了，不给它配文字（底部那行已经够挤）。
      转圈表示正在重试，1.5 秒后无论如何都停，不能让按钮一直转。 */
   .mini-refresh{
@@ -361,6 +373,10 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-.6 4"/><path d="M20 4v7h-7"/></svg>
     </button></div>
     <div class="lbl">配色 <div class="seg" id="colorSeg"></div></div>
+    <div class="lbl">过渡
+      <button class="mini-toggle on" id="fadeToggle" type="button"
+              title="开启/关闭渐入渐出，用来对比两种换帧观感" aria-pressed="true">渐变</button>
+    </div>
     <div class="lbl">
       透明度
       <input type="range" class="slider-mini" id="opacity" min="20" max="100" value="80" step="1"
@@ -528,6 +544,7 @@
     pending: null,   // 已加入但还没淡入完成的层
     swapToken: 0,    // 递增令牌：让过期的淡入回调自己作废
     firstFrameDone: false, // 首帧是否已经亮过（首帧没有旧层兜底，用的超时更短）
+    fade: true,            // 换帧是否走交叉淡入（false = 硬切，用于对照测试）
     baseHost: null,        // 当前底图入口（ESRI_HOSTS 里的一项）
     baseSwitched: false    // 已经自动兜底过一次了吗：只兜一次，避免两个入口来回跳
   };
@@ -549,6 +566,7 @@
     colorSeg: document.getElementById('colorSeg'),
     baseRefresh: document.getElementById('baseRefresh'),
     baseHint: document.getElementById('baseHint'),
+    fadeToggle: document.getElementById('fadeToggle'),
     opacity: document.getElementById('opacity'),
     mask: document.getElementById('mask'),
     maskSpin: document.getElementById('maskSpin'),
@@ -640,6 +658,7 @@
       },
       frameMs: function () { return FRAME_MS; },
       fadeMs: function () { return FADE_MS; },
+      fade: function () { return state.fade; },
       layerCount: function () { return state.layers.length; },
       baseHost: function () { return state.baseHost; },
       baseFails: function () { return baseLayer ? (baseLayer._baseFails || 0) : -1; },
@@ -663,6 +682,8 @@
     api.prev = function () { step(-1); };
     api.goto = function (i) { setIndex(i); };
     api.retry = function () { retryLoad(); };
+    api.setFade = function (on) { setFade(on); };
+    api.toggleFade = function () { toggleFade(); };
 
     window.__radarState = api;
   }
@@ -881,6 +902,23 @@
     });
   }
 
+  /* 渐变开关：只影响「这一帧怎么接管画面」，不影响加载与兜底逻辑。
+     关掉之后立刻把当前层补齐到目标透明度，避免停在过渡中间的半透明状态。 */
+  function setFade(on) {
+    state.fade = !!on;
+    var btn = el.fadeToggle;
+    if (btn) {
+      btn.classList.toggle('on', state.fade);
+      btn.setAttribute('aria-pressed', state.fade ? 'true' : 'false');
+      btn.textContent = state.fade ? '渐变' : '硬切';
+    }
+    if (!state.fade && state.front) {
+      state.front.setOpacity(state.opacity);
+    }
+  }
+
+  function toggleFade() { setFade(!state.fade); }
+
   /* 手动刷新：两个域名都挂了时，用户点这个从最快的入口再试一次。
      重置「已切换」标记，否则新层不会再触发兜底。 */
   function refreshBase() {
@@ -1038,12 +1076,23 @@
       state.front = layer;
       state.firstFrameDone = true;
 
-      // 新层渐显 + 旧层渐隐同时开始 → 整个过程屏幕始终有雨层覆盖
-      fadeTo(layer, 0, state.opacity, FADE_MS);
-      if (old && old !== layer) {
-        fadeTo(old, old.options.opacity, 0, FADE_MS, function () { hardRemove(old); });
-        // 渐隐补间若因地图交互被打断，也保证最终被摘掉
-        setTimeout(function () { hardRemove(old); }, FADE_MS + 120);
+      // 两种过渡模式：
+      //   渐变 = 新层渐显、旧层渐隐。好处是永远没有空白帧，坏处是过渡期间
+      //          两层同时半透明，画面合成浓度会掉到稳定态的 ~64%（1-(1-a)(1-b)
+      //          的非线性所致），每一帧都「暗一下再亮回来」，看起来就是闪。
+      //   硬切 = 新层瞬间到位、旧层立刻移除。没有浓度凹陷，但相邻两帧之间是跳变。
+      // 到底哪个更耐看必须肉眼对照，所以做成开关而不是直接定死。
+      if (state.fade) {
+        fadeTo(layer, 0, state.opacity, FADE_MS);
+        if (old && old !== layer) {
+          fadeTo(old, old.options.opacity, 0, FADE_MS, function () { hardRemove(old); });
+          // 渐隐补间若因地图交互被打断，也保证最终被摘掉
+          setTimeout(function () { hardRemove(old); }, FADE_MS + 120);
+        }
+      } else {
+        layer.setOpacity(state.opacity);
+        // 硬切：新层已完全接管，旧层立即移除，避免它继续压在新层下面
+        if (old && old !== layer) hardRemove(old);
       }
 
       // 兜底：极端情况下（快速拖滑块）残留的层不让它堆在 DOM 里
@@ -1378,6 +1427,10 @@
     mountBaseLayer(ESRI_HOSTS[0]);
     if (el.baseRefresh) {
       el.baseRefresh.addEventListener('click', refreshBase);
+    }
+    if (el.fadeToggle) {
+      el.fadeToggle.addEventListener('click', toggleFade);
+      setFade(state.fade);   // 初始化按钮文案与按下态
     }
     var hintRetry = document.getElementById('baseHintRetry');
     if (hintRetry) hintRetry.addEventListener('click', refreshBase);
