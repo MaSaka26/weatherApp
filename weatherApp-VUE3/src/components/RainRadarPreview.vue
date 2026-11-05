@@ -108,6 +108,20 @@ const LOAD_GUARD_MS = 15000
 const FIRST_GUARD_MS = 6000
 const META_TIMEOUT_MS = 12000
 
+/* 预热：首帧上屏后，把「接下来要播的几帧」在当前视野用到的瓦片提前拉进 HTTP 缓存。
+   实测这台机器单块瓦片 1.3–12 秒，不预热时每换一帧要重新等整层 load（3–7 秒）。
+
+   这里有个反直觉的取舍：最早试过把 12 帧全预热，但一屏 30 块 × 12 帧 = 360 个请求，
+   8 并发实测 30 秒只完成 14 块 —— 要跑几分钟，而 13 帧一圈才 6.8 秒，永远追不上。
+   更糟的是这 8 个并发会和用户正在看的那一帧抢连接，实测换帧新发请求从 4 个涨到 12–16 个，
+   等于为了加速反而拖慢了当前画面。
+
+   所以只预热接下来几帧、只开 3 个并发：让预热始终落后于播放进度一步，
+   用户看到的帧永远优先拿到带宽，预热只在「等下一帧的那半秒」里占一点空隙。
+   探到的帧进缓存后（z≤6 的 cache-control 是 48 小时）第二圈起几乎零请求。 */
+const PREWARM_AHEAD = 3
+const PREWARM_CONCURRENCY = 3
+
 /* ============================================================
    Leaflet 动态加载（模块级单例）
    ============================================================ */
@@ -731,6 +745,137 @@ function createRadarLayer(frame) {
   return layer
 }
 
+/* ============================================================
+   预热：把还没播到的帧提前塞进浏览器缓存
+   ============================================================ */
+
+/* 为什么不是「给每帧建一个 L.tileLayer 让它自己加载」：
+   13 个瓦片图层同时挂在地图上，每层都要 SVG/IMG 容器、都要参与地图事件，
+   内存和重排代价都不小，而这些层用户根本还没看到。
+   这里只做一件事 —— 按当前视野算出 URL，用 Image() 拉一遍。
+   浏览器 HTTP 缓存命中后，之后真正换帧时 Leaflet 建的 <img> 会直接拿缓存，
+   请求数几乎为零。z≤6 的 cache-control 是 48 小时，所以这一圈的成本只付一次。 */
+
+// 算出「当前视野 + 当前地图层级」在 URL 空间里覆盖哪些 z/x/y。
+// 注意 URL 层级比地图层级小 1（tileSize 512 + zoomOffset -1），
+// 这里必须和 createRadarLayer 用的是同一套换算，否则会预热出一批用不上的瓦片。
+function tilesInView() {
+  if (!map) return []
+
+  const bounds = map.getBounds()
+  const urlZoom = Math.max(0, Math.min(MAX_NATIVE_ZOOM - 1, map.getZoom() - 1))
+  const n = Math.pow(2, urlZoom)
+
+  // 经纬度 → URL 空间的瓦片坐标（Web Mercator）
+  const toTile = (lat, lng) => {
+    const rad = (lat * Math.PI) / 180
+    const x = ((lng + 180) / 360) * n
+    const y = ((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) * n
+    return { x, y }
+  }
+
+  const nw = toTile(bounds.getNorth(), bounds.getWest())
+  const se = toTile(bounds.getSouth(), bounds.getEast())
+
+  // 多取一圈：地图边界处的瓦片常常只露出一个角，少算这一圈会在换帧时补请求
+  const x0 = Math.floor(Math.min(nw.x, se.x)) - 1
+  const x1 = Math.floor(Math.max(nw.x, se.x)) + 1
+  const y0 = Math.floor(Math.min(nw.y, se.y)) - 1
+  const y1 = Math.floor(Math.max(nw.y, se.y)) + 1
+
+  const out = []
+  // 视野跨过 180° 经线时 x 会绕，取模之后可能产生重复，用 Set 去重
+  const seen = new Set()
+  for (let x = x0; x <= x1; x++) {
+    for (let y = y0; y <= y1; y++) {
+      const tx = ((x % n) + n) % n
+      if (y < 0 || y >= n) continue
+      const key = `${urlZoom}/${tx}/${y}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push({ z: urlZoom, x: tx, y })
+    }
+  }
+
+  // 视野越大瓦片越多；给个上限，避免用户缩到全国时一次排出几百个请求
+  const max = 60
+  return out.length > max ? out.slice(0, max) : out
+}
+
+function tileUrlOf(frame, t) {
+  return `${tileHost}${frame.path}/512/${t.z}/${t.x}/${t.y}/${RADAR_COLOR}/1_1.png`
+}
+
+// 预热状态（驱动 UI 上的一行小字，让用户知道「转圈不是卡住」）
+const warmTotal = ref(0)
+const warmDone = ref(0)
+const warming = computed(() => warmTotal.value > 0 && warmDone.value < warmTotal.value)
+
+let warmToken = 0
+
+function prewarmFrames() {
+  if (!alive || !map || frames.value.length < 2) return
+
+  const token = ++warmToken
+  // 只排接下来 PREWARM_AHEAD 帧；最新帧已经作为首帧加载过，从下一帧起算
+  const list = frames.value
+  const start = idx.value
+  const order = []
+  for (let i = 1; i <= PREWARM_AHEAD && i < list.length; i++) {
+    order.push(list[(start + i) % list.length])
+  }
+
+  const tiles = new Map() // frame → tile 列表，按帧顺序展开，保证「下一帧」最先到
+  for (const frame of order) tiles.set(frame, tilesInView())
+
+  const jobs = []
+  for (const frame of order) {
+    for (const t of tiles.get(frame)) jobs.push({ frame, t })
+  }
+
+  warmTotal.value = jobs.length
+  warmDone.value = 0
+
+  let cursor = 0
+  // 预热的失败一律静默：它只是加速，不该因为某块瓦片 404 就影响回放
+  async function worker() {
+    while (cursor < jobs.length) {
+      if (!alive || token !== warmToken) return
+      // 换帧正在进行时先让路：此刻用户盯着的就是这一帧，
+      // 预热去抢连接会让它更晚到（实测第一圈因此从 14 秒拖到 20 秒）。
+      // 等这一帧落地再继续，带宽始终优先给「马上要看的内容」。
+      if (pendingLayer) {
+        await new Promise((r) => setTimeout(r, 120))
+        continue
+      }
+      const job = jobs[cursor++]
+      await loadOne(job)
+      if (!alive || token !== warmToken) return
+      warmDone.value++
+    }
+  }
+
+  function loadOne({ frame, t }) {
+    return new Promise((resolve) => {
+      const img = new Image()
+      img.decoding = 'async'
+      img.onload = () => resolve()
+      img.onerror = () => resolve()
+      img.src = tileUrlOf(frame, t)
+      // 不挂到 DOM 上：Image() 的加载与是否插入文档无关，
+      // 一旦挂进文档反而会被 Leaflet 的清理逻辑扫到
+    })
+  }
+
+  for (let i = 0; i < PREWARM_CONCURRENCY; i++) void worker()
+}
+
+function stopPrewarm() {
+  warmToken++
+  warmTotal.value = 0
+  warmDone.value = 0
+}
+
 function hardRemove(layer) {
   if (!layer) return
   // 已经从地图上摘掉的层再 removeLayer 一次，Leaflet 会重新走一遍移除流程
@@ -874,7 +1019,13 @@ function showFrame(frame) {
     firstFrameDone = true
 
     // 首帧瓦片到齐、画面里已经有回波，这时才撤加载遮罩
-    if (status.value === 'loading') status.value = 'ready'
+    if (status.value === 'loading') {
+      status.value = 'ready'
+      // 遮罩一撤就轮到预热：用户此刻正在看第一帧，
+      // 正好用这段「看图的时间」把后面 12 帧悄悄拉进缓存。
+      // 必须是首帧之后 —— 提前预热会和首帧抢同一批连接，把首屏拖得更慢。
+      prewarmFrames()
+    }
 
     // 换帧：渐变走补偿式交叉淡入（合成浓度恒定，不闪），硬切直接用目标值。
     // 旧的从它「此刻真实的透明度」开始算：连点滑块时它可能正停在 0.4 这种中间值上，
@@ -1019,6 +1170,7 @@ function teardown() {
   }
   alive = false
   swapToken++ // 让所有在途的 settle 回调作废
+  stopPrewarm() // 预热同样要停：旧地图的瓦片请求不该跟着用户去看别的页面
   clearAllTimers()
   playing.value = false
   destroyMap()
@@ -1375,6 +1527,11 @@ watch(
             <div class="radar-time-row">
               <span class="radar-clock">{{ timeText }}</span>
               <span class="radar-tag" :class="{ latest: isLatest }">{{ relLabel }}</span>
+              <!-- 预热进度。故意不叫「加载」：画面已经能用，这只是把后面 12 帧
+                   提前拉进缓存，让换帧不再等 3–7 秒。没有它，用户会以为卡住了。 -->
+              <span v-if="warming" class="radar-warm" role="status">
+                预载 {{ warmDone }}/{{ warmTotal }}
+              </span>
               <span class="radar-meta">{{ rangeText }}</span>
             </div>
 
@@ -2054,6 +2211,15 @@ watch(
   margin-bottom: 8px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* 预热进度：比正文更弱的一档，它是背景任务，不该抢时间与帧标签的位置 */
+.radar-warm {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--rr-text-6);
+  letter-spacing: 0.2px;
+  opacity: 0.78;
 }
 
 .radar-clock {
