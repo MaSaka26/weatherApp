@@ -43,6 +43,56 @@
   .leaflet-container{background:var(--map-bg);font-family:inherit;outline:none}
   /* 只压暗底图，雨层保持原亮度，对比才出得来 */
   .base-tiles{filter:brightness(.82) contrast(1.05)}
+
+  /* NMC 整图容器。#map 用的是 position:absolute;inset:0，这里同样铺满，
+     切换时通过 hidden 属性互斥。z-index 取 400：低于所有 UI（600），高于 #map。 */
+  #nmcPane{
+    position:absolute;inset:0;z-index:400;
+    display:flex;align-items:center;justify-content:center;
+    background:var(--map-bg);
+    padding:14px;
+  }
+  #nmcPane[hidden]{display:none}
+
+  .nmc-img{
+    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    /* 撑满容器再由 object-fit 收边：NMC 是整幅中国图，缩在中间一小块
+       四周全是空黑色，既浪费屏幕也让雷达细节看不清。 */
+    width:calc(100% - 28px);height:calc(100% - 28px);
+    object-fit:contain;
+    border-radius:8px;
+    opacity:0;
+    transition:opacity 160ms ease;
+    
+    /* 中央气象台原图是白底黑线，直接放进深色界面里会像一张贴纸。
+       反相+色相还原是图片深色化的标准做法：invert 把白底变黑底，
+       hue-rotate(180deg) 把 invert 顺带翻转的色相转回来 ——
+       否则绿色回波会变成品红，配色完全失去可读性。 */
+    filter:invert(1) hue-rotate(180deg) brightness(.94) contrast(1.08);
+  }
+
+  .nmc-img.show{opacity:1}
+
+  #nmcPane.day .nmc-img{filter:none}
+
+  @media (prefers-reduced-motion:reduce){
+    .nmc-img{transition:none}
+  }
+
+  .nmc-badge{
+    position:absolute;left:50%;bottom:10px;transform:translateX(-50%);
+    font-size:11px;color:var(--text-6);
+    background:rgba(6,13,22,.78);border:1px solid var(--stroke);
+    padding:4px 12px;border-radius:999px;white-space:nowrap;
+    backdrop-filter:blur(8px);
+    pointer-events:none;
+  }
+
+  /* 窄屏：给控制台留出它自己的位置，图不要顶到边上 */
+  @media (max-width:720px){
+    #nmcPane{padding:8px;bottom:auto;top:0;height:calc(100% - 190px)}
+    .nmc-badge{font-size:10px;bottom:6px}
+  }
   /* Esri 是无标注底图，地名靠 divIcon 自己画：
      文字加 1px 深色描边，压在浅灰地形上也读得清 */
   .city-label b{
@@ -182,6 +232,19 @@
   }
   .seg button:hover{color:var(--text-2)}
   .seg button.on{background:rgba(109,179,242,.26);color:#fff}
+
+  /* 数据源切换放在主行最左边，比配色那一组更重要。
+     窄屏时字号略小以便和播放键排在一行。 */
+  .seg-source button{font-weight:500}
+  .seg-source button.on{background:rgba(109,179,242,.34)}
+  @media (max-width:720px){
+    .seg-source button{padding:5px 9px;font-size:10px}
+  }
+
+  /* 这些设置只对 RainViewer 的半透明瓦片层有意义。
+     NMC 是整张烘焙好的图（底图+省界+城市名+回波+图例都在里面），
+     换色会把地名和图例一起翻掉，所以切到 NMC 时整组隐藏。 */
+  body[data-source="nmc"] .rv-only{display:none}
 
   /* 渐变开关。做成可切换而不是直接改死，是因为「闪」到底由哪一半造成
      必须靠肉眼对照才能定论：关掉时是硬切（新层瞬间满透明度、旧层立刻移除），
@@ -337,6 +400,15 @@
 
 <div id="map"></div>
 
+<!-- NMC 整图。中央气象台的雷达图是「地理底图+省界+城市名+回波+图例」烘焙在一张 PNG 里，
+     不能当瓦片叠到 Leaflet 上，所以这里是一个与 #map 平级的独立容器，切换时二者互斥。
+     放在 #map 外面是必须的：Leaflet 的 pane 在 #map 内部自成层级，塞进去会被覆盖。 -->
+<div id="nmcPane" hidden>
+  <img class="nmc-img" id="nmcImage" alt="中央气象台全国雷达回波拼图" />
+  <img class="nmc-img" id="nmcImageB" alt="" aria-hidden="true" />
+  <div class="nmc-badge" id="nmcBadge">中央气象台 · 6 分钟一帧</div>
+</div>
+
 <!-- 左上信息卡 -->
 <div class="head">
   <h1>雷达降水回放</h1>
@@ -355,6 +427,7 @@
 <!-- 底部控制台 -->
 <div class="panel">
   <div class="row">
+    <div class="seg seg-source" id="sourceSeg" role="group" aria-label="雷达数据源"></div>
     <button class="play" id="playBtn" type="button" title="播放 / 暂停（空格）" aria-label="播放或暂停">
       <svg id="playIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
     </button>
@@ -372,13 +445,13 @@
         title="重新加载底图" aria-label="重新加载底图">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-.6 4"/><path d="M20 4v7h-7"/></svg>
     </button></div>
-    <div class="lbl">配色 <div class="seg" id="colorSeg"></div></div>
-    <div class="lbl">过渡
+    <div class="lbl rv-only">配色 <div class="seg" id="colorSeg"></div></div>
+    <div class="lbl rv-only">过渡
       <button class="mini-toggle on" id="fadeToggle" type="button"
               title="开启/关闭渐入渐出，用来对比两种换帧观感" aria-pressed="true">渐变</button>
     </div>
     <div class="lbl">速度 <div class="seg" id="speedSeg"></div></div>
-    <div class="lbl">
+    <div class="lbl rv-only">
       透明度
       <input type="range" class="slider-mini" id="opacity" min="20" max="100" value="80" step="1"
              aria-label="雨层透明度">
@@ -528,6 +601,98 @@
   var ESRI_PATH =
     '/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}';
 
+  /* ============================================================
+     中央气象台（NMC）数据源
+     ============================================================
+
+     与 RainViewer 的根本区别：
+       RainViewer = 全球瓦片金字塔，可作为半透明图层叠在 Leaflet 上，能缩放；
+       NMC       = 一张烘焙好的整图（地理底图 + 省界 + 城市名 + 回波 + 图例）。
+     换来的是速度：NMC 单帧 0.27–0.62 秒，RainViewer 单块瓦片 1.3–12 秒。
+
+     URL 规则（实测）：
+       https://image.nmc.cn/product/{YYYY}/{MM}/{DD}/RDCP/{small|medium}/
+         SEVP_AOC_RDCP_SLDAS3_ECREF_ACHN_L88_PI_{YYYYMMDDHHMM}00000.PNG
+     时间戳是 UTC、6 分钟一档、末 5 位恒 00000。
+     没有 JSON 接口，HTML 页也没有 CORS 头，所以「最新是哪一帧」只能推算 + 探测。 */
+  var NMC_SLOT_MS = 6 * 60 * 1000;
+  var NMC_SIZES = [
+    { id: 'small', name: '小', kb: 203 },
+    { id: 'medium', name: '中', kb: 530 }
+  ];
+  // 往回最多探测多少档。发布有 6–12 分钟延迟，实测 07:42 时 0742 是 404、0736 才有图。
+  // 6 档 = 36 分钟，足够覆盖任何延迟，最坏 6 次探测约 2 秒。
+  var NMC_PROBE_TRIES = 6;
+  var NMC_DEFAULT_SPAN = 12;
+
+  function nmcStamp(date) {
+    var p = function (n) { return n < 10 ? '0' + n : '' + n; };
+    return date.getUTCFullYear() +
+      p(date.getUTCMonth() + 1) + p(date.getUTCDate()) +
+      p(date.getUTCHours()) + p(date.getUTCMinutes()) + '00000';
+  }
+
+  function nmcUrl(stamp, size) {
+    return 'https://image.nmc.cn/product/' + stamp.slice(0, 4) + '/' + stamp.slice(4, 6) +
+      '/' + stamp.slice(6, 8) + '/RDCP/' + size + '/SEVP_AOC_RDCP_SLDAS3_ECREF_ACHN_L88_PI_' +
+      stamp + '.PNG';
+  }
+
+  // 向下取整到 6 分钟档。不能四舍五入：07:35 会被推到 07:36，而那一档还没发布。
+  function nmcSlot(date) {
+    return new Date(Math.floor(date.getTime() / NMC_SLOT_MS) * NMC_SLOT_MS);
+  }
+
+  // 手动 +8 小时再按 UTC 读，不依赖 locale/timeZone —— 页面在哪个时区打开都显示北京时间。
+  function nmcBeijingHHMM(date) {
+    var d = new Date(date.getTime() + 8 * 3600 * 1000);
+    var p = function (n) { return n < 10 ? '0' + n : '' + n; };
+    return p(d.getUTCHours()) + ':' + p(d.getUTCMinutes());
+  }
+
+  function nmcProbe(url) {
+    return new Promise(function (resolve) {
+      var im = new Image();
+      im.onload = function () { resolve(im.naturalWidth > 0); };
+      im.onerror = function () { resolve(false); };
+      im.src = url;
+    });
+  }
+
+  // 从当前档往回试，找到第一个真实存在的
+  function nmcProbeLatest(size, token, onProgress) {
+    var start = nmcSlot(new Date());
+    var chain = Promise.resolve(null);
+    var tried = 0;
+    for (var i = 0; i < NMC_PROBE_TRIES; i++) {
+      (function (k) {
+        chain = chain.then(function (found) {
+          if (found) return found;
+          if (token !== state.sourceToken) return null;
+          tried++;
+          if (onProgress) onProgress(tried);
+          var t = new Date(start.getTime() - k * NMC_SLOT_MS);
+          return nmcProbe(nmcUrl(nmcStamp(t), size)).then(function (ok) {
+            return ok ? t : null;
+          });
+        });
+      })(i);
+    }
+    return chain;
+  }
+
+  function nmcBuildFrames(latest, count, size) {
+    var out = [];
+    for (var i = count - 1; i >= 0; i--) {
+      var d = new Date(latest.getTime() - i * NMC_SLOT_MS);
+      var stamp = nmcStamp(d);
+      out.push({ date: d, stamp: stamp, url: nmcUrl(stamp, size) });
+      // 保留 time 字段（秒），让共用的时间轴逻辑不用分叉
+      out[out.length - 1].time = Math.floor(d.getTime() / 1000);
+    }
+    return out;
+  }
+
   var ICON_PLAY = '<path d="M8 5v14l11-7z"/>';
   var ICON_PAUSE = '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>';
 
@@ -561,7 +726,16 @@
     frameMs: FRAME_MS,     // 当前单帧停留时长（速度档写入这里）
     fadeMs: FADE_MS,       // 当前过渡时长
     baseHost: null,        // 当前底图入口（ESRI_HOSTS 里的一项）
-    baseSwitched: false    // 已经自动兜底过一次了吗：只兜一次，避免两个入口来回跳
+    baseSwitched: false,   // 已经自动兜底过一次了吗：只兜一次，避免两个入口来回跳
+
+    /* ── 双数据源 ── */
+    source: 'rainviewer',     // 'rainviewer' | 'nmc'
+    sourceToken: 0,           // 切源令牌：作废所有在途的异步回调
+    switching: false,         // 正在切换（防止连点）
+    nmcFrames: [],            // NMC 自己的帧列表，与 state.frames 完全分开存
+    nmcIdx: 0,
+    nmcSize: 'medium',
+    nmcFront: null            // NMC 当前显示的是哪张 <img>
   };
 
   var map = null;
@@ -588,7 +762,12 @@
     maskSpin: document.getElementById('maskSpin'),
     maskText: document.getElementById('maskText'),
     maskHint: document.getElementById('maskHint'),
-    retryBtn: document.getElementById('retryBtn')
+    retryBtn: document.getElementById('retryBtn'),
+    sourceSeg: document.getElementById('sourceSeg'),
+    nmcPane: document.getElementById('nmcPane'),
+    nmcImage: document.getElementById('nmcImage'),
+    nmcImageB: document.getElementById('nmcImageB'),
+    nmcBadge: document.getElementById('nmcBadge')
   };
 
   /* ============================================================
@@ -652,6 +831,21 @@
   function exposeDebug() {
     window.__radarFrames = framesRef;
 
+    // 双数据源的调试出口。老成员一个都不动，外部验证脚本依赖它们。
+    window.__radarDemo = {
+      get source() { return state.source; },
+      get frames() { return activeFrames().length; },
+      get idx() { return state.source === 'nmc' ? state.nmcIdx : state.idx; },
+      get playing() { return state.playing; },
+      get switching() { return state.switching; },
+      get nmcReady() { return state.nmcFrames.length > 0; },
+      setSource: function (id) { return setSource(id); },
+      leafletAlive: function () {
+        var m = document.getElementById('map');
+        return !!map && !!m && m.style.display !== 'none';
+      }
+    };
+
     var getters = {
       index: function () { return state.idx; },
       count: function () { return state.frames.length; },
@@ -682,6 +876,8 @@
       baseTriggered: function () { return baseLayer ? !!baseLayer._baseTriggered : null; },
       baseBound: function () { return baseLayer ? !!baseLayer._baseBound : null; },
       baseSwitched: function () { return state.baseSwitched; },
+      source: function () { return state.source; },
+      nmcIdx: function () { return state.nmcIdx; },
       baseLayerKind: function () {
         if (!baseLayer) return null;
         return baseLayer.constructor && baseLayer.constructor.name || typeof baseLayer;
@@ -1218,6 +1414,9 @@
      ============================================================ */
 
   function applyFrame() {
+    // 迟到的 settle 会调到这里。切到 NMC 之后绝不能再建 RainViewer 瓦片层，
+    // 否则 NMC 整图上会莫名多出一层半透明的雷达瓦片。
+    if (state.source !== 'rainviewer') return;
     var f = currentFrame();
     if (!f) return;
     updateFrameUI(f);
@@ -1254,6 +1453,7 @@
   }
 
   function setIndex(i) {
+    if (state.source !== 'rainviewer') return;
     if (!state.frames.length) return;
     var n = state.frames.length;
     i = Number(i);
@@ -1265,6 +1465,13 @@
   }
 
   function step(delta) {
+    if (state.source === 'nmc') {
+      var m = state.nmcFrames.length;
+      if (!m) return;
+      pause();
+      nmcShowFrame((state.nmcIdx + delta + m) % m);
+      return;
+    }
     var n = state.frames.length;
     if (!n) return;
     pause();                       // 手动逐帧时停掉定时器，否则下一拍就被覆盖
@@ -1301,6 +1508,8 @@
       state.playTimer = null;
     }
     if (!state.playing) return;
+    // NMC 走自己的换图计时器：它没有瓦片层要等，也不需要 settle/pending 那套
+    if (state.source === 'nmc') { nmcArmNext(); return; }
     // 还有帧在加载中：交给它的 settle() 去排下一拍，现在排会把它顶掉
     if (state.pending) return;
     state.playTimer = setTimeout(function () {
@@ -1314,7 +1523,8 @@
   }
 
   function play() {
-    if (state.playing || state.frames.length < 2) return;
+    var frames = activeFrames();
+    if (state.playing || frames.length < 2) return;
     state.playing = true;
     setPlayIcon();
     // 定时器只推进索引，绝不重新拉元数据
@@ -1339,7 +1549,12 @@
 
     el.slider.addEventListener('input', function () {
       pause();
-      setIndex(Number(el.slider.value));
+      var v = Number(el.slider.value);
+      if (state.source === 'nmc') {
+        nmcShowFrame(v);
+      } else {
+        setIndex(v);
+      }
     });
 
     el.opacity.addEventListener('input', function () {
@@ -1382,6 +1597,9 @@
 
   function hideMask() {
     el.mask.classList.add('hide');
+    // 清掉残留文案：遮罩只是透明了，DOM 里还挂着一句「正在预载…」，
+    // 屏幕阅读器与自动化脚本仍会读到，属于脏状态。
+    if (el.maskText) el.maskText.textContent = '';
   }
 
   function showError(err) {
@@ -1407,6 +1625,12 @@
 
   function retryLoad() {
     state.error = null;
+    // NMC 模式下重试要重试 NMC —— 否则用户点「重试」会莫名其妙被切回 RainViewer
+    if (state.source === 'nmc') {
+      state.sourceToken++;
+      loadNmc();
+      return;
+    }
     loadMeta(false);
   }
 
@@ -1504,6 +1728,9 @@
   }
 
   function scheduleRefresh() {
+    // NMC 是静态图片，没有「元数据刷新」这回事；在 NMC 模式下排刷新，
+    // 到了点它会拉 RainViewer 元数据并顺手把画面切回去，是最隐蔽的自作主张。
+    if (state.source !== 'rainviewer') return;
     if (state.refreshTimer) clearTimeout(state.refreshTimer);
     state.refreshTimer = setTimeout(function () {
       loadMeta(true);
@@ -1513,6 +1740,278 @@
   /* ============================================================
      启动
      ============================================================ */
+
+  /* ============================================================
+     双数据源：RainViewer ⇄ NMC
+     ============================================================
+
+     为什么两套帧列表分开存（state.frames / state.nmcFrames）而不是共用一个数组：
+     framesRef 被 window.__radarFrames 直接指向同一引用，applyMeta 也是原地改写它。
+     如果切源时把 state.frames 重指到新数组，外部脚本与 applyMeta 就永久分裂成两份，
+     刷新元数据后会往没人看的数组里写。分开存两个列表，切换只换「当前读哪个」。
+
+     切换必须做的清理（漏一步就会串台）：
+       1. pause()             —— 否则迟到的 settle 会调 applyFrame 盖一层 RainViewer 瓦片
+       2. swapToken++         —— 作废所有在途的 showFrame 回调，它们 return 时不会移除层
+       3. 逐个 hardRemove 残留层 —— 上面那些 return 掉的层会 permanent 留在 DOM 里
+       4. clearTimeout(refreshTimer) —— 否则 10 分钟后它自己切回 RainViewer
+       5. sourceToken++       —— 作废在途的 NMC 探测链 */
+
+  var SOURCES = [
+    { id: 'rainviewer', name: 'RainViewer' },
+    { id: 'nmc', name: 'NMC 全国' }
+  ];
+
+  function activeFrames() {
+    return state.source === 'nmc' ? state.nmcFrames : state.frames;
+  }
+
+  function buildSourceSeg() {
+    if (!el.sourceSeg) return;
+    el.sourceSeg.textContent = '';
+    SOURCES.forEach(function (src) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = src.name;
+      b.setAttribute('data-source-id', src.id);
+      if (src.id === state.source) b.classList.add('on');
+      b.addEventListener('click', function () {
+        if (state.switching || src.id === state.source) return;
+        setSource(src.id);
+      });
+      el.sourceSeg.appendChild(b);
+    });
+  }
+
+  function syncSourceSeg() {
+    if (!el.sourceSeg) return;
+    var btns = el.sourceSeg.querySelectorAll('button');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle('on', btns[i].getAttribute('data-source-id') === state.source);
+    }
+  }
+
+  // 切源时 UI 的显隐：只对 RainViewer 有意义的设置项、城市快选、图例都要跟着走
+  function applySourceUI() {
+    document.body.setAttribute('data-source', state.source);
+    var nmc = state.source === 'nmc';
+    // 城市快选和彩色图例只属于 RainViewer：NMC 图上城市名已经烘焙进图片里，
+    // 再叠一层同样的地名会重影；图例也是气象台自己画的，用的另一套色带。
+    if (el.cities) el.cities.style.display = nmc ? 'none' : '';
+    var legend = document.querySelector('.legend');
+    if (legend) legend.style.display = nmc ? 'none' : '';
+    if (el.nmcPane) el.nmcPane.hidden = !nmc;
+    var mapEl = document.getElementById('map');
+    if (mapEl) mapEl.style.display = nmc ? 'none' : '';
+    // 左上角那张卡在两种模式下说的不是同一件事：
+    // RainViewer 是地图，「全国 / 35.20°N, 105.00°E」指视野中心；
+    // NMC 是气象台烘焙好的一整幅中国图，没有「中心」概念，写坐标就是编造。
+    if (nmc) {
+      el.placeName.textContent = '全国';
+      el.placeCoord.textContent = '整幅中国雷达拼图';
+    } else if (map) {
+      updatePlaceLabel();
+    }
+    // 顶栏副标题跟着换：两种数据源的帧间隔和来源本来就不同，写死一个会说谎
+    var sub = document.querySelector('.head .sub');
+    if (sub) {
+      sub.textContent = nmc
+        ? '中央气象台 · 6 分钟一帧 · 全天可回溯'
+        : 'RainViewer · 过去 2 小时 · 10 分钟一帧';
+    }
+    var credit = document.querySelector('.head .credit');
+    if (credit) {
+      credit.innerHTML = nmc
+        ? '数据来源 <a href="http://www.nmc.cn/publish/radar/chinaall.html" target="_blank" rel="noopener">中央气象台</a>'
+        : '降水数据 Weather data by <a href="https://www.rainviewer.com/api.html" target="_blank" rel="noopener">RainViewer</a>';
+    }
+    syncSourceSeg();
+  }
+
+  function setSource(id) {
+    if (id !== 'rainviewer' && id !== 'nmc') return Promise.resolve();
+    if (id === state.source) return Promise.resolve();
+
+    state.switching = true;
+    state.source = id;
+    state.sourceToken++;
+
+    // 1) 停播放，否则迟到的 settle 会调 applyFrame 盖一层 RainViewer 瓦片到 NMC 图上
+    pause();
+
+    // 2) 作废在途的 showFrame 回调 + 清掉所有残留层。
+    //    注意：token 校验让 settle 直接 return 时并不会移除那一层，
+    //    所以这里必须自己遍历清，否则 DOM 里会永久留一个 opacity:0 的孤儿层。
+    state.swapToken++;
+    var leftovers = state.layers.slice();
+    for (var i = 0; i < leftovers.length; i++) hardRemove(leftovers[i]);
+    state.layers.length = 0;
+    state.front = null;
+    state.pending = null;
+
+    // 3) 停掉 10 分钟自动刷新，否则到了点它会自己去拉 RainViewer 元数据并切回来
+    if (state.refreshTimer) {
+      clearTimeout(state.refreshTimer);
+      state.refreshTimer = null;
+    }
+
+    applySourceUI();
+
+    if (id === 'nmc') {
+      return loadNmc().then(function () { state.switching = false; });
+    }
+
+    // 切回 RainViewer
+    state.switching = false;
+    // #map 刚从 display:none 回来，Leaflet 缓存里它的尺寸还是 0。
+    // 不重算的话它认为可视区域是 0×0，一块瓦片都不请求 —— 表现为「切回来是空地图」。
+    // 必须等浏览器完成一次布局，next frame 里再 invalidateSize。
+    if (map) {
+      requestAnimationFrame(function () {
+        if (!map || state.source !== 'rainviewer') return;
+        map.invalidateSize();
+        if (state.frames.length) {
+          applyFrame();
+        }
+      });
+    }
+    if (!state.frames.length) {
+      return loadMeta(false);
+    }
+    return Promise.resolve();
+  }
+
+  /* ── NMC 加载与播放 ───────────────────────────────── */
+
+  function showMaskFor(text) {
+    if (!el.mask) return;
+    el.mask.hidden = false;
+    el.mask.classList.remove('hide');
+    if (el.maskText) { el.maskText.hidden = false; el.maskText.textContent = text; }
+    if (el.maskSpin) el.maskSpin.hidden = false;
+    if (el.retryBtn) el.retryBtn.hidden = true;
+    if (el.maskHint) el.maskHint.hidden = true;
+  }
+
+  // 双缓冲换图：把新图先加载到隐藏的那张上，decode 完再交换 opacity。
+  // 单张 img 直接换 src 会有一瞬白屏 —— NMC 是 480×430 的大图，解码要几十毫秒，
+  // 这一下白得看得见。
+  function nmcShowFrame(index) {
+    var f = state.nmcFrames[index];
+    if (!f || !el.nmcImage || !el.nmcImageB) return;
+
+    var back = state.nmcFront === el.nmcImage ? el.nmcImageB : el.nmcImage;
+    var frontImg = state.nmcFront;
+
+    var done = function () {
+      back.classList.add('show');
+      if (frontImg && frontImg !== back) frontImg.classList.remove('show');
+      state.nmcFront = back;
+    };
+
+    back.onload = function () {
+      if (back.decode) {
+        back.decode().then(done).catch(done);
+      } else {
+        done();
+      }
+    };
+    back.onerror = function () {
+      // 单帧 404 不弹错误：往回探测已经保证了首帧存在，
+      // 中间某一档缺失时停在上一张比显示破图好
+      if (el.nmcBadge) el.nmcBadge.textContent = '这一帧暂无数据';
+    };
+    back.src = f.url;
+
+    state.nmcIdx = index;
+
+    if (el.nowTime) el.nowTime.textContent = nmcBeijingHHMM(f.date);
+    if (el.nowTag) {
+      var minsAgo = Math.round((Date.now() - f.date.getTime()) / 60000);
+      var isNewest = index === state.nmcFrames.length - 1;
+      el.nowTag.textContent = isNewest ? '最新' : (minsAgo < 60 ? minsAgo + ' 分钟前' : Math.floor(minsAgo / 60) + ' 小时前');
+      el.nowTag.classList.toggle('is-latest', isNewest);
+    }
+    if (el.range) {
+      var d = new Date(f.date.getTime() + 8 * 3600 * 1000);
+      el.range.textContent = (d.getUTCMonth() + 1) + '月' + d.getUTCDate() + '日 · 共 ' +
+        state.nmcFrames.length + ' 帧 · 6 分钟一帧';
+    }
+    if (el.slider) {
+      var lastIdx = Math.max(0, state.nmcFrames.length - 1);
+      el.slider.max = String(lastIdx);
+      el.slider.value = String(index);
+      el.slider.style.setProperty('--pct', (lastIdx ? (index / lastIdx) * 100 : 0) + '%');
+    }
+    document.title = nmcBeijingHHMM(f.date) + ' · 全国雷达回波';
+  }
+
+  function loadNmc() {
+    var token = state.sourceToken;
+    showMaskFor('正在探测中央气象台最新一帧…');
+
+    return nmcProbeLatest(state.nmcSize, token, function (tried) {
+      if (el.maskText) el.maskText.textContent = '正在探测最新一帧…（回退 ' + tried + ' 档）';
+    }).then(function (latest) {
+      if (token !== state.sourceToken) return;
+
+      if (!latest) {
+        hideMask();
+        if (el.mask) {
+          el.mask.hidden = false;
+          el.mask.classList.remove('hide');
+          if (el.maskText) { el.maskText.hidden = true; }
+          if (el.maskSpin) el.maskSpin.hidden = true;
+          if (el.maskHint) {
+            el.maskHint.hidden = false;
+            el.maskHint.textContent = '连不上 image.nmc.cn，或者往回 36 分钟都没有可用的图。检查网络后重试。';
+          }
+          if (el.retryBtn) el.retryBtn.hidden = false;
+        }
+        return;
+      }
+
+      state.nmcFrames = nmcBuildFrames(latest, NMC_DEFAULT_SPAN, state.nmcSize);
+
+      // 全部预载完再撤遮罩：NMC 单帧 0.27–0.62 秒，12 帧并发实测不到 1 秒，
+      // 等这一下换来的是之后每帧切换零延迟（浏览器缓存）。
+      if (el.maskText) el.maskText.textContent = '正在预载 ' + state.nmcFrames.length + ' 帧…';
+      var urls = state.nmcFrames.map(function (f) { return f.url; });
+      return Promise.all(urls.map(function (u) {
+        return new Promise(function (res) {
+          var im = new Image();
+          im.onload = function () { res(true); };
+          im.onerror = function () { res(false); };
+          im.src = u;
+        });
+      })).then(function () {
+        if (token !== state.sourceToken) return;
+        state.nmcFront = null;
+        nmcShowFrame(0);
+        hideMask();
+        if (el.nmcBadge) {
+          el.nmcBadge.textContent = '中央气象台 · ' + state.nmcFrames.length + ' 帧 · 6 分钟一帧';
+        }
+      });
+    });
+  }
+
+  function nmcArmNext() {
+    if (state.playTimer) {
+      clearTimeout(state.playTimer);
+      state.playTimer = null;
+    }
+    if (!state.playing || state.source !== 'nmc') return;
+    state.playTimer = setTimeout(function () {
+      state.playTimer = null;
+      if (!state.playing || state.source !== 'nmc') return;
+      var n = state.nmcFrames.length;
+      if (!n) return;
+      var next = (state.nmcIdx + 1) % n;
+      nmcShowFrame(next);
+      nmcArmNext();
+    }, state.frameMs);
+  }
 
   function boot() {
     initMap();
@@ -1528,6 +2027,8 @@
     }
     var hintRetry = document.getElementById('baseHintRetry');
     if (hintRetry) hintRetry.addEventListener('click', refreshBase);
+    buildSourceSeg();
+    applySourceUI();
     buildCities();
     buildSpeeds();
     buildColors();
