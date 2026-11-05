@@ -71,6 +71,10 @@ const RADAR_LEGIBLE_MAX = 8
 // 8 级是「还能读」的极限，正好停在极限上，稍有抖动就又触发提示；
 // 6 级回波结构和小范围城市关系都看得清，才是真正舒服的层级。
 const RADAR_COMFORT_ZOOM = 6
+
+// 完整署名（窄屏只显示紧凑版，完整版放进 title 与 aria-label，信息不丢）
+const CREDIT_FULL =
+  'Tiles © Esri — Esri, HERE, Garmin, © OpenStreetMap contributors | Weather data by RainViewer'
 // 没有定位坐标时退回中国全域，这时候不该放大到街道级（没有「街道」可看）
 const FALLBACK_ZOOM = 5
 const FALLBACK_CENTER = [35.2, 105] // 没有经纬度时退回中国全域视野
@@ -1207,21 +1211,34 @@ watch(
         </button>
       </header>
 
-      <!-- 竖向图例：色条竖着排，弱在下、强在上（色阶方向与横向版一致，只是转了 90°）。
-           宽度收窄到 60px，右侧的缩放按钮用同一个宽度变量对齐。 -->
-      <div ref="creditEl" class="radar-credit">
-        Tiles © <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>
-        — Esri, HERE, Garmin, © OpenStreetMap contributors
-        <span class="credit-sep">|</span>
-        Weather data by
-        <a href="https://www.rainviewer.com/api.html" target="_blank" rel="noopener">RainViewer</a>
+      <!-- 版权行：桌面用完整署名；窄屏换紧凑版 —— 完整版 88 个字符在 390px 里
+           即便缩到 8px 也接近满宽，最容易折成两行顶到控制条。紧凑版仍然点到了
+           三方（Esri / OpenStreetMap / RainViewer），完整署名留在 title 里。 -->
+      <div
+        ref="creditEl"
+        class="radar-credit"
+        :title="CREDIT_FULL"
+        :aria-label="CREDIT_FULL"
+      >
+        <span class="credit-full">
+          Tiles © <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>
+          — Esri, HERE, Garmin, © OpenStreetMap contributors
+          <span class="credit-sep">|</span>
+          Weather data by
+          <a href="https://www.rainviewer.com/api.html" target="_blank" rel="noopener">RainViewer</a>
+        </span>
+        <span class="credit-compact">
+          Tiles © <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>
+          · © OpenStreetMap
+          <span class="credit-sep">|</span>
+          <a href="https://www.rainviewer.com/api.html" target="_blank" rel="noopener">RainViewer</a>
+        </span>
       </div>
 
-      <aside ref="legendEl" class="radar-legend" aria-hidden="true">
-        <div class="legend-title">降水强度</div>
+      <aside ref="legendEl" class="radar-legend" role="img" aria-label="降水强度图例，色条自下而上由弱到强">
+        <div class="legend-title"><span>降水</span><span>强度</span></div>
         <div class="legend-body">
           <div class="legend-bar"></div>
-          <div class="legend-scale"><span>强</span><span>中</span><span>弱</span></div>
         </div>
       </aside>
 
@@ -1426,12 +1443,22 @@ watch(
   transform: translateX(-50%);
   z-index: 7;
   width: max-content;
-  max-width: calc(100% - 20px);
+  max-width: calc(100% - 16px);
   text-align: center;
   font-size: 10px;
   line-height: 1.4;
+  /* 强制单行：一旦折行就会顶到控制条上（两者都钉在页面底部）。
+     窄屏换更短的紧凑署名，而不是靠折行硬塞。 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--rr-text-6);
   pointer-events: none;
+}
+
+/* 桌面显示完整署名，窄屏换紧凑版 */
+.credit-compact {
+  display: none;
 }
 
 .radar-credit a {
@@ -1671,17 +1698,21 @@ watch(
   pointer-events: none;
 }
 
-/* 「降水强度」四个字在 52px 宽里放不下，缩到 8px 且禁止换行，
-   宁可字小一点也不能折成两行（折行会把整个图例推高、连带缩放按钮上移）。 */
+/* 标题拆成「降水 / 强度」两行：一行四个字要 32px 才放得下，
+   两行只要两个字宽（16px），图例整体能收窄到 40px 出头。
+   每行仍用 nowrap —— 这里断行是我们自己排的，不是让它自由折。 */
 .legend-title {
-  font-size: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  font-size: 9px;
+  line-height: 1.15;
   color: var(--rr-text-6);
   letter-spacing: 0;
   margin-bottom: 6px;
   white-space: nowrap;
   text-align: center;
-  transform: scale(0.96);
-  transform-origin: top center;
 }
 
 /* 色条取自瓦片真实像素：RainViewer 这套配色是 深蓝 → 亮蓝 → 浅青 → 黄 → 橙 → 红，
@@ -1689,11 +1720,13 @@ watch(
 /* 色条竖着排：渐变方向改成 to top，色序仍然是「弱→强」从下往上。
    用 to top 而不是把色标倒着写 —— 色标含义（哪种颜色代表多强的雨）保持不变，
    换方向只是排版的事。 */
+/* 去掉强/中/弱之后的图例主体：只剩一根色条，水平居中 */
 .legend-body {
   display: flex;
   flex-direction: row;
   align-items: stretch;
-  gap: 6px;
+  justify-content: center;
+  gap: 0;
 }
 
 .legend-bar {
@@ -1701,6 +1734,7 @@ watch(
   /* 高度随内容撑开，给一个下限避免字少时挤成一条线 */
   min-height: 74px;
   align-self: stretch;
+  margin: 0 auto;
   border-radius: 5px;
   background: linear-gradient(
     to top,
@@ -1714,14 +1748,6 @@ watch(
   );
 }
 
-.legend-scale {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  font-size: 9px;
-  color: var(--rr-text-6);
-  line-height: 1;
-}
 
 /* ---------- 底部控制条 ---------- */
 .radar-controls {
@@ -2151,14 +2177,10 @@ watch(
   }
 
   .radar-legend {
-    width: var(--rr-legend-w, 52px);
+    width: var(--rr-legend-w, 40px);
     right: 10px;
-    padding: 7px 7px;
+    padding: 6px 5px;
     bottom: calc(var(--rr-ctrl-top, 148px) + 8px);
-  }
-
-  .legend-body {
-    gap: 5px;
   }
 
   .legend-bar {
@@ -2185,8 +2207,18 @@ watch(
   .radar-credit {
     font-size: 8px;
     bottom: 2px;
-    /* 窄屏一行放不下，允许折成两行且收窄，但仍然居中 */
-    width: min(330px, calc(100% - 16px));
+    /* 窄屏一定放得下紧凑版：即便 320px 视口也只有约 30 个字符 × 8px ≈ 200px */
+    width: max-content;
+    max-width: calc(100% - 12px);
+    letter-spacing: -0.1px;
+  }
+
+  .credit-full {
+    display: none;
+  }
+
+  .credit-compact {
+    display: inline;
   }
 }
 
