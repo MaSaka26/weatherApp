@@ -50,14 +50,6 @@ const BASEMAP_FAIL_THRESHOLD = 3
 // 首屏等底图出图的期限：超过就认为这次没成，但仍把层挂上（可能只是慢）
 const BASE_FIRST_MS = 6000
 
-// 署名是纯静态字符串，不含任何接口返回内容。Leaflet 的 attribution 选项只接受
-// HTML 片段（它自己走 innerHTML），这是唯一一处 HTML 字符串；接口数据一律只走
-// Vue 插值 / textContent，绝不拼进 innerHTML。
-const ATTRIBUTION =
-  'Tiles © <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>' +
-  ' — Esri, HERE, Garmin, © OpenStreetMap contributors' +
-  ' | Weather data by ' +
-  '<a href="https://www.rainviewer.com/api.html" target="_blank" rel="noopener">RainViewer</a>'
 
 // 进图默认 z7：雷达本身可读的层级。
 // 这个值是被数据逼出来的，不是随便挑的 ——
@@ -74,6 +66,11 @@ const START_ZOOM = 7
 // 地图 z8 实际请求 URL z7（实测 4992 字节，真数据），地图 z9 才请求 URL z8
 // （3269 字节空壳）。所以可读上限是地图 8 级 —— 写成 7 会白白少用一级清晰度。
 const RADAR_LEGIBLE_MAX = 8
+
+// 提示条上的「回到 N 级」跳到这里，而不是跳回阈值那一级。
+// 8 级是「还能读」的极限，正好停在极限上，稍有抖动就又触发提示；
+// 6 级回波结构和小范围城市关系都看得清，才是真正舒服的层级。
+const RADAR_COMFORT_ZOOM = 6
 // 没有定位坐标时退回中国全域，这时候不该放大到街道级（没有「街道」可看）
 const FALLBACK_ZOOM = 5
 const FALLBACK_CENTER = [35.2, 105] // 没有经纬度时退回中国全域视野
@@ -233,6 +230,8 @@ function fadeMsOf(ms) {
 const mapEl = ref(null)
 const layerEl = ref(null)
 const controlsEl = ref(null)
+const legendEl = ref(null)
+const creditEl = ref(null)
 const status = ref('idle') // idle | loading | ready | error
 const errorMsg = ref('')
 const frames = ref([]) // [{ time: UTC 秒, path }]
@@ -436,7 +435,7 @@ function onZoomEnd() {
 // 同时保留当前中心（用户是想看这个地方的雨，不是想看别处）
 function backToLegible() {
   if (!map) return
-  map.setZoom(RADAR_LEGIBLE_MAX)
+  map.setZoom(RADAR_COMFORT_ZOOM)
 }
 
 function initMap() {
@@ -450,7 +449,9 @@ function initMap() {
     minZoom: 3,
     maxZoom: MAX_ZOOM,
     zoomControl: false,
-    attributionControl: true,
+    // 版权行要横跨页面最底部居中，Leaflet 自带控件钉死在右下角容器里，
+    // 挪出来要跟缩放按钮抢同一个 corner 容器。干脆关掉，模板自己渲染一行。
+    attributionControl: false,
     worldCopyJump: true,
     // 手机上一个手指既能拖地图又能缩放；touch-action 已在 CSS 里关掉
     dragging: true,
@@ -460,8 +461,9 @@ function initMap() {
   mountBaseLayer(0)
   addLocationMarker()
 
-  // 缩放按钮放左下，右下留给图例与版权行
-  L.control.zoom({ position: 'bottomleft' }).addTo(map)
+  // 缩放按钮与图例同在右列：图例在下、按钮紧贴其上，宽度也一致，
+  // 视觉上是一条竖线而不是两个各自漂着的控件。
+  L.control.zoom({ position: 'bottomright' }).addTo(map)
 
   map.on('zoomend', onZoomEnd)
   onZoomEnd()
@@ -486,7 +488,6 @@ function buildBaseLayer(host) {
     // 封顶后 Leaflet 会把 z16 的瓦片放大复用，高处仍然是一张连续的地图。
     maxNativeZoom: 16,
     className: 'radar-base-tiles',
-    attribution: ATTRIBUTION,
   })
   layer._baseFails = 0
   layer._baseGotTile = false
@@ -1030,6 +1031,22 @@ function syncBottomInsets() {
   if (!layer || !ctrl) return
   const top = Math.max(0, Math.round(layer.getBoundingClientRect().bottom - ctrl.getBoundingClientRect().top))
   layer.style.setProperty('--rr-ctrl-top', top + 'px')
+
+  // 图例是竖的、高度随字号和内容变；缩放按钮要贴在它正上方，就得知道它有多高。
+  // 顺手把它的宽度也量出来，让按钮同宽 —— 两件控件的宽度写两遍迟早会对不上。
+  const legend = legendEl.value
+  if (legend) {
+    const box = legend.getBoundingClientRect()
+    layer.style.setProperty('--rr-legend-h', Math.round(box.height) + 'px')
+    layer.style.setProperty('--rr-legend-w', Math.round(box.width) + 'px')
+  }
+
+  // 版权行钉在页面最底部，控制条必须让开它，否则两行字直接叠在一起。
+  // 高度窄屏会从一行变两行，所以同样实测而不是写死。
+  const credit = creditEl.value
+  if (credit) {
+    layer.style.setProperty('--rr-credit-h', Math.round(credit.getBoundingClientRect().height) + 'px')
+  }
 }
 
 function watchBottomInsets() {
@@ -1037,6 +1054,8 @@ function watchBottomInsets() {
   if (!controlsEl.value || typeof ResizeObserver === 'undefined') return
   insetsObserver = new ResizeObserver(syncBottomInsets)
   insetsObserver.observe(controlsEl.value)
+  if (legendEl.value) insetsObserver.observe(legendEl.value)
+  if (creditEl.value) insetsObserver.observe(creditEl.value)
   syncBottomInsets()
 }
 
@@ -1188,10 +1207,22 @@ watch(
         </button>
       </header>
 
-      <aside class="radar-legend" aria-hidden="true">
+      <!-- 竖向图例：色条竖着排，弱在下、强在上（色阶方向与横向版一致，只是转了 90°）。
+           宽度收窄到 60px，右侧的缩放按钮用同一个宽度变量对齐。 -->
+      <div ref="creditEl" class="radar-credit">
+        Tiles © <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>
+        — Esri, HERE, Garmin, © OpenStreetMap contributors
+        <span class="credit-sep">|</span>
+        Weather data by
+        <a href="https://www.rainviewer.com/api.html" target="_blank" rel="noopener">RainViewer</a>
+      </div>
+
+      <aside ref="legendEl" class="radar-legend" aria-hidden="true">
         <div class="legend-title">降水强度</div>
-        <div class="legend-bar"></div>
-        <div class="legend-scale"><span>弱</span><span>中</span><span>强</span></div>
+        <div class="legend-body">
+          <div class="legend-bar"></div>
+          <div class="legend-scale"><span>强</span><span>中</span><span>弱</span></div>
+        </div>
       </aside>
 
       <div v-if="status === 'loading'" class="radar-status" role="status">
@@ -1384,38 +1415,54 @@ watch(
   will-change: opacity;
 }
 
-.radar-map :deep(.leaflet-control-attribution) {
-  background: rgba(6, 13, 22, 0.82) !important;
-  color: var(--rr-text-6) !important;
-  font-size: 10px !important;
-  line-height: 1.5 !important;
-  padding: 2px 7px !important;
-  border-radius: 6px 0 0 0;
-  /* 版权文案较长，给足宽度让它尽量单行；仍换行时也不会顶到控制条 */
-  max-width: min(680px, calc(100% - 24px));
+/* 版权行：横跨页面最底部居中。
+   它不在 Leaflet 的控件容器里（那里只有四个角），所以是模板里独立的一行、
+   用绝对定位钉在覆盖层底部。文字不换行，窄屏就缩小字号 ——
+   换行会顶到控制条上，反而更难看。 */
+.radar-credit {
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  transform: translateX(-50%);
+  z-index: 7;
+  width: max-content;
+  max-width: calc(100% - 20px);
+  text-align: center;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--rr-text-6);
+  pointer-events: none;
 }
 
-.radar-map :deep(.leaflet-control-attribution a) {
-  color: var(--rr-text-4) !important;
+.radar-credit a {
+  color: var(--rr-text-4);
   text-decoration: none;
+  pointer-events: auto;
 }
 
-.radar-map :deep(.leaflet-control-attribution a:hover) {
-  color: var(--rr-accent-bright) !important;
+.radar-credit a:hover {
+  color: var(--rr-accent-bright);
 }
 
-/* 版权行与缩放按钮都让开底部控制条 */
-.radar-map :deep(.leaflet-bottom.leaflet-right) {
-  bottom: calc(var(--rr-ctrl-top, 148px) + 6px);
+.credit-sep {
+  margin: 0 2px;
+  opacity: 0.6;
 }
 
-.radar-map :deep(.leaflet-bottom.leaflet-left) {
-  bottom: calc(var(--rr-ctrl-top, 148px) + 6px);
-}
-
+/* 缩放按钮贴在竖向图例正上方：底边 = 图例顶边 + 6px 间距，
+   宽度与图例同源（--rr-legend-w）。两个值都由 syncBottomInsets() 实测写入，
+   任何视口宽度下都自动对齐，不用为断点再写一遍。 */
 .radar-map :deep(.leaflet-control-zoom) {
   border: none !important;
   box-shadow: none !important;
+  margin: 0 !important;
+  width: var(--rr-legend-w, 60px) !important;
+}
+
+.radar-map :deep(.leaflet-bottom.leaflet-right) {
+  /* 图例占住右下角，缩放控件排在它上面 */
+  right: 16px;
+  bottom: calc(var(--rr-ctrl-top, 148px) + 8px + var(--rr-legend-h, 120px) + 6px);
 }
 
 .radar-map :deep(.leaflet-control-zoom a) {
@@ -1611,8 +1658,10 @@ watch(
   /* --rr-ctrl-top 由 syncBottomInsets() 实测写入（控制条高度随宽度变化） */
   bottom: calc(var(--rr-ctrl-top, 148px) + 8px);
   z-index: 5;
-  width: 152px;
-  padding: 10px 12px 9px;
+  /* 竖向图例只放三个字宽，比横向版窄得多。
+     宽度与缩放按钮共用 --rr-legend-w，两者右边缘对齐、宽度一致。 */
+  width: var(--rr-legend-w, 60px);
+  padding: 9px 8px 8px;
   background: var(--rr-glass);
   backdrop-filter: var(--rr-blur);
   -webkit-backdrop-filter: var(--rr-blur);
@@ -1622,20 +1671,39 @@ watch(
   pointer-events: none;
 }
 
+/* 「降水强度」四个字在 52px 宽里放不下，缩到 8px 且禁止换行，
+   宁可字小一点也不能折成两行（折行会把整个图例推高、连带缩放按钮上移）。 */
 .legend-title {
-  font-size: 10px;
+  font-size: 8px;
   color: var(--rr-text-6);
-  letter-spacing: 0.4px;
-  margin-bottom: 7px;
+  letter-spacing: 0;
+  margin-bottom: 6px;
+  white-space: nowrap;
+  text-align: center;
+  transform: scale(0.96);
+  transform-origin: top center;
 }
 
 /* 色条取自瓦片真实像素：RainViewer 这套配色是 深蓝 → 亮蓝 → 浅青 → 黄 → 橙 → 红，
    不是常见美国雷达图那套「绿 → 黄 → 红」。图例必须跟着瓦片走，否则屏幕上蓝雨配绿图例。 */
+/* 色条竖着排：渐变方向改成 to top，色序仍然是「弱→强」从下往上。
+   用 to top 而不是把色标倒着写 —— 色标含义（哪种颜色代表多强的雨）保持不变，
+   换方向只是排版的事。 */
+.legend-body {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 6px;
+}
+
 .legend-bar {
-  height: 8px;
-  border-radius: 4px;
+  width: 10px;
+  /* 高度随内容撑开，给一个下限避免字少时挤成一条线 */
+  min-height: 74px;
+  align-self: stretch;
+  border-radius: 5px;
   background: linear-gradient(
-    to right,
+    to top,
     #0058a0,
     #0098d8,
     #50c8e8,
@@ -1648,17 +1716,20 @@ watch(
 
 .legend-scale {
   display: flex;
+  flex-direction: column;
   justify-content: space-between;
-  margin-top: 5px;
   font-size: 9px;
   color: var(--rr-text-6);
+  line-height: 1;
 }
 
 /* ---------- 底部控制条 ---------- */
 .radar-controls {
   position: absolute;
   left: 50%;
-  bottom: 20px;
+  /* 版权行钉在页面最底部（bottom:4px），控制条必须让开它 ——
+     否则两行字直接叠在一起。高度由 syncBottomInsets() 实测写入。 */
+  bottom: calc(var(--rr-credit-h, 14px) + 14px);
   transform: translateX(-50%);
   z-index: 6;
   width: min(720px, calc(100% - 24px));
@@ -2056,7 +2127,8 @@ watch(
 /* ---------- 窄屏 ---------- */
 @media (max-width: 640px) {
   .radar-controls {
-    bottom: 12px;
+    /* 窄屏版权行会折成两行（22px），仍然要让开它 —— 这里不能写死 12px */
+    bottom: calc(var(--rr-credit-h, 22px) + 10px);
     gap: 10px;
     padding: 10px 12px;
   }
@@ -2079,12 +2151,24 @@ watch(
   }
 
   .radar-legend {
-    width: 112px;
+    width: var(--rr-legend-w, 52px);
     right: 10px;
-    padding: 8px 10px;
-    /* 窄屏版权行（Leaflet attribution）是两行、约 31px 高，
-       图例必须让过它，否则两个色块叠在一起。 */
-    bottom: calc(var(--rr-ctrl-top, 148px) + 44px);
+    padding: 7px 7px;
+    bottom: calc(var(--rr-ctrl-top, 148px) + 8px);
+  }
+
+  .legend-body {
+    gap: 5px;
+  }
+
+  .legend-bar {
+    width: 8px;
+    min-height: 58px;
+  }
+
+  /* 窄屏缩放按钮跟图例同宽同右边缘 */
+  .radar-map :deep(.leaflet-bottom.leaflet-right) {
+    right: 10px;
   }
 
   .legend-title {
@@ -2098,9 +2182,11 @@ watch(
   /* 窄屏不再写死 bottom：控制条折成两行时高度从 114px 变 148px，
      写死就会被压住。统一由 --rr-ctrl-top 跟随。 */
 
-  .radar-map :deep(.leaflet-control-attribution) {
-    font-size: 9px !important;
-    max-width: calc(100% - 60px);
+  .radar-credit {
+    font-size: 8px;
+    bottom: 2px;
+    /* 窄屏一行放不下，允许折成两行且收窄，但仍然居中 */
+    width: min(330px, calc(100% - 16px));
   }
 }
 
