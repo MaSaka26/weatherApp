@@ -236,6 +236,14 @@
   /* 数据源切换放在主行最左边，比配色那一组更重要。
      窄屏时字号略小以便和播放键排在一行。 */
   .seg-source button{font-weight:500}
+  .seg-quality button{font-weight:500}
+  /* 画质是 NMC 独有的：RainViewer 的瓦片分辨率由服务端定死，没有档可选 */
+  .nmc-only{display:none}
+  body[data-source="nmc"] .nmc-only{display:flex}
+  /* 窄屏次行整体隐藏，但 NMC 模式下次行只剩「画质」一组，放开它 */
+  @media (max-width:720px){
+    body[data-source="nmc"] .sub-row{display:flex}
+  }
   .seg-source button.on{background:rgba(109,179,242,.34)}
   @media (max-width:720px){
     .seg-source button{padding:5px 9px;font-size:10px}
@@ -328,9 +336,12 @@
   .mask{
     position:absolute;inset:0;z-index:900;display:flex;flex-direction:column;
     align-items:center;justify-content:center;gap:14px;padding:24px;
-    background:rgba(6,13,22,.9);transition:opacity .45s ease;
+    background:rgba(6,13,22,.9);
+    transition:opacity .45s ease, visibility 0s linear .45s;
   }
-  .mask.hide{opacity:0;pointer-events:none}
+  /* visibility 延迟 0 秒、但要等 opacity 的 .45s 走完才生效：
+     立刻 hidden 会把淡出掐断，延迟到位又不会让残留文案被朗读到 */
+  .mask.hide{opacity:0;pointer-events:none;visibility:hidden}
   .spin{
     width:34px;height:34px;border-radius:50%;
     border:2px solid rgba(255,255,255,.12);border-top-color:var(--accent);
@@ -441,7 +452,8 @@
     </div>
   </div>
   <div class="sub-row">
-    <div class="lbl">底图 <button class="mini-refresh" id="baseRefresh" type="button"
+    <div class="lbl nmc-only">画质 <div class="seg seg-quality" id="qualitySeg" role="group" aria-label="NMC 画质"></div></div>
+    <div class="lbl rv-only">底图 <button class="mini-refresh" id="baseRefresh" type="button"
         title="重新加载底图" aria-label="重新加载底图">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-.6 4"/><path d="M20 4v7h-7"/></svg>
     </button></div>
@@ -616,9 +628,15 @@
      时间戳是 UTC、6 分钟一档、末 5 位恒 00000。
      没有 JSON 接口，HTML 页也没有 CORS 头，所以「最新是哪一帧」只能推算 + 探测。 */
   var NMC_SLOT_MS = 6 * 60 * 1000;
+  // 中央气象台同一个时间戳有三种分辨率，靠路径里多一级目录区分：
+  //   RDCP/            → 1349x1208  原图（官方页面不引用，但确实可取）
+  //   RDCP/medium/     →  825x739   官方页面用的就是这一档
+  //   RDCP/small/      →  480x430   列表缩略图
+  // 原图那一档没有目录名，所以 dir 留空，拼 URL 时要跳过斜杠。
   var NMC_SIZES = [
-    { id: 'small', name: '小', kb: 203 },
-    { id: 'medium', name: '中', kb: 530 }
+    { id: 'orig', name: '原图', dir: '', w: 1349, h: 1208, kb: 930 },
+    { id: 'medium', name: '中图', dir: 'medium', w: 825, h: 739, kb: 515 },
+    { id: 'small', name: '小图', dir: 'small', w: 480, h: 430, kb: 198 }
   ];
   // 往回最多探测多少档。发布有 6–12 分钟延迟，实测 07:42 时 0742 是 404、0736 才有图。
   // 6 档 = 36 分钟，足够覆盖任何延迟，最坏 6 次探测约 2 秒。
@@ -632,10 +650,20 @@
       p(date.getUTCHours()) + p(date.getUTCMinutes()) + '00000';
   }
 
+  // 原图那一档没有尺寸目录（.../RDCP/SEVP_...），中/小图有（.../RDCP/medium/SEVP_...），
+  // 所以目录段要按需拼，硬接一个空字符串会得到双斜杠。
+  function nmcSizeDir(id) {
+    for (var i = 0; i < NMC_SIZES.length; i++) {
+      if (NMC_SIZES[i].id === id) return NMC_SIZES[i].dir;
+    }
+    return 'medium';
+  }
+
   function nmcUrl(stamp, size) {
+    var dir = nmcSizeDir(size);
     return 'https://image.nmc.cn/product/' + stamp.slice(0, 4) + '/' + stamp.slice(4, 6) +
-      '/' + stamp.slice(6, 8) + '/RDCP/' + size + '/SEVP_AOC_RDCP_SLDAS3_ECREF_ACHN_L88_PI_' +
-      stamp + '.PNG';
+      '/' + stamp.slice(6, 8) + '/RDCP/' + (dir ? dir + '/' : '') +
+      'SEVP_AOC_RDCP_SLDAS3_ECREF_ACHN_L88_PI_' + stamp + '.PNG';
   }
 
   // 向下取整到 6 分钟档。不能四舍五入：07:35 会被推到 07:36，而那一档还没发布。
@@ -764,6 +792,7 @@
     maskHint: document.getElementById('maskHint'),
     retryBtn: document.getElementById('retryBtn'),
     sourceSeg: document.getElementById('sourceSeg'),
+    qualitySeg: document.getElementById('qualitySeg'),
     nmcPane: document.getElementById('nmcPane'),
     nmcImage: document.getElementById('nmcImage'),
     nmcImageB: document.getElementById('nmcImageB'),
@@ -970,6 +999,14 @@
   }
 
   function updatePlaceLabel() {
+    // NMC 是气象台烘焙好的一整幅图，没有「视野中心」这回事。
+    // 这里必须守在最前面：moveend/zoomend 是异步事件，切源之后仍可能补发，
+    // 只在 applySourceUI 里写一次会被它们覆盖回坐标。
+    if (state.source === 'nmc') {
+      el.placeName.textContent = '全国';
+      el.placeCoord.textContent = '整幅中国雷达拼图';
+      return;
+    }
     var c = map.getCenter();
     var near = null;
     var best = Infinity;
@@ -1783,6 +1820,47 @@
     });
   }
 
+  function buildQualitySeg() {
+    if (!el.qualitySeg) return;
+    el.qualitySeg.textContent = '';
+    NMC_SIZES.forEach(function (sz) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = sz.name;
+      b.setAttribute('data-quality-id', sz.id);
+      b.title = sz.w + 'x' + sz.h + ' · 约 ' + sz.kb + ' KB/帧';
+      if (sz.id === state.nmcSize) b.classList.add('on');
+      b.addEventListener('click', function () {
+        if (sz.id === state.nmcSize) return;
+        setQuality(sz.id);
+      });
+      el.qualitySeg.appendChild(b);
+    });
+  }
+
+  function syncQualitySeg() {
+    if (!el.qualitySeg) return;
+    var btns = el.qualitySeg.querySelectorAll('button');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle('on', btns[i].getAttribute('data-quality-id') === state.nmcSize);
+    }
+  }
+
+  // 换画质要重新探测 + 重建整条帧列表：同一时间戳下三种分辨率的 URL 完全不同，
+  // 不能只替换当前这张图的地址，否则时间轴上的其余帧仍是旧分辨率。
+  function setQuality(id) {
+    if (state.nmcSize === id) return;
+    state.nmcSize = id;
+    syncQualitySeg();
+    if (state.source !== 'nmc') return;
+    // sourceToken 自增就足够作废在途的探测与预载链：
+    // loadNmc 里每一步都拿 token 比对，过期直接 return。
+    state.sourceToken++;
+    state.nmcFrames = [];
+    state.nmcIdx = 0;
+    loadNmc();
+  }
+
   function syncSourceSeg() {
     if (!el.sourceSeg) return;
     var btns = el.sourceSeg.querySelectorAll('button');
@@ -1826,6 +1904,7 @@
         : '降水数据 Weather data by <a href="https://www.rainviewer.com/api.html" target="_blank" rel="noopener">RainViewer</a>';
     }
     syncSourceSeg();
+    syncQualitySeg();
   }
 
   function setSource(id) {
@@ -2028,6 +2107,7 @@
     var hintRetry = document.getElementById('baseHintRetry');
     if (hintRetry) hintRetry.addEventListener('click', refreshBase);
     buildSourceSeg();
+    buildQualitySeg();
     applySourceUI();
     buildCities();
     buildSpeeds();
