@@ -686,10 +686,11 @@ async function loadMeta() {
     frames.value = list
     // 首次进入停在最新帧
     idx.value = list.length - 1
-    status.value = 'ready'
-    // 先置播放态再挂首帧：首帧 settle 时 armNextFrame 会读 playing，
-    // 顺序反了那一拍就排不上，只能等兜底超时
-    playing.value = list.length > 1
+    // 注意：这里不置 ready。等首帧瓦片真正上屏（见 settle 里的 firstFrameDone）
+    // 再撤遮罩 —— 否则遮罩一消失屏幕还是空的暗底图，用户以为加载完了却是黑屏。
+    // 同理，播放态也不能在这里置 true：reduce 动效的用户不该被自动播放，
+    // 而且首帧都没上屏就开始计时换帧，等于在空白上先跑了一拍。
+    playing.value = !prefersReducedMotion() && list.length > 1
     applyFrame()
   } catch (err) {
     if (!alive || gen !== generation) return
@@ -872,6 +873,9 @@ function showFrame(frame) {
     frontLayer = layer
     firstFrameDone = true
 
+    // 首帧瓦片到齐、画面里已经有回波，这时才撤加载遮罩
+    if (status.value === 'loading') status.value = 'ready'
+
     // 换帧：渐变走补偿式交叉淡入（合成浓度恒定，不闪），硬切直接用目标值。
     // 旧的从它「此刻真实的透明度」开始算：连点滑块时它可能正停在 0.4 这种中间值上，
     // 从固定值起步会看到亮度突跳。
@@ -1023,6 +1027,15 @@ function teardown() {
   firstFrameDone = false
   status.value = 'idle'
   errorMsg.value = ''
+  historyPushed = false
+
+  // 焦点还给打开它的那个元素。没记录（例如程序化打开）就直接放弃，
+  // 强行 focus 到 body 反而会把用户带偏
+  const prev = lastFocus
+  lastFocus = null
+  if (prev && typeof prev.focus === 'function' && document.contains(prev)) {
+    prev.focus({ preventScroll: true })
+  }
 }
 
 /* 控制条的高度会随窗口宽度变化：窄屏下 .radar-row-sub 会折成两行，
@@ -1067,6 +1080,15 @@ async function openRadar() {
   const gen = ++generation
   alive = true
 
+  // 记下是谁打开的，关闭后把焦点还回去 —— 键盘用户否则会掉到 body 上，
+  // 接着按 Tab 就从页面顶部重新数起，等于丢失位置
+  lastFocus = document.activeElement
+
+  if (!historyPushed) {
+    history.pushState({ radar: 1 }, '')
+    historyPushed = true
+  }
+
   // 每次打开都从干净状态重建：Leaflet 实例、图层、定时器一律不跨次复用
   clearAllTimers()
   destroyMap()
@@ -1102,9 +1124,32 @@ async function openRadar() {
 
   await loadMeta()
   watchBottomInsets()
+
+  // 焦点移进层内：不这么做，键盘用户的 Tab 起点还在背后的页面上
+  const firstBtn = layerEl.value && layerEl.value.querySelector(FOCUSABLE)
+  if (firstBtn) firstBtn.focus({ preventScroll: true })
+}
+
+/* 返回键关闭覆盖层。
+   全屏层打开时不产生历史条目，移动端浏览器的「返回」就会直接离开站点 ——
+   而手机没有 Esc 键，用户唯一的退出手势在这里失效。
+   打开时压一条历史，返回时把它消费掉；程序内关闭则主动 back() 保持栈平衡，
+   否则用户之后按返回会遇到一条空条目，看起来像「按了没反应」。 */
+let historyPushed = false
+let lastFocus = null
+
+function onPopState() {
+  if (!props.open) return
+  if (!historyPushed) return
+  historyPushed = false
+  emit('close')
 }
 
 function close() {
+  if (historyPushed) {
+    historyPushed = false
+    history.back()
+  }
   emit('close')
 }
 
@@ -1114,8 +1159,47 @@ function retry() {
   else openRadar()
 }
 
+/* 焦点陷阱。aria-modal="true" 只是声明，浏览器不会真的挡住背景元素 ——
+   不自己实现的话，键盘用户按几次 Tab 就走到背后的天气页上，
+   屏幕上还是雷达层，焦点却在看不见的地方。 */
+const FOCUSABLE = 'button:not([disabled]),[href],input:not([disabled]),select,textarea,[tabindex]:not([tabindex="-1"])'
+
+function trapTab(event) {
+  const root = layerEl.value
+  if (!root) return
+
+  const list = Array.from(root.querySelectorAll(FOCUSABLE)).filter(
+    (el) => el.offsetWidth > 0 || el.offsetHeight > 0 || el === document.activeElement,
+  )
+  if (!list.length) return
+
+  const first = list[0]
+  const last = list[list.length - 1]
+  const active = document.activeElement
+
+  // 焦点已经跑到层外（例如刚打开还没设过焦点）就直接收回第一个
+  if (!root.contains(active)) {
+    event.preventDefault()
+    first.focus({ preventScroll: true })
+    return
+  }
+
+  if (event.shiftKey && active === first) {
+    event.preventDefault()
+    last.focus({ preventScroll: true })
+  } else if (!event.shiftKey && active === last) {
+    event.preventDefault()
+    first.focus({ preventScroll: true })
+  }
+}
+
 function onKeydown(event) {
   if (!props.open) return
+
+  if (event.key === 'Tab') {
+    trapTab(event)
+    return
+  }
 
   // 焦点在输入控件上时不抢键：滑块上的方向键要留给原生行为（调帧），
   // 但 Esc 仍然关窗，这是用户对全屏层最硬的预期
@@ -1155,12 +1239,14 @@ watch(
 
 onMounted(() => {
   window.addEventListener('keydown', onKeydown)
+  window.addEventListener('popstate', onPopState)
   // 父组件如果用 v-if 直接挂载成 open=true，watch 不会补发，这里兜一次
   if (props.open) openRadar()
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
+  window.removeEventListener('popstate', onPopState)
   document.body.style.overflow = ''
   teardown() // 卸载路径也不能留下 map 与定时器
 })

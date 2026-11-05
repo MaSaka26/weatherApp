@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
 
 import { useWeatherStore } from '@/stores/weather'
 
@@ -13,7 +13,10 @@ import CurrentWeather from '@/components/CurrentWeather.vue'
 import DetailCards from '@/components/DetailCards.vue'
 import HourlyForecast from '@/components/HourlyForecast.vue'
 import RainForecast from '@/components/RainForecast.vue'
-import RainRadarPreview from '@/components/RainRadarPreview.vue'
+// 雷达约 10 kB（gzip）在首屏关键路径上，且绝大多数访问不会打开它。
+// 用 defineAsyncComponent 把它切成独立 chunk —— 这是唯一能真正减少首屏字节的办法，
+// 单纯把这个 2235 行的文件拆成多个 .vue 不会少一个字节（Vite 只在 async import 边界切块）。
+const RainRadarPreview = defineAsyncComponent(() => import('@/components/RainRadarPreview.vue'))
 import DailyForecast from '@/components/DailyForecast.vue'
 import LifeIndex from '@/components/LifeIndex.vue'
 
@@ -25,6 +28,28 @@ const todayLow = computed(() => store.daily?.temperature_2m_min?.[0] ?? 0)
 // 雷达预览是重资源（动态拉 Leaflet + 一次请求 13 帧），用开关控制挂载与销毁：
 // 常驻会让首屏多一个 Teleport 容器，且用户不点就白白占内存
 const radarOpen = ref(false)
+// 首次打开后才允许挂载。没有这个 v-if，defineAsyncComponent 的 loader 会在
+// 组件挂载时立刻触发 —— chunk 照样在首页下载，异步化就变成只改了文件名。
+// 一旦挂载就常驻（不随关闭销毁），避免反复开关重复初始化地图。
+const radarMounted = ref(false)
+
+// 预取只做一次。用户在条目上悬停/聚焦/按下时就先把 chunk 拉下来，
+// 等真的点击时组件已经就绪，抵消异步化带来的那个 RTT。
+let radarPrefetched = false
+function prefetchRadar() {
+  if (radarPrefetched) return
+  radarPrefetched = true
+  // 动态 import 同一个路径，Rollup 会复用同一个 promise，不会重复下载
+  import('@/components/RainRadarPreview.vue').catch(() => {
+    // 预取失败不提示：真正的打开流程还会再 import 一次，那里有错误处理
+    radarPrefetched = false
+  })
+}
+
+function openRadar() {
+  radarMounted.value = true
+  radarOpen.value = true
+}
 
 onMounted(() => {
   // 进入页面先尝试浏览器定位，失败则提示手动搜索
@@ -74,7 +99,8 @@ onMounted(() => {
         v-if="store.current && store.hourly"
         :current="store.current"
         :hourly="store.hourly"
-        @open="radarOpen = true"
+        @open="openRadar"
+        @prefetch="prefetchRadar"
       />
 
       <DailyForecast :daily="store.daily" />
@@ -88,6 +114,7 @@ onMounted(() => {
   <!-- 雷达回放层放在 app-container 之外：它是全屏覆盖层，
        留在内容列里会被容器的 max-width 与 padding 裁住 -->
   <RainRadarPreview
+    v-if="radarMounted"
     :open="radarOpen"
     :lat="store.lat"
     :lon="store.lon"

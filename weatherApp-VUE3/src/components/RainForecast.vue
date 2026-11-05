@@ -11,7 +11,14 @@ const props = defineProps({
   hourly: { type: Object, default: null },
 })
 
-const emit = defineEmits(['open'])
+const emit = defineEmits(['open', 'prefetch'])
+
+// 雷达组件是异步 chunk，点击那一刻才开始下载会多等一个 RTT。
+// 所以用户「有意图」的最早时刻（指针移上来、手指按下、键盘聚焦）就预取，
+// 把这段时间藏在用户移手指的动作里。重复触发由父层去重，这里不做状态。
+function prefetch() {
+  emit('prefetch')
+}
 
 // 兜底文案：buildRainOutlook 的返回值给了 ok/text 契约，但数据还没到时不该渲染出空条；
 // 先给一句中性描述，拿到结果再覆盖，避免卡片高度跳动
@@ -86,7 +93,14 @@ const uid = useId()
 <template>
   <!-- 整块是一个 button：用原生 button 而不是 div[role=button]，
        回车/空格由浏览器天然触发 click，无障碍与键盘行为都不必自己实现 -->
-  <button type="button" class="rain-item" @click="emit('open')">
+  <button
+    type="button"
+    class="rain-item"
+    @click="emit('open')"
+    @pointerenter="prefetch"
+    @focus="prefetch"
+    @touchstart.passive="prefetch"
+  >
     <span class="rain-text">
       <span class="rain-title">降水预报</span>
       <span class="rain-main">{{ outlook.text }}</span>
