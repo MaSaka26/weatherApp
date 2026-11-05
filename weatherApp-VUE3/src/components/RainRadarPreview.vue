@@ -59,12 +59,29 @@ const ATTRIBUTION =
   ' | Weather data by ' +
   '<a href="https://www.rainviewer.com/api.html" target="_blank" rel="noopener">RainViewer</a>'
 
-// 初始 z5：tileSize 512 + zoomOffset -1 让地图 z5 只请求 URL z4，一屏 6 块瓦片就能
-// 盖住整条雨带，整层 load 快、回放起得来；城市级细节交给用户自己缩放。
-// 同时 RainViewer 给瓦片 max-age=172800（48h），同一视野与层级下第二圈回放几乎零请求。
-const START_ZOOM = 5
+// 进图默认 z7：雷达本身可读的层级。
+// 这个值是被数据逼出来的，不是随便挑的 ——
+// RainViewer 的雷达瓦片 maxNativeZoom 就是 7（z8 以上全是 3269 字节的空壳，
+// 且不返回错误码），所以地图一旦放大到 z15 那种街道级，z7 瓦片会被拉伸 256 倍，
+// 有雨的地方变成一整屏纯蓝色块、没雨的地方全透明，回波彻底失去意义。
+// 实测对照：z7 一屏约覆盖 300 km（成片雨带清晰可辨），z15 只剩色块。
+// 街道名要 z15 才出现（实测 z14 只有水系名，z15 有王府井大街/东单三条，
+// 小城松滋 z15 有民主路），所以「看街道名」与「看雷达回波」在同一屏里无法兼得，
+// 默认取雷达这一侧 —— 这个界面本来就是用来看降水的。用户放大时下面会给出提示。
+const START_ZOOM = 7
+// 地图层级超过它，雷达回波就只是被拉伸的色块，界面要明确告知而不是让色块骗人。
+// 注意这里说的是「地图层级」，不是 URL 层级：tileSize 512 + zoomOffset -1 让
+// 地图 z8 实际请求 URL z7（实测 4992 字节，真数据），地图 z9 才请求 URL z8
+// （3269 字节空壳）。所以可读上限是地图 8 级 —— 写成 7 会白白少用一级清晰度。
+const RADAR_LEGIBLE_MAX = 8
+// 没有定位坐标时退回中国全域，这时候不该放大到街道级（没有「街道」可看）
+const FALLBACK_ZOOM = 5
 const FALLBACK_CENTER = [35.2, 105] // 没有经纬度时退回中国全域视野
-const MAX_NATIVE_ZOOM = 7 // 官方 z8+ 是 3269 字节的拉伸空图，且不触发 tileerror，只能在这里拦
+// 这个数落在「地图缩放空间」里，不是 URL 层级 —— tileSize 512 + zoomOffset -1
+// 让 URL 层级恒定比它小 1。所以填 8 时才最终请求 URL z7（实测 4992 字节，真数据），
+// 填 7 的话 URL 最高只到 z6，白丢一级清晰度。
+// URL z8 起才是 3269 字节的空壳（且不返回错误码、不触发 tileerror），只能在这一层拦。
+const MAX_NATIVE_ZOOM = 8
 const MAX_ZOOM = 19
 
 const RADAR_COLOR = 2 // 2 = 原色，与组件内图例色条取自同一套瓦片像素；服务端 color 参数实测无效
@@ -233,11 +250,15 @@ const fadeMs = ref(fadeMsOf(frameMs.value))
 const baseHostIdx = ref(0)
 const baseFailed = ref(false) // 两个入口都失败过 → 提示用户手动重试
 const baseBusy = ref(false)
+// 当前缩放已超出雷达数据的分辨率（z8 以上），回波只是被拉伸的色块
+const overZoom = ref(false)
+const currentZoom = ref(0)
 
 // 非响应式的运行时句柄：都不需要触发重渲染，放 ref 里只会多一层 .value
 let map = null
 let insetsObserver = null
 let baseLayer = null
+let locationMarker = null
 let frontLayer = null // 当前正在显示的那一层
 let pendingLayer = null // 已加入地图、还没等到整层 load 的那一层
 let swapToken = 0 // 递增令牌：让过期的 settle 回调自己作废
@@ -363,6 +384,61 @@ function currentCenter() {
   return valid ? [lat, lon] : FALLBACK_CENTER
 }
 
+// 有真实定位坐标才放 📍。退回中国全域时那是猜的，放个标记等于撒谎。
+function hasLocation() {
+  return currentCenter() !== FALLBACK_CENTER
+}
+
+/* 定位标记：一个带脉动光环的圆点。
+   不用 L.marker 的默认图钉 —— 那张图标是蓝色水滴、和暗色底图撞色，
+   而且是位图，高 DPI 下会糊。用 divIcon 画，颜色走 CSS 变量，缩放时不重排。 */
+function addLocationMarker() {
+  const L = window.L
+  if (!L || !map || !hasLocation()) return
+
+  const [lat, lon] = currentCenter()
+
+  // 先摘掉上一次的：refreshBase() 会再调这个函数，
+  // 不清旧标记就会叠出第二个脉动光环（肉眼看着像在地图上乱闪）
+  clearLocationMarker()
+
+  locationMarker = L.marker([lat, lon], {
+    icon: L.divIcon({
+      className: 'radar-loc',
+      html: '<span class="radar-loc-dot"></span><span class="radar-loc-ring"></span>',
+      iconSize: [22, 22],
+      iconAnchor: [11, 11],
+    }),
+    // 标记不该吃掉地图拖拽/双击缩放
+    interactive: false,
+    keyboard: false,
+    zIndexOffset: 800,
+  }).addTo(map)
+}
+
+function clearLocationMarker() {
+  if (locationMarker && map && map.hasLayer(locationMarker)) {
+    map.removeLayer(locationMarker)
+  }
+  locationMarker = null
+}
+
+/* 雷达瓦片原生只到 z7，再放大就是纯拉伸。
+   超过阈值时把选择权交给用户：要么退回去看真实回波，要么继续看街道名。 */
+function onZoomEnd() {
+  if (!map) return
+  const z = map.getZoom()
+  currentZoom.value = z
+  overZoom.value = z > RADAR_LEGIBLE_MAX
+}
+
+// 提示条上的「回到 N 级」：把视野退回雷达还能读出结构的层级，
+// 同时保留当前中心（用户是想看这个地方的雨，不是想看别处）
+function backToLegible() {
+  if (!map) return
+  map.setZoom(RADAR_LEGIBLE_MAX)
+}
+
 function initMap() {
   const L = window.L
   if (!L) throw new Error('Leaflet 未能加载，地图无法初始化')
@@ -370,7 +446,7 @@ function initMap() {
 
   map = L.map(mapEl.value, {
     center: currentCenter(),
-    zoom: START_ZOOM,
+    zoom: hasLocation() ? START_ZOOM : FALLBACK_ZOOM,
     minZoom: 3,
     maxZoom: MAX_ZOOM,
     zoomControl: false,
@@ -382,9 +458,13 @@ function initMap() {
   })
 
   mountBaseLayer(0)
+  addLocationMarker()
 
   // 缩放按钮放左下，右下留给图例与版权行
   L.control.zoom({ position: 'bottomleft' }).addTo(map)
+
+  map.on('zoomend', onZoomEnd)
+  onZoomEnd()
 
   // 覆盖层是 fixed inset:0，理论上尺寸已经对了；补一次 invalidateSize 防
   // 「首次打开容器宽度为 0」（父级还在做入场动画时）导致瓦片按 0×0 计算
@@ -507,6 +587,7 @@ function refreshBase() {
   baseHostIdx.value = 0
   clearBaseGuard()
   mountBaseLayer(0)
+  addLocationMarker()
 }
 
 function destroyMap() {
@@ -526,6 +607,7 @@ function destroyMap() {
   frontLayer = null
   pendingLayer = null
   rainLayers.clear()
+  locationMarker = null // map.remove() 已经把它的 DOM 一起拆了，这里只清引用
 }
 
 /* ============================================================
@@ -1228,6 +1310,16 @@ watch(
         <span>底图加载失败，两个接入点都没有响应</span>
         <button type="button" class="radar-base-retry" @click="refreshBase">重新加载底图</button>
       </div>
+
+      <!-- 放大超出雷达分辨率时如实说明：色块不是更精细的雨，是被拉伸的同一团雨 -->
+      <div v-if="overZoom && !baseFailed" class="radar-base-hint radar-zoom-hint" role="status">
+        <span>
+          已放大到 {{ Math.round(currentZoom) }} 级，超出雷达分辨率（最高 {{ RADAR_LEGIBLE_MAX }} 级），回波只是被拉伸
+        </span>
+        <button type="button" class="radar-base-retry" @click="backToLegible">
+          回到 {{ RADAR_LEGIBLE_MAX }} 级
+        </button>
+      </div>
     </div>
   </Teleport>
 </template>
@@ -1458,6 +1550,61 @@ watch(
 }
 
 /* ---------- 图例 ---------- */
+/* ---------- 定位标记 ---------- */
+.radar-layer :deep(.radar-loc) {
+  /* divIcon 默认没有尺寸约束，这里只做定位，尺寸交给内部 span */
+  background: none;
+  border: none;
+}
+
+.radar-layer :deep(.radar-loc-dot) {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: #7fd4f5;
+  border: 2px solid #fff;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.45),
+    0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+/* 呼吸光环：描边而不是实心圆。
+   实心填充在静态截图/动画中途看上去是一团模糊的灰斑，边界不清；
+   一圈细描边扩散出去才读得出「这里有个点」的脉冲语义。
+   只动 transform 与 opacity，避免动画触发重排。
+   prefers-reduced-motion 下由下面的媒体查询关掉。 */
+.radar-layer :deep(.radar-loc-ring) {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: 50%;
+  border: 2px solid rgba(127, 212, 245, 0.9);
+  background: transparent;
+  animation: radar-loc-pulse 2.4s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+}
+
+@keyframes radar-loc-pulse {
+  0% {
+    transform: scale(0.55);
+    opacity: 0.9;
+  }
+  75% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
 .radar-legend {
   position: absolute;
   right: 16px;
@@ -1633,6 +1780,16 @@ watch(
 }
 
 /* ---------- 底图失败提示 ---------- */
+/* 超出雷达分辨率的提示：偏琥珀色，与「底图加载失败」的偏红区分开 ——
+   一个是可以继续看但要知道它不准，一个是彻底没东西可看。
+   选择器连写两个类：这条规则排在 .radar-base-hint 之前，单类选择器打不过它，
+   写完仍会被判成红色（实测就是红色）。双类才有足够优先级。 */
+.radar-base-hint.radar-zoom-hint {
+  background: rgba(58, 44, 20, 0.9);
+  border-color: rgba(240, 190, 90, 0.34);
+  color: rgba(255, 232, 190, 0.94);
+}
+
 .radar-base-hint {
   position: absolute;
   left: 50%;
@@ -1950,6 +2107,11 @@ watch(
 @media (prefers-reduced-motion: reduce) {
   .radar-spinner {
     animation-duration: 1.6s;
+  }
+
+  /* 定位标记只留圆点，脉动光环关掉 */
+  .radar-layer :deep(.radar-loc-ring) {
+    display: none;
   }
 }
 </style>
