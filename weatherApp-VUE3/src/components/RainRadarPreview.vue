@@ -1365,7 +1365,7 @@ watch(
           已放大到 {{ Math.round(currentZoom) }} 级，超出雷达分辨率（最高 {{ RADAR_LEGIBLE_MAX }} 级），回波只是被拉伸
         </span>
         <button type="button" class="radar-base-retry" @click="backToLegible">
-          回到 {{ RADAR_LEGIBLE_MAX }} 级
+          回到 {{ RADAR_COMFORT_ZOOM }} 级
         </button>
       </div>
     </div>

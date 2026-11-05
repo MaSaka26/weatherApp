@@ -1,0 +1,75 @@
+<script setup>
+import { computed, watch } from 'vue'
+
+import { useTween } from '@/composables/useTween'
+
+const props = defineProps({
+  value: { type: Number, default: null },
+  min: { type: Number, default: -20 },
+  max: { type: Number, default: 40 },
+  // 缺口下方的小字（舒适 / 偏凉 …）
+  caption: { type: String, default: '' },
+  label: { type: String, default: '' },
+})
+
+const { shown, tween } = useTween()
+
+const START = 225
+const SWEEP = 270
+const RADIUS = 45
+const CIRC = 2 * Math.PI * RADIUS
+// 指针只在环内走，不压到环上，所以比半径短一截
+const HAND = 27
+
+// 冷 → 舒适 → 热 的三段色带：蓝色正中间（0.5）收住，
+// 之后绿、橙各占剩下的一半，指针落在哪一段和下方文案（偏凉 / 舒适 / 偏热）对得上
+const BANDS = [
+  { from: 0, to: 0.5, color: 'var(--accent)' },
+  { from: 0.5, to: 0.75, color: 'var(--uv-1)' },
+  { from: 0.75, to: 1, color: 'var(--temp-high)' },
+]
+
+const arcTotal = (CIRC * SWEEP) / 360
+
+const bands = BANDS.map((b) => ({
+  color: b.color,
+  dash: `${(b.to - b.from) * arcTotal} ${CIRC}`,
+  // 负偏移把这一段推到它在整条弧上的位置
+  offset: -b.from * arcTotal,
+}))
+
+const ratio = computed(() => {
+  const span = props.max - props.min
+  if (!(span > 0)) return 0
+  return Math.min(1, Math.max(0, (shown.value - props.min) / span))
+})
+
+const hand = computed(() => {
+  const rad = ((START + ratio.value * SWEEP - 90) * Math.PI) / 180
+  return { x: 50 + HAND * Math.cos(rad), y: 50 + HAND * Math.sin(rad) }
+})
+
+watch(() => [props.value, props.min, props.max], () => tween(props.value), { immediate: true })
+</script>
+
+<template>
+  <div class="dial needle-dial" role="img" :aria-label="label || caption">
+    <svg class="d-svg" viewBox="0 0 100 100" aria-hidden="true">
+      <circle
+        v-for="(b, i) in bands"
+        :key="i"
+        class="nd-band"
+        cx="50"
+        cy="50"
+        :r="RADIUS"
+        :stroke="b.color"
+        :stroke-dasharray="b.dash"
+        :stroke-dashoffset="b.offset"
+        :transform="`rotate(${START - 90} 50 50)`"
+      />
+      <line class="nd-hand" x1="50" y1="50" :x2="hand.x" :y2="hand.y" />
+      <circle class="nd-pin" cx="50" cy="50" r="4.2" />
+    </svg>
+    <span v-if="caption" class="d-caption">{{ caption }}</span>
+  </div>
+</template>
