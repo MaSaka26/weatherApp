@@ -47,11 +47,12 @@ npm run dev        # http://localhost:5173
 - 横向滚动 24 小时，含温度、天气图标、降水概率
 - 昼夜按接口返回的 `is_day` 逐小时判定，不再用固定时间段猜测
 
-**降水预报条目**（新增）
+**降水预报条目**
 - 左侧：标题「降水预报」+ 一句结论（如「正在下雨」「约 2 小时后转停」「未来 24 小时无雨」）
 - 右侧：手绘感 SVG —— 十字街道 + 两团分散的雷达回波色块
-- 点整条弹出全屏雷达回放：Leaflet + RainViewer 13 帧、播放/暂停/拖动、Escape 关闭
-- Leaflet 从 CDN 按需注入（不打包进 bundle），雷达组件本身也只在打开时才挂载
+- 点整条弹出全屏雷达回放：**中央气象台（NMC）全国拼图 12 帧**、播放/暂停/拖动、Escape 关闭
+- 雷达组件走动态 import，只在首次打开时才挂载；打开后探测最新帧并并发预载 12 张整图，之后换帧命中缓存零延迟
+- 三档画质（原图 1349×1208 / 中图 825×739 / 小图 480×430）与四档速度可在控制条切换
 
 **16 天预报**
 - 列表 / 曲线双视图切换，两视图等高
@@ -82,19 +83,21 @@ npm run dev        # http://localhost:5173
 
 地名解析优先走本地表 `src/data/china-places.json`（394 个地级市 + 2814 个区县，区县挂在所属地级市下），命中即用，避免网络往返。
 
-**雷达图层**
+**雷达回放**
 
-| 层 | 来源 | 坐标系 |
-| --- | --- | --- |
-| 底图 | Esri World Dark Gray Base | WGS84 |
-| 降水回波 | RainViewer `tilecache` | WGS84 |
+改用 [中央气象台（NMC）](http://www.nmc.cn/publish/radar/chinaall.html) 的全国雷达拼图：整幅 PNG 一次性显示，**不再叠 Leaflet 地图**，也就没有坐标系对齐问题。
+- 图片按 6 分钟一档发布，URL 由 UTC 时间戳推算（`slotOf` 用 `Math.floor`，否则 07:35 会被推到还没发布的 07:36）。发布有 6–15 分钟延迟，所以从当前档往回最多探测 6 档找最新帧。
+- 12 帧一次性并发预载后再开播，换帧走双缓冲 `<img>` + `decode()`，不再等网络。
+- 三档画质：`原图 1349×1208 / 中图 825×739 / 小图 480×430`（约 930/515/198 KB 每帧），按路径里有没有 `medium/`、`small/` 目录区分；换画质会重建整条帧列表。
+- 图片是白底烘焙图（底图、省界、城市名、回波、图例都在一张图里），用 `invert(1) hue-rotate(180deg)` 转暗色主题；`hue-rotate` 是为了把反相后变品红的绿色回波绕回原色相。
+- 响应带 `Access-Control-Allow-Origin: *`，但**没有 JSON 帧列表接口**，只能靠时间戳回推。
 
-两个坐标系一致，叠加无偏移。选 Esri 的理由：CARTO 的免费暗色瓦片已下线（HTTP 200 但返回「API KEY REQUIRED」水印图），Esri 是唯一还能用的暗色底图。
+选 NMC 而非 RainViewer 的理由：单帧 0.27–0.62 秒（RainViewer 单块瓦片实测 1.3–12.4 秒）、6 分钟一帧（RainViewer 10 分钟）、当天有 70+ 帧可用（RainViewer 死限 13 帧）。代价是整图不能缩放、不能与自定义暗色底图叠加。
 
 **性能取舍**
-- 主包 ~185 KB（gzip 72 KB），Highcharts 单独分包 278 KB，雷达预览走动态 import
-- RainViewer 瓦片单块实测 1.3–12.4 秒，播放器因此**不等 `tileload`**（第一块到就换帧会导致每 0.5 秒撕掉整层、永远加载不完），改为等整层 `load`，慢网只让回放变慢，不黑屏
-- z ≤ 6 的瓦片 `cache-control: max-age=172800`（48 小时），首圈之后回放零新请求；z7 只有 5 分钟缓存
+- 主包 ~174 KB（gzip 68 KB），Highcharts 单独分包 278 KB，雷达预览走动态 import（JS gzip 4.58 KB、CSS gzip 2.28 KB）
+- 移除 Leaflet 与 Esri 底图后，WeatherHome 的 CSS 从 14.79 KB 降到 2.10 KB（Leaflet 样式不再打包）
+- 雷达组件只在首次打开时挂载；打开后探测 + 并发预载 12 张整图，之后换帧命中缓存零延迟
 
 ---
 
@@ -114,7 +117,7 @@ weatherApp-VUE3/
 │   │   ├── NeedleDial / DialGauge / WindCompass / UvGauge
 │   │   ├── HourlyForecast.vue
 │   │   ├── RainForecast.vue    # 降水条目（左文右手绘 SVG）
-│   │   ├── RainRadarPreview.vue# 全屏雷达回放（1497 行）
+│   │   ├── RainRadarPreview.vue# 全屏 NMC 雷达回放（935 行）
 │   │   ├── DailyForecast / DailyChart
 │   │   ├── LifeIndex.vue       # 生活指数
 │   │   ├── TablerIcon.vue      # 通用图标组件
@@ -155,15 +158,14 @@ weatherApp-VUE3/
 
 ### 可靠性
 
-- **雷达数据依赖第三方**。RainViewer 免费额度无 SLA，`nowcast`（未来 30 分钟临近预报）已被官方取消，只剩 `past` 13 帧。商用需单独授权，且必须保留「Weather data by RainViewer」署名。
-- **雷达只覆盖雷达拼图有效区**。中国西部、海上空白处不是 bug，是当地确实没有回波。
-- **`color` 参数无效**。RainViewer 的 `color=0…9` 实测返回完全相同的像素（同 md5），所以配色改用前端 CSS filter 实现。
-- **zoom > 6 时不缓存**。z7 瓦片 `max-age` 只有 5 分钟，放大后回放会每圈重新请求 390 次。
+- **雷达数据依赖第三方**。NMC 无 SLA、无 JSON 帧列表接口，只能按 UTC 时间戳回推；发布有 6–15 分钟延迟，所以要从当前档往回探测最多 6 档。
+- **雷达是整幅烘焙图**。省界、城市名、回波、图例都在一张 PNG 里，不能缩放叠加到自定义底图，只能整张显示；暗色主题靠 CSS 反相实现。
+- **图片没有 `Cache-Control` 头**，但有 `Access-Control-Allow-Origin: *` 和 `Last-Modified`；换帧靠打开时一次性预载的 12 张图，不依赖 HTTP 缓存。
 
 ### 未实现
 
-1. **完全离线不可行**。底图理论上可打包（全国 z3–6 数百张、5–15 MB），但 Esri 条款禁止批量下载分发，要离线必须先换 OSM/Natural Earth 底图重新出图；雷达则只能靠「低 zoom + 缓存 + 预热」逼近离线，无法真正离线。
-2. **13 帧预热未做**。实测预热后单帧换帧从 3–7 秒降到 1.1 秒，成本是首屏多 156 个请求（并发 16 时约 12.8 秒）。收益明确，但会增加首次打开的等待。
+1. **完全离线不可行**。雷达图是实时发布的滚动数据，缓存意义有限；且 NMC 无离线授权说明。断网时用不了雷达回放。
+2. **区域图未接**。NMC 另有华东/华北/中南分区图（`AECN`/`ANCN`/`ACCN` 代号，分辨率更高），目前只用全国图 `ACHN`。
 3. **多城市 / 收藏未做**。目前只有定位 + 搜索单个地点，没有城市列表、没有收藏、没有对比。
 4. **天气预警未接**。中国气象局的预警接口需申请，暂未接入，因此没有暴雨/大风/高温的红色提醒。
 5. **空气质量只有 AQI 与 PM2.5**，没有 PM10、O₃、NO₂ 的细分展示，也没有分时段预报。
@@ -175,7 +177,7 @@ weatherApp-VUE3/
 ### 工程债
 
 - `weather.css` 单文件 1600 行，全局样式与组件样式混在一起，长期应拆分为设计令牌 + 组件级样式。
-- `RainRadarPreview.vue` 1497 行，逻辑（帧管理、交叉淡入、错误兜底）与视图耦合，可抽成 `useRadarPlayer` composable。
+- `RainRadarPreview.vue` 935 行（已从 2301 行的 Leaflet/RainViewer 版重写精简），帧探测、预载、双缓冲播放与视图仍在同一 SFC，可抽成 `useRadarPlayer` composable。
 - `ui-review/` 被 `.gitignore` 忽略，验证脚本不进版本库，换机器就丢失。若这些脚本要长期用，应单独放行或移到独立仓库。
 
 ---
@@ -193,6 +195,5 @@ weatherApp-VUE3/
 ## 数据来源
 
 天气与空气质量数据来自 [Open-Meteo](https://open-meteo.com/)（CC BY 4.0）。
-雷达回波来自 [RainViewer](https://www.rainviewer.com/api.html)，署名要求已在界面保留。
-底图来自 [Esri](https://www.esri.com/)，署名「Esri, HERE, Garmin, © OpenStreetMap contributors」。
+雷达拼图来自 [中央气象台](http://www.nmc.cn/publish/radar/chinaall.html)（NMC），界面已保留「数据来源 中央气象台」署名。
 图标来自 [Tabler Icons](https://tabler.io/icons)（MIT）。

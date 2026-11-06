@@ -25,12 +25,12 @@ const store = useWeatherStore()
 const todayHigh = computed(() => store.daily?.temperature_2m_max?.[0] ?? 0)
 const todayLow = computed(() => store.daily?.temperature_2m_min?.[0] ?? 0)
 
-// 雷达预览是重资源（动态拉 Leaflet + 一次请求 13 帧），用开关控制挂载与销毁：
+// 雷达预览是重资源（要探测最新帧 + 并发预载 12 张整图），用开关控制挂载与销毁：
 // 常驻会让首屏多一个 Teleport 容器，且用户不点就白白占内存
 const radarOpen = ref(false)
 // 首次打开后才允许挂载。没有这个 v-if，defineAsyncComponent 的 loader 会在
 // 组件挂载时立刻触发 —— chunk 照样在首页下载，异步化就变成只改了文件名。
-// 一旦挂载就常驻（不随关闭销毁），避免反复开关重复初始化地图。
+// 一旦挂载就常驻（不随关闭销毁），避免反复开关重复跑一遍探测与预载。
 const radarMounted = ref(false)
 
 // 预取只做一次。用户在条目上悬停/聚焦/按下时就先把 chunk 拉下来，
@@ -116,8 +116,6 @@ onMounted(() => {
   <RainRadarPreview
     v-if="radarMounted"
     :open="radarOpen"
-    :lat="store.lat"
-    :lon="store.lon"
     :city-name="store.cityName"
     @close="radarOpen = false"
   />
