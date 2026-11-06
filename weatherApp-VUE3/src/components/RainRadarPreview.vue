@@ -1,5 +1,6 @@
 <script setup>
-/* 降水雷达全屏预览：只取中央气象台（NMC）的全国雷达拼图。
+/* 降水雷达全屏预览：只取中央气象台（NMC）的雷达拼图，全国与华东/华北/中南
+   四个区域可切换（见 REGIONS）。
 
    为什么不用 RainViewer 了 —— 它是全球瓦片、要 Leaflet 叠在 Esri 暗色底图上，
    单块瓦片在这台机器上要 1.3–12 秒，首屏十几秒，13 帧还要预热才勉强能用。
@@ -7,8 +8,8 @@
    单帧 0.27–0.62 秒，12 帧并发不到 1 秒，6 分钟一帧（RainViewer 是 10 分钟），
    而且——关键——省掉了 Leaflet 那个 147KB 的 CDN 依赖。
 
-   代价是：图不能缩放、不能平移、不能和别的底图对齐，只有整幅中国。
-   对「看一眼全国哪里在下雨」这个用途，这些能力本来也用不上。 */
+   代价是：图不能缩放、不能平移、不能和别的底图对齐，只能看官方切好的四张拼图。
+   对「看一眼哪里在下雨」这个用途，这些能力本来也用不上。 */
 
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
@@ -27,7 +28,16 @@ const emit = defineEmits(['close'])
 
 const API_HOST = 'https://image.nmc.cn'
 const PRODUCT = 'RDCP'
-const CODE = 'ACHN' // 全国；分区另有 AECN 华东 / ANCN 华北 / ACCN 中南
+
+/* 可切换的雷达区域。id 就是文件名里那一段代号，中央气象台只发布这四张拼图：
+   全国是整幅中国，另外三张是按大区裁出来并放大过的拼图。 */
+const REGIONS = [
+  { id: 'ACHN', name: '全国' },
+  { id: 'AECN', name: '华东' },
+  { id: 'ANCN', name: '华北' },
+  { id: 'ACCN', name: '中南' },
+]
+const DEFAULT_REGION = 'ACHN'
 
 // 一档 6 分钟。时间戳是 UTC，末 5 位恒 00000。
 const SLOT_MS = 6 * 60 * 1000
@@ -36,7 +46,11 @@ const SLOT_MS = 6 * 60 * 1000
      RDCP/          → 1349x1208  原图（官方页面不引用，但确实可取）
      RDCP/medium/   →  825x739   官方页面用的就是这一档
      RDCP/small/    →  480x430   列表缩略图
-   原图那一档没有目录名，所以 dir 留空，拼 URL 时要跳过斜杠而不是接个空串（会出双斜杠）。 */
+   原图那一档没有目录名，所以 dir 留空，拼 URL 时要跳过斜杠而不是接个空串（会出双斜杠）。
+
+   注意：下面三张分区图（AECN/ANCN/ACCN）只有原图这一档，medium/ 与 small/
+   实测全部 404 —— 它们本身就是「原图裁切放大」的产物，官方没有为分区出缩略图。
+   所以区域模式下必须把画质钳到 orig，否则拼出来的每个 URL 都必然 404。 */
 const QUALITIES = [
   { id: 'orig', name: '原图', dir: '', w: 1349, h: 1208, kb: 930 },
   { id: 'medium', name: '中图', dir: 'medium', w: 825, h: 739, kb: 515 },
@@ -90,6 +104,7 @@ const frames = ref([]) // [{ date, stamp, url }]
 const idx = ref(0)
 const playing = ref(false)
 const quality = ref(DEFAULT_QUALITY)
+const region = ref(DEFAULT_REGION)
 const speed = ref(DEFAULT_SPEED)
 const front = ref(0) // 哪一张 img 在当前屏上（双缓冲）
 const frameNote = ref('') // 「这一帧暂无数据」这类单帧提示
@@ -142,6 +157,12 @@ const rangeText = computed(() => {
 
 const cityLabel = computed(() => props.cityName || '全国')
 
+// 当前区域对象（名称用于顶部徽标 / aria-label，找不到时退回全国）
+const regionInfo = computed(() => REGIONS.find((r) => r.id === region.value) || REGIONS[0])
+
+// 分区图只有原图一档，用这个开关同时驱动「画质组变灰」与「urlOf 强制 orig」
+const regionOnly = computed(() => region.value !== 'ACHN')
+
 /* ============================================================
    时间与 URL
    ============================================================ */
@@ -160,12 +181,16 @@ function stampOf(date) {
   )
 }
 
-function urlOf(stamp, qualityId) {
+// code 默认取当前区域。用 code !== 'ACHN' 判断而不是读 regionOnly ——
+// 调用点可能显式传了一个代号，不能让它被无关的响应式状态带偏。
+function urlOf(stamp, qualityId, code = region.value) {
   const q = QUALITIES.find((x) => x.id === qualityId) || QUALITIES[1]
-  const dir = q.dir ? q.dir + '/' : ''
+  // 分区图没有 medium/small 目录（实测全 404），只有原图可取：
+  // 这里硬性把目录清空，即使调用方传了别的画质也不会拼出必 404 的地址。
+  const dir = code !== 'ACHN' || !q.dir ? '' : q.dir + '/'
   return (
     `${API_HOST}/product/${stamp.slice(0, 4)}/${stamp.slice(4, 6)}/${stamp.slice(6, 8)}` +
-    `/${PRODUCT}/${dir}SEVP_AOC_RDCP_SLDAS3_ECREF_${CODE}_L88_PI_${stamp}.PNG`
+    `/${PRODUCT}/${dir}SEVP_AOC_RDCP_SLDAS3_ECREF_${code}_L88_PI_${stamp}.PNG`
   )
 }
 
@@ -181,11 +206,12 @@ function beijingHHMM(date) {
 }
 
 function buildFrames(latest, count, qualityId) {
+  const code = region.value
   const out = []
   for (let i = count - 1; i >= 0; i--) {
     const d = new Date(latest.getTime() - i * SLOT_MS)
     const stamp = stampOf(d)
-    out.push({ date: d, stamp, url: urlOf(stamp, qualityId) })
+    out.push({ date: d, stamp, url: urlOf(stamp, qualityId, code) })
   }
   return out
 }
@@ -209,6 +235,9 @@ function probe(url) {
 // floorMs  用于后台轮询：退到「已知的最后一帧」或更老时直接收手，没有新帧就不必再试。
 async function probeLatest(qualityId, token, quiet = false, floorMs = -Infinity) {
   const start = slotOf(new Date())
+  // 进来就锁定区域代号：探测跨多次 await，期间若切了区域，token 会让这次结果作废，
+  // 但已经发出的几次试探必须用同一个代号，不能中途换图。
+  const code = region.value
   for (let k = 0; k < PROBE_TRIES; k++) {
     if (!alive || token !== loadToken) return null
     const t = new Date(start.getTime() - k * SLOT_MS)
@@ -216,7 +245,7 @@ async function probeLatest(qualityId, token, quiet = false, floorMs = -Infinity)
     if (!quiet) {
       probeHint.value = k === 0 ? '正在探测最新一帧…' : `正在探测最新一帧…（回退 ${k} 档）`
     }
-    const ok = await probe(urlOf(stampOf(t), qualityId))
+    const ok = await probe(urlOf(stampOf(t), qualityId, code))
     if (ok) return t
   }
   return null
@@ -375,6 +404,10 @@ async function runRefresh() {
 
   const token = loadToken
   const qualityId = quality.value
+  // 区域代号也要一起锁定：滚动刷新是「往时间轴后面追加新帧」，
+  // 如果这里不带上当前区域，追加出来的那几帧会突然变回全国图，
+  // 时间轴前半段是华东、后半段是全国 —— 这是最容易漏的一处。
+  const code = region.value
   const last = frames.value.length ? frames.value[frames.value.length - 1] : null
   // 探到的帧只要不比「已知最后一帧」新就没意义，probeLatest 会在退到这一档之前收手，
   // 于是没新帧的那一分钟只花 1 次图片请求。
@@ -390,7 +423,7 @@ async function runRefresh() {
     for (let t = floorMs + SLOT_MS; t <= latest.getTime(); t += SLOT_MS) {
       const d = new Date(t)
       const stamp = stampOf(d)
-      additions.push({ date: d, stamp, url: urlOf(stamp, qualityId) })
+      additions.push({ date: d, stamp, url: urlOf(stamp, qualityId, code) })
     }
     if (!additions.length) return
 
@@ -490,6 +523,18 @@ function setQuality(id) {
   quality.value = id
   // 换画质必须重建整条帧列表：三种分辨率的 URL 完全不同，
   // 只替换当前这张会让时间轴其余帧still是旧分辨率。
+  frames.value = []
+  idx.value = 0
+  load()
+}
+
+function setRegion(id) {
+  if (region.value === id) return
+  region.value = id
+  // 分区图只有原图一档，切过去时把画质钳到 orig —— 否则控件上还亮着「中图」，
+  // 拼出来的 URL 却是硬改成原图的那条，界面与实际请求对不上。
+  if (id !== 'ACHN' && quality.value !== 'orig') quality.value = 'orig'
+  // 区域是文件名的一部分，等于换了一整套图，必须整条重建。
   frames.value = []
   idx.value = 0
   load()
@@ -645,6 +690,9 @@ async function openLayer() {
   }
 
   quality.value = DEFAULT_QUALITY
+  // 每次打开都回到全国：区域只是这一次的临时视角，
+  // 而且全国档默认是中图，若残留上次的区域就会带着 orig 重开，白多下 4 MB。
+  region.value = DEFAULT_REGION
   await nextTick()
   if (!alive || gen !== generation) return
 
@@ -687,6 +735,9 @@ onMounted(() => {
         count: frames.value.length,
         idx: idx.value,
         playing: playing.value,
+        // 自动化脚本要靠这个确认区域切换是否真的生效（含画质是否被钳到 orig）
+        region: region.value,
+        quality: quality.value,
         lastStamp: frames.value.length ? frames.value[frames.value.length - 1].stamp : null,
         firstStamp: frames.value.length ? frames.value[0].stamp : null,
       }),
@@ -720,7 +771,7 @@ watch(
       class="radar-layer"
       role="dialog"
       aria-modal="true"
-      aria-label="全国降水雷达回放"
+      :aria-label="`${regionInfo.name}降水雷达回放`"
     >
       <!-- 与首页共用同一套天空背景（渐变 + 光晕 + 星点 + 天气自适应）。
            .sky-bg 是 weather.css 里的全局类，不是 scoped，这里直接复用；
@@ -740,6 +791,9 @@ watch(
           <h2 class="radar-title">降水雷达</h2>
           <span class="radar-sep" aria-hidden="true"></span>
           <span class="radar-city">{{ cityLabel }}</span>
+          <!-- 顶部标题联动：全国模式下城市名本身就写着「全国」，再挂一个区域徽标纯属重复，
+               只有切到分区时才补上，让用户一眼知道当前看的是哪张大区图。 -->
+          <span v-if="regionOnly" class="radar-region">{{ regionInfo.name }}</span>
         </div>
 
         <button class="radar-icon-btn" type="button" aria-label="关闭雷达回放" @click="close">
@@ -836,19 +890,44 @@ watch(
 
         <div class="radar-row-sub">
           <div class="radar-group">
+            <span class="radar-group-label">区域</span>
+            <div class="radar-seg" role="group" aria-label="雷达覆盖区域">
+              <button
+                v-for="r in REGIONS"
+                :key="r.id"
+                class="radar-seg-btn"
+                :class="{ on: region === r.id }"
+                type="button"
+                @click="setRegion(r.id)"
+              >
+                {{ r.name }}
+              </button>
+            </div>
+          </div>
+
+          <div class="radar-group">
             <span class="radar-group-label">画质</span>
             <div class="radar-seg" role="group" aria-label="图片清晰度">
-              <button
-                v-for="q in QUALITIES"
-                :key="q.id"
-                class="radar-seg-btn"
-                :class="{ on: quality === q.id }"
-                type="button"
-                :title="`${q.w}×${q.h} · 约 ${q.kb} KB/帧`"
-                @click="setQuality(q.id)"
-              >
-                {{ q.name }}
-              </button>
+              <!-- 分区图官方只发原图一档（medium/small 全 404），所以这里不给选择，
+                   摆一个 disabled 的「仅原图」占位：布局高度不变，切回全国立刻恢复三档。 -->
+              <template v-if="regionOnly">
+                <button class="radar-seg-btn on" type="button" disabled title="区域图只提供原图">
+                  仅原图
+                </button>
+              </template>
+              <template v-else>
+                <button
+                  v-for="q in QUALITIES"
+                  :key="q.id"
+                  class="radar-seg-btn"
+                  :class="{ on: quality === q.id }"
+                  type="button"
+                  :title="`${q.w}×${q.h} · 约 ${q.kb} KB/帧`"
+                  @click="setQuality(q.id)"
+                >
+                  {{ q.name }}
+                </button>
+              </template>
             </div>
           </div>
 
@@ -1030,6 +1109,21 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 34vw;
+}
+
+/* 区域名徽标：跟在城市名后面，视觉上弱一级（更小、更暗），
+   免得和城市名抢焦点 —— 它只是「你现在看的是哪张大区图」的注脚。 */
+.radar-region {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  color: var(--rr-accent-bright);
+  background: rgba(109, 179, 242, 0.16);
+  border: 1px solid rgba(109, 179, 242, 0.3);
+  border-radius: 999px;
+  white-space: nowrap;
 }
 
 .radar-icon-btn {
@@ -1413,13 +1507,22 @@ watch(
     color 0.14s ease;
 }
 
-.radar-seg-btn:hover {
+/* 用 :not(:disabled) 而不是靠层叠顺序压掉 hover —— 否则「仅原图」那个
+   disabled 按钮鼠标一过还是会变亮，看起来像能点。 */
+.radar-seg-btn:not(:disabled):hover {
   color: var(--rr-text-2);
 }
 
 .radar-seg-btn.on {
   color: #fff;
   background: rgba(109, 179, 242, 0.26);
+}
+
+/* 分区图的「仅原图」占位按钮：保持选中态配色但整体压暗，
+   明确传达「这一档没得选」，而不是让用户去点一个点不动的按钮。 */
+.radar-seg-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 /* ============================================================
