@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 
 import { settings } from '@/composables/useSettings'
+import { aqiText, pmText, readAir } from '@/utils/aqi'
 import DialGauge from '@/components/DialGauge.vue'
 import NeedleDial from '@/components/NeedleDial.vue'
 import UvGauge from '@/components/UvGauge.vue'
@@ -10,6 +11,8 @@ import WindCompass from '@/components/WindCompass.vue'
 const props = defineProps({
   current: { type: Object, required: true },
   daily: { type: Object, default: null },
+  // 空气质量来自独立接口，可能为 null（请求失败或超时），卡片会显示「暂无」
+  air: { type: Object, default: null },
 })
 
 // 卡片 item 布局由设置决定：layout-row 左文右图（默认）/ layout-stack 文字在上图形在下。
@@ -18,6 +21,17 @@ const props = defineProps({
 const layoutClass = computed(() =>
   settings.cardLayout === 'stack' ? 'layout-stack' : 'layout-row',
 )
+
+// 六卡 / 九卡由设置切换：九卡在桌面排成 5+4（末张占两格），手机仍然是三列整行
+const gridClass = computed(() => [layoutClass.value, settings.cardCount === 7 ? 'cards-7' : 'cards-6'])
+
+// 空气质量：AQI 当主值，PM2.5 / PM10 当小字，等级名走 aqi.js 的六级分档
+// 接口失败时 air 是 null，卡片整体退化成「暂无」，不占位也不报错
+const air = computed(() => readAir(props.air))
+const aqiValue = computed(() => aqiText(air.value.aqi))
+const aqiLevelName = computed(() => air.value.level?.name || '暂无')
+const aqiHint = computed(() => air.value.level?.hint || '暂无空气质量数据')
+const pmLine = computed(() => pmText(air.value.pm25, air.value.pm10))
 
 // 六张卡三列两行正好排满容器（桌面六列一行），列宽都是 minmax(0,1fr)，永远不溢出，
 // 所以这里不需要 useWheelScroll；逐小时和曲线那两处真会溢出，滚动在各自组件里挂
@@ -138,7 +152,7 @@ const dot = computed(() => {
 </script>
 
 <template>
-  <div class="details-grid" :class="layoutClass">
+  <div class="details-grid" :class="gridClass">
     <div class="detail-card split">
       <div class="card-main">
         <div class="label">体感</div>
@@ -227,6 +241,28 @@ const dot = computed(() => {
           <span>{{ sun?.set || '--:--' }}</span>
         </div>
       </div>
+    </div>
+
+    <!-- 空气质量：只有切到 7 张时才渲染。
+         主值是 AQI 数字，环心写等级简称，环下写 PM2.5 / PM10；
+         分档断点与 lifeIndex 里「户外 / 疾病」用的是同一套，卡片和生活指数结论不会互相打架 -->
+    <div v-if="settings.cardCount === 7" class="detail-card split air-card">
+      <div class="card-main">
+        <div class="label">空气质量</div>
+        <div class="value">{{ aqiValue }}<span class="unit">AQI</span></div>
+        <div v-if="pmLine" class="air-pm">{{ pmLine }}</div>
+      </div>
+      <DialGauge
+        :value="air.aqi"
+        :min="0"
+        :max="300"
+        :caption="aqiLevelName"
+        :label="`空气质量 ${aqiLevelName}，AQI ${aqiValue}，${aqiHint}`"
+      >
+        <svg class="d-icon d-icon-arrow" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 15h11a3 3 0 1 0-3-3M3 11h7M3 19h9" />
+        </svg>
+      </DialGauge>
     </div>
   </div>
 </template>

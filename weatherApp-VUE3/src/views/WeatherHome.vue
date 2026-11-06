@@ -90,7 +90,12 @@ onMounted(() => {
         :today-low="todayLow"
       />
 
-      <DetailCards v-if="store.current" :current="store.current" :daily="store.daily" />
+      <DetailCards
+        v-if="store.current"
+        :current="store.current"
+        :daily="store.daily"
+        :air="store.air"
+      />
 
       <HourlyForecast :hourly="store.hourly" :current="store.current" />
 

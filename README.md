@@ -44,6 +44,12 @@ npm run dev        # http://localhost:5173
 - 手机 3 列 × 2 行、平板 3 列 × 2 行、桌面一行六列
 - 「左右 / 上下」图文布局可在设置面板切换
 
+**第七张：空气质量**（设置面板「卡片数量」切到 7 张时出现，默认 6 张）
+- 主值 AQI（美国 EPA 0–500 刻度，文字等级沿用「优 / 良 / 轻度污染 / 中度污染 / 重度污染 / 严重污染」）+ PM2.5 / PM10 小字 + 环形表盘，环心是通风图标
+- 桌面 7 张排成两行：第一行 5 张（每张一格），第二行「日出日落」占 3 格、「空气质量」占 2 格，两行右边缘对齐
+- 手机 7 张 = 3 + 3 + 1，末张横跨整行收口
+- 空气质量走独立接口且懒加载：先渲染天气，AQI 到了再补进卡片，**不占用首屏等待时间**
+
 **逐小时预报**
 - 横向滚动 24 小时，含温度、天气图标、降水概率
 - 昼夜按接口返回的 `is_day` 逐小时判定，不再用固定时间段猜测
@@ -71,6 +77,7 @@ npm run dev        # http://localhost:5173
 - 毛玻璃强度：关 / 弱 / 标准 / 强
 - 圆角：直角 / 标准 / 圆润
 - 卡片图文布局：左右 / 上下
+- 卡片数量：6 张 / 7 张（7 张多出空气质量）
 - 设置写入 `localStorage`，脏数据自动退回默认档位
 
 ---
@@ -82,7 +89,7 @@ npm run dev        # http://localhost:5173
 | 接口 | 用途 |
 | --- | --- |
 | `api.open-meteo.com/v1/forecast` | 实况 + 24h 逐小时 + 16 天预报（`forecast_days=16`） |
-| `air-quality-api.open-meteo.com/v1/air-quality` | AQI、PM2.5 |
+| `air-quality-api.open-meteo.com/v1/air-quality` | AQI、PM2.5、PM10 |
 | `geocoding-api.open-meteo.com/v1/search` | 地名反查（备用） |
 
 地名解析优先走本地表 `src/data/china-places.json`（394 个地级市 + 2814 个区县，区县挂在所属地级市下），命中即用，避免网络往返。
@@ -114,12 +121,12 @@ weatherApp-VUE3/
 ├── src/
 │   ├── api/weather.js          # 三个 Open-Meteo 接口封装
 │   ├── assets/
-│   │   ├── weather.css         # 全局样式与设计令牌（1595 行，单文件集中管理）
+│   │   ├── weather.css         # 全局样式与设计令牌（1636 行，单文件集中管理）
 │   │   ├── icons.js            # 23 个 Tabler 图标的 path 数据
 │   │   └── icons/*.svg         # 同上，用于生成 icons.js
 │   ├── components/             # 21 个组件
 │   │   ├── CurrentWeather.vue  # 温度 + 时钟
-│   │   ├── DetailCards.vue     # 六卡容器
+│   │   ├── DetailCards.vue     # 详情卡容器（6 / 7 张）
 │   │   ├── NeedleDial / DialGauge / WindCompass / UvGauge
 │   │   ├── HourlyForecast.vue
 │   │   ├── RainForecast.vue    # 降水条目（左文 + 12 小时强度柱条 + 手绘 SVG）
@@ -174,14 +181,14 @@ weatherApp-VUE3/
 2. **PM2.5 之外的地图叠加未做**。NMC 只有雷达拼图这一种产品，没有可叠加到地图的瓦片；想要「任意缩放 + 叠加」只能自建瓦片服务（成本与授权都不划算）。
 3. **多城市 / 收藏未做**。目前只有定位 + 搜索单个地点，没有城市列表、没有收藏、没有对比。
 4. **天气预警未接**。中国气象局的预警接口需申请，暂未接入，因此没有暴雨/大风/高温的红色提醒。
-5. **空气质量只有 AQI 与 PM2.5**，没有 PM10、O₃、NO₂ 的细分展示，也没有分时段预报。
+5. **空气质量只有 AQI / PM2.5 / PM10**，没有 O₃、NO₂、SO₂、CO 的细分展示，也没有分时段预报；中国区无花粉数据（接口返回空），所以也没接。
 6. **降水条目不区分降水类型**。只判断「有没有雨」，没有雨/雪/冻雨的分别文案；强度已用 12 小时柱条展示（`intensities`），但柱条只有粗细高低的档位，没有标出每格对应的具体时刻。
 7. **无 PWA / 离线壳**。没有 Service Worker，断网时整页不可用。
 8. **无自动化测试**。`ui-review/` 里的验证脚本是开发期一次性工具，没有进 CI，也没有单测覆盖 `lifeIndex.js` / `rainOutlook.js` 这些纯函数规则——它们其实是最好测的部分。
 
 ### 工程债
 
-- `weather.css` 单文件 1595 行，全局样式与组件样式混在一起，长期应拆分为设计令牌 + 组件级样式。
+- `weather.css` 单文件 1636 行，全局样式与组件样式混在一起，长期应拆分为设计令牌 + 组件级样式。
 - `RainRadarPreview.vue` 1587 行（已从 2301 行的 Leaflet/RainViewer 版重写精简），帧探测、滚动刷新、预载、双缓冲播放与视图仍在同一 SFC，可抽成 `useRadarPlayer` composable。
 - `ui-review/` 被 `.gitignore` 忽略，验证脚本不进版本库，换机器就丢失。若这些脚本要长期用，应单独放行或移到独立仓库。
 

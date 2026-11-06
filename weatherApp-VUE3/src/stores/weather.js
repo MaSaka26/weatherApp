@@ -70,6 +70,19 @@ export const useWeatherStore = defineStore('weather', () => {
     }
   }
 
+  // 空气质量单独加载，不进首屏的 Promise.all。
+  // 实测该接口一次要 2.0–2.7 秒，而主天气接口 0.5 秒就回来了：
+  // 放一起等，等于让首屏白等两秒多；放超时短一点，又会整块数据丢失（曾因此一直显示「暂无」）。
+  // 现在先渲染天气，AQI 到了再由响应式补上，用户感知是「卡片稍后填数」，不是「页面卡住」。
+  let airToken = 0
+  async function loadAir(latitude, longitude) {
+    const token = ++airToken
+    air.value = null // 换城市时先清空，避免上一座城市的 AQI 挂在新城市名下
+    const next = await fetchAirSafe(latitude, longitude)
+    if (token !== airToken) return // 期间又切了城市，这次结果作废
+    air.value = next
+  }
+
   // ─── 按城市名加载（本地候选之外的兜底，走地理编码） ─────
   async function loadCity(city) {
     placeToken += 1 // 让尚未返回的定位反查结果失效
@@ -81,13 +94,9 @@ export const useWeatherStore = defineStore('weather', () => {
       cityName.value = geo.name
       cityDetail.value = formatSearchDetail(geo)
       locationSource.value = 'search'
-      const [weather, airData] = await Promise.all([
-        fetchWeather(geo.lat, geo.lon),
-        fetchAirSafe(geo.lat, geo.lon),
-      ])
-      data.value = weather
-      air.value = airData
+      data.value = await fetchWeather(geo.lat, geo.lon)
       showContent()
+      loadAir(geo.lat, geo.lon)
     } catch (err) {
       if (err.message === 'CITY_NOT_FOUND') {
         showError('未找到城市', `未找到「${city}」，请检查城市名称是否正确。`)
@@ -108,13 +117,9 @@ export const useWeatherStore = defineStore('weather', () => {
       cityName.value = place.name
       cityDetail.value = place.detail
       locationSource.value = 'search'
-      const [weather, airData] = await Promise.all([
-        fetchWeather(place.lat, place.lon),
-        fetchAirSafe(place.lat, place.lon),
-      ])
-      data.value = weather
-      air.value = airData
+      data.value = await fetchWeather(place.lat, place.lon)
       showContent()
+      loadAir(place.lat, place.lon)
     } catch (err) {
       showError('加载失败', err.message)
     }
@@ -169,22 +174,22 @@ export const useWeatherStore = defineStore('weather', () => {
       lat.value = pos.coords.latitude
       lon.value = pos.coords.longitude
 
-      // 天气、地名、空气质量同时请求，全部就绪后一次性渲染，避免先坐标后地名的闪烁
-      const [weather, place, airData] = await Promise.all([
+      // 天气与地名同时请求，全部就绪后一次性渲染，避免先坐标后地名的闪烁。
+      // 空气质量不在此列：它慢得多，让它单独补（见 loadAir 的注释）
+      const [weather, place] = await Promise.all([
         fetchWeather(lat.value, lon.value),
         resolvePlace(lat.value, lon.value),
-        fetchAirSafe(lat.value, lon.value),
       ])
 
       // 等待期间若已切换到别的城市，丢弃这次结果
       if (token !== placeToken) return
 
       data.value = weather
-      air.value = airData
       cityName.value = place.text
       cityDetail.value = place.detail
       locationSource.value = place.source
       showContent()
+      loadAir(lat.value, lon.value)
     } catch (err) {
       if (token !== placeToken) return
       if (err.code === 1) {
@@ -204,13 +209,9 @@ export const useWeatherStore = defineStore('weather', () => {
     if (lat.value == null || lon.value == null) return
     showLoading()
     try {
-      const [weather, airData] = await Promise.all([
-        fetchWeather(lat.value, lon.value),
-        fetchAirSafe(lat.value, lon.value),
-      ])
-      data.value = weather
-      air.value = airData
+      data.value = await fetchWeather(lat.value, lon.value)
       showContent()
+      loadAir(lat.value, lon.value)
     } catch (err) {
       showError('数据加载失败', err.message + '。请下拉刷新重试。')
     }

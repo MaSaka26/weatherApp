@@ -27,6 +27,12 @@ export const SETTING_OPTIONS = {
     { value: 'row', label: '左右' },
     { value: 'stack', label: '上下' },
   ],
+  // 卡片数量：6 是原来那套（体感/风速/湿度/气压/紫外线/日出日落），
+  // 7 多出空气质量这一张。后续再补能见度与降水量就扩到 9，届时桌面排布是 5+4（末张占两格）
+  cardCount: [
+    { value: 6, label: '6 张' },
+    { value: 7, label: '7 张' },
+  ],
 }
 
 /** 开关 → CSS 变量名（cardLayout 不走 CSS 变量，由 DetailCards 换布局类） */
@@ -35,7 +41,7 @@ const CSS_VAR_OF = {
   radius: '--radius-scale',
 }
 
-export const DEFAULTS = { glass: 1, radius: 1, cardLayout: 'row' }
+export const DEFAULTS = { glass: 1, radius: 1, cardLayout: 'row', cardCount: 6 }
 
 export const settings = reactive({ ...DEFAULTS })
 

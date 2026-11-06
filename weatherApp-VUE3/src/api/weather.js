@@ -128,11 +128,15 @@ export async function fetchWeather(lat, lon) {
  * 空气质量：us_aqi 用美国 EPA 的 0–500 刻度，分段（50/100/150/200/300）
  * 正好对应国内「优 / 良 / 轻度 / 中度 / 重度 / 严重」六级，标签沿用中文习惯
  * 独立接口有失败风险，调用方需自行兜底，不要让它拖垮主流程
+ *
+ * 超时给 8 秒而不是 2.5 秒：这个接口实测单次要 2.0–2.7 秒，
+ * 2.5 秒卡在同一量级上，网络稍抖就整块数据丢失（曾一直显示「暂无」）。
+ * 它已经不在首屏链路上，等久一点不会拖慢页面，只是卡片晚一点填数。
  */
-export async function fetchAirQuality(lat, lon, timeoutMs = 2500) {
+export async function fetchAirQuality(lat, lon, timeoutMs = 8000) {
   const url =
     `${AIR_QUALITY_API}?latitude=${lat}&longitude=${lon}` +
-    `&current=us_aqi,pm2_5&timezone=auto`
+    `&current=us_aqi,pm2_5,pm10&timezone=auto`
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
   try {
