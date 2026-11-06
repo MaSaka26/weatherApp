@@ -53,6 +53,17 @@ const PROBE_TRIES = 6
 // 一次装几帧。12 帧 = 1 小时 12 分钟，够看出雨带往哪走。
 const FRAME_COUNT = 12
 
+// 开着的时候每隔一分钟回探一次有没有新帧发布。NMC 每 6 分钟一帧，
+// 用 1 分钟轮询能把「新帧出现」的感知延迟压到 1 分钟内，代价只有 1 次图片请求。
+const REFRESH_MS = 60 * 1000
+
+// 开着时最多保留 60 帧（6 小时）。只追加不回收的话，挂一整天时间轴会拖出
+// 几百帧，滑块与 rangeText 都变味；到上限就丢最老的，并把 idx 平移保持指向同一帧。
+const MAX_FRAMES = 60
+
+// 首帧迟迟不落地（弱网/断网）时，最多等这么久就撤掉遮罩放行，避免永远卡在转圈。
+const FIRST_FRAME_TIMEOUT_MS = 8000
+
 const SPEEDS = [
   { id: 'slow', name: '慢', frameMs: 900 },
   { id: 'normal', name: '标准', frameMs: 600 },
@@ -91,6 +102,8 @@ let imgUrls = ['', '']
 let historyPushed = false
 let lastFocus = null
 let insetsObserver = null
+let refreshTimer = null
+let pendingRefresh = false
 
 const pickSpeed = (id) => SPEEDS.find((s) => s.id === id) || SPEEDS[1]
 const frameMs = computed(() => pickSpeed(speed.value).frameMs)
@@ -192,12 +205,17 @@ function probe(url) {
   })
 }
 
-async function probeLatest(qualityId, token) {
+// quiet=true 用于后台轮询：不写 probeHint，免得把加载文案改了。
+// floorMs  用于后台轮询：退到「已知的最后一帧」或更老时直接收手，没有新帧就不必再试。
+async function probeLatest(qualityId, token, quiet = false, floorMs = -Infinity) {
   const start = slotOf(new Date())
   for (let k = 0; k < PROBE_TRIES; k++) {
     if (!alive || token !== loadToken) return null
-    probeHint.value = k === 0 ? '正在探测最新一帧…' : `正在探测最新一帧…（回退 ${k} 档）`
     const t = new Date(start.getTime() - k * SLOT_MS)
+    if (t.getTime() <= floorMs) return null
+    if (!quiet) {
+      probeHint.value = k === 0 ? '正在探测最新一帧…' : `正在探测最新一帧…（回退 ${k} 档）`
+    }
     const ok = await probe(urlOf(stampOf(t), qualityId))
     if (ok) return t
   }
@@ -226,13 +244,21 @@ function preloadAll(urls) {
 // 单张 img 直接换 src 会有一瞬白屏 —— 这是 800px 级的大图，解码要几十毫秒，肉眼可见。
 // 显示权用 visibility 硬切，不用 opacity：两张都是不透明的整图，
 // 一旦做透明度渐变就会把前后两帧叠成「双重曝光」，看着就是每帧闪一下。
-function showFrame(index) {
+// onShown 只用于「首帧已落地」这一次判断：解码完切换显示权后回调，
+// load() 靠它决定何时撤遮罩。其余调用（播放/拖动）不传，不会有任何开销。
+function showFrame(index, onShown) {
   const f = frames.value[index]
-  if (!f) return
+  if (!f) {
+    if (onShown) onShown(false)
+    return
+  }
 
   const backIdx = front.value === 0 ? 1 : 0
   const back = backIdx === 0 ? imgA.value : imgB.value
-  if (!back) return
+  if (!back) {
+    if (onShown) onShown(false)
+    return
+  }
 
   frameNote.value = ''
 
@@ -241,6 +267,7 @@ function showFrame(index) {
     if (imgUrls[backIdx] !== f.url) return
     front.value = backIdx
     idx.value = index
+    if (onShown) onShown(true)
   }
 
   imgUrls[backIdx] = f.url
@@ -253,6 +280,7 @@ function showFrame(index) {
     // 单帧 404 不弹错误：探测已经保证了首帧存在，中间某一档缺失时
     // 停在上一张比拼一张破图好，但要让用户知道这一格是空的
     if (imgUrls[backIdx] === f.url) frameNote.value = '这一帧暂无数据'
+    if (onShown) onShown(false)
   }
   back.src = f.url
 }
@@ -319,8 +347,78 @@ function setSpeed(id) {
 }
 
 /* ============================================================
-   加载 / 切换画质 / 重试
+   开着时的滚动刷新
    ============================================================ */
+
+/* NMC 每 6 分钟发一帧。只在打开时抓 12 帧的话，看十几分钟时间轴末端
+   就再也不动了 —— 用户会以为数据坏了。所以开着期间每分钟回探一次，
+   有新帧就追加到时间轴末尾（不丢旧帧，避免用户正在拖时间轴时画面跳变）。 */
+function clearRefreshTimer() {
+  if (refreshTimer) {
+    clearTimeout(refreshTimer)
+    refreshTimer = null
+  }
+}
+
+function scheduleRefresh(delay = REFRESH_MS) {
+  clearRefreshTimer()
+  if (!alive) return
+  refreshTimer = setTimeout(runRefresh, delay)
+}
+
+async function runRefresh() {
+  refreshTimer = null
+  if (!alive || !ready.value || pendingRefresh) {
+    scheduleRefresh()
+    return
+  }
+
+  const token = loadToken
+  const qualityId = quality.value
+  const last = frames.value.length ? frames.value[frames.value.length - 1] : null
+  // 探到的帧只要不比「已知最后一帧」新就没意义，probeLatest 会在退到这一档之前收手，
+  // 于是没新帧的那一分钟只花 1 次图片请求。
+  const floorMs = last ? last.date.getTime() : -Infinity
+
+  pendingRefresh = true
+  try {
+    const latest = await probeLatest(qualityId, token, true, floorMs)
+    // 期间换过画质 / 重试 / 关掉层：token 变了，这次结果直接作废
+    if (!alive || token !== loadToken || !latest) return
+
+    const additions = []
+    for (let t = floorMs + SLOT_MS; t <= latest.getTime(); t += SLOT_MS) {
+      const d = new Date(t)
+      const stamp = stampOf(d)
+      additions.push({ date: d, stamp, url: urlOf(stamp, qualityId) })
+    }
+    if (!additions.length) return
+
+    const wasLatest = isLatest.value
+    let all = frames.value.concat(additions)
+    // 到上限就丢最老的一批，保持时间轴长度可控；idx 平移后仍指向同一帧内容。
+    let drop = 0
+    if (all.length > MAX_FRAMES) {
+      drop = all.length - MAX_FRAMES
+      all = all.slice(drop)
+    }
+    const shifted = Math.max(0, idx.value - drop)
+    frames.value = all
+    idx.value = shifted
+    // 新帧后台进缓存，播放滚到那里时才是零延迟；失败也只影响这一格的速度。
+    preloadAll(additions.map((f) => f.url))
+
+    // 停在「最新」那一格的用户跟着滚到新的最新帧；在回看旧帧的用户不要打扰。
+    if (wasLatest) {
+      idx.value = maxIdx.value
+      showFrame(idx.value)
+    }
+    if (playing.value) armNextFrame()
+  } finally {
+    pendingRefresh = false
+    scheduleRefresh()
+  }
+}
 
 function prefersReducedMotion() {
   return (
@@ -337,6 +435,7 @@ async function load() {
   frameNote.value = ''
   probeHint.value = '正在探测最新一帧…'
   pause()
+  clearRefreshTimer()
 
   const latest = await probeLatest(quality.value, token)
   if (!alive || token !== loadToken) return
@@ -348,12 +447,7 @@ async function load() {
   }
 
   const list = buildFrames(latest, FRAME_COUNT, quality.value)
-  probeHint.value = `正在预载 ${list.length} 帧…`
-
-  // 全部预载完再撤遮罩：NMC 单帧 0.27–0.62 秒，12 帧并发实测不到 1 秒，
-  // 等这一下换来的是之后每次换帧零延迟（浏览器缓存命中）。
-  await preloadAll(list.map((f) => f.url))
-  if (!alive || token !== loadToken) return
+  probeHint.value = '正在获取第一帧…'
 
   frames.value = list
   imgUrls = ['', '']
@@ -364,11 +458,31 @@ async function load() {
   await nextTick()
   if (!alive || token !== loadToken) return
 
-  showFrame(0)
-  status.value = 'ready'
+  // 先只等第一帧，落地就撤遮罩。原来「12 张全预载完才放行」在冷缓存下要
+  // 1.6–2.4 秒（medium 12 帧约 6 MB），用户盯着转圈什么也看不到。
+  // 剩余 11 张交给后台预载：并发不阻塞首屏，播放滚到那里时缓存已命中。
+  await new Promise((resolve) => {
+    let settled = false
+    const finish = () => {
+      if (settled) return
+      settled = true
+      clearTimeout(guard)
+      if (!alive || token !== loadToken) return resolve()
+      // 首帧没落地也不能永远卡着遮罩：放行让时间轴与播放可用。
+      // 不写「暂无数据」—— 图片很可能还在路上，真正 404 时 showFrame 的
+      // onerror 会置 frameNote；这里若先写死，等图到了反而清不掉。
+      status.value = 'ready'
+      if (!prefersReducedMotion() && list.length > 1) play()
+      resolve()
+    }
+    const guard = setTimeout(() => finish(false), FIRST_FRAME_TIMEOUT_MS)
+    showFrame(0, finish)
+  })
 
-  // 尊重系统的「减少动态效果」：不自动播，用户手动点。
-  if (!prefersReducedMotion() && list.length > 1) play()
+  if (!alive || token !== loadToken) return
+  // 首帧之外全部后台预载（不 await）：这些响应进浏览器缓存，后续换帧零延迟。
+  preloadAll(list.slice(1).map((f) => f.url))
+  scheduleRefresh()
 }
 
 function setQuality(id) {
@@ -495,6 +609,8 @@ function teardown() {
   alive = false
   loadToken++
   clearPlayTimer()
+  clearRefreshTimer()
+  pendingRefresh = false
   playing.value = false
   frames.value = []
   idx.value = 0
@@ -551,11 +667,37 @@ onMounted(() => {
   window.addEventListener('keydown', onKeydown)
   window.addEventListener('popstate', onPopState)
   if (props.open) openLayer() // 父组件用 v-if 直接挂载成 open=true 时 watch 不会补发
+
+  // 仅开发期：给 ui-review 的自动化脚本一个主动触发滚动刷新的入口，
+  // 否则验证「开着时追加新帧」得真等 60 秒。生产构建会被 tree-shake 掉。
+  if (import.meta.env.DEV) {
+    window.__radarDebug = {
+      triggerRefresh: () => runRefresh(),
+      scheduleRefresh: (ms) => scheduleRefresh(ms),
+      // 把时间轴尾部砍掉 n 帧，模拟「开着几帧没跟上」；随后 triggerRefresh()
+      // 会用真实的 probeLatest 把这几帧重新探测并追加回来，走的是产品代码路径。
+      dropLast: (n) => {
+        if (frames.value.length <= n) return
+        pause()
+        frames.value = frames.value.slice(0, frames.value.length - n)
+        idx.value = Math.min(idx.value, maxIdx.value)
+      },
+      state: () => ({
+        status: status.value,
+        count: frames.value.length,
+        idx: idx.value,
+        playing: playing.value,
+        lastStamp: frames.value.length ? frames.value[frames.value.length - 1].stamp : null,
+        firstStamp: frames.value.length ? frames.value[0].stamp : null,
+      }),
+    }
+  }
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('popstate', onPopState)
+  if (import.meta.env.DEV) delete window.__radarDebug
   document.body.style.overflow = ''
   teardown()
 })
