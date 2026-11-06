@@ -85,6 +85,34 @@ const blobTransform = (blob, scale, dx = 0, dy = 0) => {
 // 内两层跟着强度档做 1px 级的漂移，避免三层完全同心显得像箭靶
 const drift = computed(() => (outlook.value.peakLevel % 2 === 0 ? 1 : -1))
 
+// 12 格强度条的柱高（px）。0 档不归零：留 3px 的浅色基座，
+// 否则「这一格没雨」和「这一格缺失」在视觉上都是空白，读不出是连续 12 小时
+const BAR_HEIGHT = [3, 7, 10, 13]
+
+// 一小时一格，把 buildRainOutlook 算好的 intensities 直接铺开。
+// 三档颜色取自上面同一套 PALETTES 的中间色，让卡片里的小条和右侧回波
+// 看起来说的是同一件事，而不是两套无关的配色。
+// hours 之后的下标是「预报数据没铺到这么远」，与「这小时不下雨」必须区分开：
+// 前者画成更淡的基座并在语义上算作空，后者才是真的 0 档
+const bars = computed(() => {
+  const list = Array.isArray(outlook.value.intensities) ? outlook.value.intensities : []
+  const valid = outlook.value.hours || 0
+  return list.map((raw, i) => {
+    const level = raw >= 0 && raw <= 3 ? raw : 0
+    const unknown = i >= valid
+    return {
+      key: i,
+      level: unknown ? -1 : level,
+      height: unknown ? BAR_HEIGHT[0] : BAR_HEIGHT[level],
+      color: unknown
+        ? 'rgba(255,255,255,.07)'
+        : level === 0
+          ? 'rgba(255,255,255,.14)'
+          : PALETTES[level][1],
+    }
+  })
+})
+
 // 同一页面里这个组件可能出现多次（例如首页 + 详情），而 SVG 的 filter id 是全局的；
 // 用 Vue 3.5 的 useId 保证每个实例拿到独立 id，滤镜不会互相串台
 const uid = useId()
@@ -106,6 +134,19 @@ const uid = useId()
       <span class="rain-main">{{ outlook.text }}</span>
       <!-- 副文案（如「17:00 前后开始」）是补充信息，缺失时整行不渲染，避免留下空行撑高度 -->
       <span v-if="outlook.sub" class="rain-sub">{{ outlook.sub }}</span>
+
+      <!-- 12 小时强度条：横向柱状，一小时一格。柱高按 0–3 档递进，
+           颜色取雷达色带的中层，和右侧回波共用同一套语义。
+           aria-hidden 是因为信息已经由上面的主句/副文案说完，这里只是同一结论的图形化 -->
+      <span class="rain-bars" aria-hidden="true" :data-peak="outlook.peakLevel" :data-hours="outlook.hours">
+        <span
+          v-for="bar in bars"
+          :key="bar.key"
+          class="rain-bar"
+          :data-level="bar.level"
+          :style="{ height: `${bar.height}px`, background: bar.color }"
+        />
+      </span>
     </span>
 
     <span class="rain-art" aria-hidden="true">
@@ -315,6 +356,27 @@ const uid = useId()
   white-space: nowrap;
 }
 
+/* 12 小时强度条：柱子底对齐，向上长高，读起来就是「几点开始下、下多大」。
+   固定 15px 高度是为了给最高的柱子（13px）留出余量，柱子再多也不改卡片高度 */
+.rain-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 15px;
+  margin-top: 3px;
+}
+
+.rain-bar {
+  flex: 1 1 0;
+  min-width: 2px;
+  max-width: 6px;
+  border-radius: 1px;
+  /* 只过渡高度与颜色：档位变化时柱子平滑长高，不会跳 */
+  transition:
+    height 0.24s ease,
+    background 0.24s ease;
+}
+
 /* 图形区固定宽高比 4:3，宽度落在 88–104 之间：
    窄于 88 时两团色块分不清是两块还是噪点，宽于 104 又会把左文案挤成两行 */
 .rain-art {
@@ -365,6 +427,16 @@ const uid = useId()
 
   .rain-sub {
     font-size: 11px;
+  }
+
+  /* 窄屏柱子缩一档：12 格 × 2px 间距在 390 视口里仍能守住文案区宽度 */
+  .rain-bars {
+    gap: 1.5px;
+    height: 13px;
+  }
+
+  .rain-bar {
+    max-width: 5px;
   }
 
   .rain-art {
