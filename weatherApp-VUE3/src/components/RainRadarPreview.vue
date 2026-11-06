@@ -15,6 +15,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 const props = defineProps({
   open: { type: Boolean, default: false },
   cityName: { type: String, default: '' },
+  // 与首页共用同一套天气自适应天空背景（渐变 + 光晕 + 星点）
+  skyClass: { type: String, default: '' },
 })
 
 const emit = defineEmits(['close'])
@@ -576,6 +578,11 @@ watch(
       aria-modal="true"
       aria-label="全国降水雷达回放"
     >
+      <!-- 与首页共用同一套天空背景（渐变 + 光晕 + 星点 + 天气自适应）。
+           .sky-bg 是 weather.css 里的全局类，不是 scoped，这里直接复用；
+           放在最前面、层级垫底，图区与所有控件都压在它上面。 -->
+      <div class="sky-bg radar-sky" :class="skyClass" aria-hidden="true"></div>
+
       <!-- 图区。图片本身自带底图、省界、城市名与色标，
            所以这里不需要 Leaflet、不需要叠加图层、也不需要另做图例。 -->
       <div ref="stageEl" class="radar-stage">
@@ -753,11 +760,22 @@ watch(
   overscroll-behavior: contain;
 }
 
+/* 与首页完全相同的天空背景。.sky-bg 的全局规则（weather.css）已经带了
+   渐变、光晕、星点与天气自适应类；这里只把它钉在覆盖层最底层。
+   覆盖层本身是 fixed inset:0，所以 absolute inset:0 与它完全重合；
+   z-index:0 垫底，图区与所有控件（z-index ≥3）都压在它上面。
+   保留 .radar-layer 的纯色作兜底：天空图或动画没起来时不至于透出页面。 */
+.radar-sky {
+  position: absolute;
+  z-index: 0;
+}
+
 /* 图区：让开顶部标题与底部控制条，中间居中显示。
    图片用 object-fit: contain —— 一旦拉伸变形，回波和真实地理位置就对不上了。 */
 .radar-stage {
   position: absolute;
   inset: 0;
+  z-index: 1; /* 压在 .radar-sky(z-index:0) 之上，图片与控件都不被天空盖住 */
   padding: 68px 16px calc(var(--rr-ctrl-top) + 10px);
   display: flex;
   align-items: center;

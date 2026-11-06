@@ -117,6 +117,7 @@ onMounted(() => {
     v-if="radarMounted"
     :open="radarOpen"
     :city-name="store.cityName"
+    :sky-class="store.skyClass"
     @close="radarOpen = false"
   />
 </template>
