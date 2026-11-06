@@ -222,8 +222,10 @@ function preloadAll(urls) {
    渲染
    ============================================================ */
 
-// 双缓冲换图：新图先加载到隐藏的那张上，decode 完再交换 opacity。
+// 双缓冲换图：新图先加载到没显示的那张上，decode 完再切换显示权。
 // 单张 img 直接换 src 会有一瞬白屏 —— 这是 800px 级的大图，解码要几十毫秒，肉眼可见。
+// 显示权用 visibility 硬切，不用 opacity：两张都是不透明的整图，
+// 一旦做透明度渐变就会把前后两帧叠成「双重曝光」，看着就是每帧闪一下。
 function showFrame(index) {
   const f = frames.value[index]
   if (!f) return
@@ -794,8 +796,12 @@ watch(
   width: calc(100% - 32px);
   height: calc(100% - 68px - var(--rr-ctrl-top) - 10px);
   object-fit: contain;
-  opacity: 0;
-  transition: opacity 0.18s ease;
+  /* 双缓冲一次只画一张：用 visibility 硬切，不用 opacity。
+     两张都是不透明的整图，做透明度过渡会把前后两帧叠成「双重曝光」→ 每帧闪一下；
+     而若两张都设成 opacity:1，DOM 里靠后的 imgB 会永远盖住 imgA，
+     落在 imgA 上的帧就完全看不见 → 表现为「隔一帧才变一次」。
+     visibility 只切换绘制、不触发重排，且隐藏的那张仍会继续加载与 decode。 */
+  visibility: hidden;
   /* NMC 的图是白底，直接放进暗色界面里像贴了一张纸。
      反相后底图变暗、城市名变白，正好和这个界面一个调子。
      hue-rotate 在反相之后把色相绕回来 —— 只做 invert 会把绿色回波翻成品红。 */
@@ -805,13 +811,7 @@ watch(
 }
 
 .radar-img.show {
-  opacity: 1;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .radar-img {
-    transition: none;
-  }
+  visibility: visible;
 }
 
 /* ============================================================
