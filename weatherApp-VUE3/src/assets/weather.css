@@ -450,16 +450,24 @@ body {
 /* 展开 / 收起动画期间才收紧溢出，平时放开，表盘和卡片描边都不被裁 */
 .cards-fold.folding { overflow: hidden; }
 
-/* 收起途中的「让位」：此刻网格已经退回六列，但多出来的三张卡还在 DOM 里
-   （要等高度收完才卸载，否则它们会在高度开始收之前就凭空消失）。
-   靠 order 把它们推到最后一排，并以淡出代替瞬隐——它们从第二排的位置浮走，
-   而不是把留在场上的六张挤开 */
+/* 收起分两段，这里对应第一段：三张多出来的卡留在原排布里（还是五列、238 宽），
+   只把不透明度降到 0。这一段列数与卡片宽度都不动，眼睛只看到「那三张淡了」，
+   而宽度那次 238 → 197 的跳变被推到第二段、落在它们刚消失的时候。
+   200ms 必须与 DetailCards.vue 里的 FADE_MS 一致，否则第二段会提前开始 */
+.details-grid.fading > .precip-card,
+.details-grid.fading > .air-card,
+.details-grid.fading > .vis-card {
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+/* 第二段：网格已经退回六列，多出来的三张仍留在 DOM 里（要等高度收完才卸载），
+   靠 order 把它们压到最后一排，免得占了第一排的位置把留在场上的六张挤开。
+   这时它们已经是全透明的，order 生效不会再被看见 */
 .details-grid.collapsing > .precip-card,
 .details-grid.collapsing > .air-card,
 .details-grid.collapsing > .vis-card {
   order: 99;
-  opacity: 0;
-  transition: opacity 200ms ease;
   pointer-events: none;
 }
 
