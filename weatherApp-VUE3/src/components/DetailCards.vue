@@ -1,7 +1,7 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
-import { settings } from '@/composables/useSettings'
+import { setSetting, settings } from '@/composables/useSettings'
 import { aqiText, readAir } from '@/utils/aqi'
 import DialGauge from '@/components/DialGauge.vue'
 import NeedleDial from '@/components/NeedleDial.vue'
@@ -24,6 +24,67 @@ const layoutClass = computed(() =>
 
 // 六卡 / 九卡由设置切换：九卡在桌面排成 5+4（末张占两格），手机九张正好三列三行
 const gridClass = computed(() => [layoutClass.value, settings.cardCount === 9 ? 'cards-9' : 'cards-6'])
+
+// 首页直接把卡片数量做成 16 天预报那套「列表 / 曲线」同款切换钮。
+// 数据仍然只走 settings.cardCount —— 设置面板里那一项保留，两处改的是同一个值，不会各说各话
+const showAll = computed(() => settings.cardCount === 9)
+
+function setCount(n) {
+  if (settings.cardCount === n) return
+  setSetting('cardCount', n)
+}
+
+// 展开 / 收起动画：纯 CSS 做不到 —— grid 的列数（6 列 → 5 列）与行数一变，
+// 高度是瞬时跳变的，没有可过渡的中间值。这里先量旧高度，DOM 更新后再量新高度，
+// 用 WAAPI 把高度补间出来，同时折叠容器在这段时间里 overflow: hidden，
+// 于是展开看起来是「从下面长出来」，收起看起来是「往上收回去」
+const foldEl = ref(null)
+const animating = ref(false)
+
+// 每次切换时现读，不用模块级常量缓存 —— 系统里的「减少动态效果」是可以在会话中途改的
+function prefersReducedMotion() {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  )
+}
+
+const FOLD_MS = 360
+let foldAnim = null
+
+watch(showAll, async () => {
+  const el = foldEl.value
+  if (!el) return
+  const from = el.getBoundingClientRect().height
+  await nextTick()
+  const to = el.getBoundingClientRect().height
+  if (prefersReducedMotion() || !from || !to || Math.abs(to - from) < 1) return
+
+  animating.value = true
+  // 连点时必须先把上一段断言作废：两段 WAAPI 同时作用于 height，
+  // 收尾时谁最后写谁生效，容易把容器停在中间高度
+  foldAnim?.cancel()
+  const anim = el.animate(
+    [{ height: `${from}px` }, { height: `${to}px` }],
+    { duration: FOLD_MS, easing: 'cubic-bezier(0.22, 0.61, 0.36, 1)' },
+  )
+  foldAnim = anim
+  // 被下一次切换打断时 finished 会 reject，交给新一轮接管，这里不清理
+  anim.finished.then(
+    () => {
+      if (foldAnim !== anim) return
+      animating.value = false
+      foldAnim = null
+    },
+    () => {},
+  )
+})
+
+onBeforeUnmount(() => {
+  foldAnim?.cancel()
+  foldAnim = null
+})
 
 // 空气质量：AQI 当主值，PM2.5 / PM10 当小字，等级名走 aqi.js 的六级分档
 // 接口失败时 air 是 null，卡片整体退化成「暂无」，不占位也不报错
@@ -203,7 +264,37 @@ const dot = computed(() => {
 </script>
 
 <template>
-  <div class="details-grid" :class="gridClass">
+  <section class="cards-section">
+    <div class="section-head">
+      <div class="section-title">天气详情</div>
+      <!-- 和「未来 16 天」的列表 / 曲线同一套外观：首页直接切，不用进设置面板 -->
+      <div class="view-switch" role="tablist" aria-label="详情卡数量">
+        <button
+          type="button"
+          role="tab"
+          class="view-btn"
+          :class="{ active: !showAll }"
+          :aria-selected="!showAll"
+          @click="setCount(6)"
+        >
+          6 张
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="view-btn"
+          :class="{ active: showAll }"
+          :aria-selected="showAll"
+          @click="setCount(9)"
+        >
+          9 张
+        </button>
+      </div>
+    </div>
+
+    <!-- 折叠容器：动画期间 overflow 收紧，多出来的三张从下方长出 / 向上收回 -->
+    <div ref="foldEl" class="cards-fold" :class="{ folding: animating }">
+      <div class="details-grid" :class="gridClass">
     <div class="detail-card split">
       <div class="card-main">
         <div class="label">体感</div>
@@ -359,5 +450,7 @@ const dot = computed(() => {
         </svg>
       </DialGauge>
     </div>
-  </div>
+      </div>
+    </div>
+  </section>
 </template>
