@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 
 import { settings } from '@/composables/useSettings'
-import { aqiText, pmText, readAir } from '@/utils/aqi'
+import { aqiText, readAir } from '@/utils/aqi'
 import DialGauge from '@/components/DialGauge.vue'
 import NeedleDial from '@/components/NeedleDial.vue'
 import UvGauge from '@/components/UvGauge.vue'
@@ -22,8 +22,8 @@ const layoutClass = computed(() =>
   settings.cardLayout === 'stack' ? 'layout-stack' : 'layout-row',
 )
 
-// 六卡 / 九卡由设置切换：九卡在桌面排成 5+4（末张占两格），手机仍然是三列整行
-const gridClass = computed(() => [layoutClass.value, settings.cardCount === 7 ? 'cards-7' : 'cards-6'])
+// 六卡 / 九卡由设置切换：九卡在桌面排成 5+4（末张占两格），手机九张正好三列三行
+const gridClass = computed(() => [layoutClass.value, settings.cardCount === 9 ? 'cards-9' : 'cards-6'])
 
 // 空气质量：AQI 当主值，PM2.5 / PM10 当小字，等级名走 aqi.js 的六级分档
 // 接口失败时 air 是 null，卡片整体退化成「暂无」，不占位也不报错
@@ -31,7 +31,58 @@ const air = computed(() => readAir(props.air))
 const aqiValue = computed(() => aqiText(air.value.aqi))
 const aqiLevelName = computed(() => air.value.level?.name || '暂无')
 const aqiHint = computed(() => air.value.level?.hint || '暂无空气质量数据')
-const pmLine = computed(() => pmText(air.value.pm25, air.value.pm10))
+// 单格宽度放不下「PM2.5 65.7 · PM10 67.1」一行（桌面 236px、手机 112px），
+// 拆成两行分别渲染，避免折在「PM10」和数字之间
+const pmRows = computed(() => {
+  const rows = []
+  if (air.value.pm25 != null) rows.push(`PM2.5 ${air.value.pm25.toFixed(1)}`)
+  if (air.value.pm10 != null) rows.push(`PM10 ${air.value.pm10.toFixed(1)}`)
+  return rows
+})
+
+// 能见度：接口给米（current_units 明确是 "m"），展示按公里（10 km 比 10000 m 好读）。
+// 分档取日常出行感受，不是气象学的浓雾/强浓雾定义 —— 用户关心的是「看不看得远」。
+// 注意阈值单位是公里，判断时必须用 km 值，不能用原始米值（曾因此把 680 m 判成「极佳」）
+const VISIBILITY_TEXT = [
+  [1, '浓雾'],
+  [5, '有雾'],
+  [10, '轻雾'],
+  [20, '通透'],
+  [Infinity, '极佳'],
+]
+const visibilityM = computed(() => {
+  const v = props.current?.visibility
+  return typeof v === 'number' ? v : null
+})
+const visibilityKm = computed(() =>
+  visibilityM.value == null ? null : visibilityM.value / 1000,
+)
+const visibilityText = computed(() => pick(VISIBILITY_TEXT, visibilityKm.value))
+const visibilityValue = computed(() =>
+  visibilityKm.value == null ? '—' : visibilityKm.value.toFixed(1),
+)
+// 表盘上限 30 km：再远对体感没区别，山顶 60 km 也让它顶格
+const visibilityDial = computed(() =>
+  visibilityKm.value == null ? null : Math.min(visibilityKm.value, 30),
+)
+
+// 降水量：接口只给「上一小时」的累计值（mm），不是瞬时强度。
+// 文案按小时雨量分级（中国气象局的小时雨量标准：小雨 <2.5、中雨 2.5–8、大雨 8–16）
+const PRECIP_TEXT = [
+  [0.05, '无降水'],
+  [2.5, '小雨'],
+  [8, '中雨'],
+  [16, '大雨'],
+  [Infinity, '暴雨'],
+]
+const precip = computed(() => {
+  const v = props.current?.precipitation
+  return typeof v === 'number' ? v : null
+})
+const precipText = computed(() => pick(PRECIP_TEXT, precip.value))
+const precipValue = computed(() => (precip.value == null ? '—' : precip.value.toFixed(1)))
+// 表盘上限 10 mm：常见降水的分辨区间，暴雨时顶格即可
+const precipDial = computed(() => (precip.value == null ? null : Math.min(precip.value, 10)))
 
 // 六张卡三列两行正好排满容器（桌面六列一行），列宽都是 minmax(0,1fr)，永远不溢出，
 // 所以这里不需要 useWheelScroll；逐小时和曲线那两处真会溢出，滚动在各自组件里挂
@@ -243,14 +294,18 @@ const dot = computed(() => {
       </div>
     </div>
 
-    <!-- 空气质量：只有切到 7 张时才渲染。
+    <!-- 空气质量：只有切到 9 张时才渲染。
          主值是 AQI 数字，环心写等级简称，环下写 PM2.5 / PM10；
          分档断点与 lifeIndex 里「户外 / 疾病」用的是同一套，卡片和生活指数结论不会互相打架 -->
-    <div v-if="settings.cardCount === 7" class="detail-card split air-card">
+    <div v-if="settings.cardCount === 9" class="detail-card split air-card">
       <div class="card-main">
         <div class="label">空气质量</div>
         <div class="value">{{ aqiValue }}<span class="unit">AQI</span></div>
-        <div v-if="pmLine" class="air-pm">{{ pmLine }}</div>
+        <!-- PM 两项各占一行：单格宽只有 236px（手机 112px），
+             拼成一行「PM2.5 65.7 · PM10 67.1」必然折行，而且会断在 PM10 和数字之间 -->
+        <div v-if="pmRows.length" class="air-pm">
+          <span v-for="row in pmRows" :key="row">{{ row }}</span>
+        </div>
       </div>
       <DialGauge
         :value="air.aqi"
@@ -261,6 +316,46 @@ const dot = computed(() => {
       >
         <svg class="d-icon d-icon-arrow" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M3 15h11a3 3 0 1 0-3-3M3 11h7M3 19h9" />
+        </svg>
+      </DialGauge>
+    </div>
+
+    <!-- 能见度：接口给米，换算成公里显示。表盘上限 30 km，再远对出行没区别 -->
+    <div v-if="settings.cardCount === 9" class="detail-card split vis-card">
+      <div class="card-main">
+        <div class="label">能见度</div>
+        <div class="value">{{ visibilityValue }}<span class="unit">km</span></div>
+      </div>
+      <DialGauge
+        :value="visibilityDial"
+        :min="0"
+        :max="30"
+        :caption="visibilityText"
+        :label="`能见度 ${visibilityValue} 公里，${visibilityText}`"
+      >
+        <svg class="d-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0-4 0" />
+          <path d="M21 12c-2.4 4-5.4 6-9 6c-3.6 0-6.6-2-9-6c2.4-4 5.4-6 9-6c3.6 0 6.6 2 9 6" />
+        </svg>
+      </DialGauge>
+    </div>
+
+    <!-- 降水量：上一小时的累计毫米数，不是瞬时强度，所以小字写「小雨」而不是「正在下小雨」 -->
+    <div v-if="settings.cardCount === 9" class="detail-card split precip-card">
+      <div class="card-main">
+        <div class="label">降水量</div>
+        <div class="value">{{ precipValue }}<span class="unit">mm</span></div>
+      </div>
+      <DialGauge
+        :value="precipDial"
+        :min="0"
+        :max="10"
+        :caption="precipText"
+        :label="`近一小时降水量 ${precipValue} 毫米，${precipText}`"
+      >
+        <svg class="d-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 18a4.6 4.4 0 0 1 0-9a5 4.5 0 0 1 11 2h1a3.5 3.5 0 0 1 0 7" />
+          <path d="M11 13v2m0 3v2m4-5v2m0 3v2" />
         </svg>
       </DialGauge>
     </div>

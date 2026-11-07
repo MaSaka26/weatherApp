@@ -450,11 +450,8 @@ body {
   margin: 20px 0 24px;
   animation: fadeUp 0.6s 0.3s ease both;
 }
-/* 手机/平板切到 7 张：三列排下去会剩一格空位（7 = 3+3+1），
-   让空气质量卡横跨三列补齐，视觉上收口而不是留个洞 */
-.details-grid.cards-7 .air-card {
-  grid-column: 1 / -1;
-}
+/* 九张卡是 9 = 3+3+3，手机/平板三列正好填满，不需要通条补齐。
+   新增的空气质量 / 能见度 / 降水量都按普通单格排，卡片骨架与另外六张一致 */
 .detail-card {
   display: flex;
   flex-direction: column;
@@ -486,23 +483,20 @@ body {
   color: var(--text-5);
   font-weight: 300;
 }
-/* 空气质量卡：主值下面挂一行 PM 小字。
-   小字必须允许换行，否则窄卡里「PM2.5 46 · PM10 60」会顶出卡片右边缘 */
+/* 空气质量卡：主值下面挂 PM2.5 / PM10。
+   拆成两行而不是拼一行「PM2.5 46 · PM10 60」：9 张时它是普通单格，
+   桌面只有 236px、手机 112px，拼一行必然折在「PM10」和数字之间 */
 .air-card .air-pm {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   margin-top: 2px;
   font-size: 10px;
-  line-height: 1.3;
+  line-height: 1.25;
   color: var(--text-6);
   letter-spacing: 0.2px;
   font-variant-numeric: tabular-nums;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-/* 7 张时空气质量是通条，小字有整行宽度，可以放回一行不折 */
-.details-grid.cards-7 .air-card .air-pm {
-  font-size: 11px;
   white-space: nowrap;
-  overflow-wrap: normal;
 }
 /* item 骨架两套，由 .details-grid 上的布局类切换（设置 → 卡片布局）：
    - 默认这套是「上下」：标签 + 主值居中在上，表盘/图形居中在下。
@@ -1508,20 +1502,18 @@ body {
     grid-auto-rows: var(--cards-row-h);
     gap: 10px;
   }
-  /* 七张卡（设置里切到 7 张时）：改成五列，第一行五张各占一格，
-     第二行「日出日落」占三格 +「空气质量」占两格（末张占两格），五格填满不留空位。
-     等能见度与降水量接上（九张）第二行是 1+1+1+2，同一套列宽不用再改 */
-  .weather-content .details-grid.cards-7 {
+  /* 九张卡（设置里切到 9 张时）：改成五列，排成 5 + 4。
+     第一行：体感 / 风速 / 湿度 / 气压 / 紫外线，各占 1 格 = 5 格；
+     第二行：日出日落 / 空气质量 / 能见度 各占 1 格，末张降水量占 2 格 = 5 格。
+     两行各填满 5 格，右边缘对齐，不留空位 */
+  .weather-content .details-grid.cards-9 {
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
-  .weather-content .details-grid.cards-7 > .detail-card:nth-last-child(2) {
-    grid-column: span 3;
-  }
-  .weather-content .details-grid.cards-7 > .detail-card:last-child {
+  .weather-content .details-grid.cards-9 > .precip-card {
     grid-column: span 2;
   }
-  /* 通条后左右留白比单格宽，间距按整行重算，别让文字贴边 */
-  .weather-content .details-grid.cards-7.layout-row .air-card.split {
+  /* 末张通两格，左右留白比单格宽，间距按整行重算，别让文字贴边 */
+  .weather-content .details-grid.cards-9.layout-row .precip-card.split {
     padding-left: clamp(14px, 1.4vw, 22px);
     padding-right: clamp(14px, 1.4vw, 22px);
   }
