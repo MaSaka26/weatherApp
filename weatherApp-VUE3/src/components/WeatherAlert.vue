@@ -6,6 +6,9 @@
  * 没有本地预警时整块不渲染 —— 空态是常态，留一条「无预警」的空卡只会占地方。
  *
  * 详情页没有 CORS 头，fetch 读不了正文，所以整条卡片点击直接新窗口打开 nmc.cn。
+ *
+ * 样式上不要标题栏、不要「多少条」，整块毛玻璃按预警级别染色（黄警就是黄色玻璃），
+ * 而不是只在左边画一条色条。
  */
 import { computed } from 'vue'
 
@@ -16,7 +19,6 @@ const props = defineProps({
 const LEVEL_CLASS = { 1: 'lv-blue', 2: 'lv-yellow', 3: 'lv-orange', 4: 'lv-red' }
 
 const visible = computed(() => props.alerts.list.slice(0, 3))
-const more = computed(() => Math.max(0, props.alerts.total - visible.value.length))
 
 function open(link) {
   if (!link) return
@@ -26,11 +28,6 @@ function open(link) {
 
 <template>
   <section v-if="alerts.total > 0" class="alert-section">
-    <div class="section-head">
-      <span class="section-title">天气预警</span>
-      <span class="alert-count">{{ alerts.total }} 条</span>
-    </div>
-
     <div class="alert-list">
       <button
         v-for="item in visible"
@@ -51,35 +48,12 @@ function open(link) {
         </span>
       </button>
     </div>
-
-    <p v-if="more > 0" class="alert-more">另有 {{ more }} 条本地预警，点上方任一条查看全部</p>
   </section>
 </template>
 
 <style scoped>
 .alert-section {
   width: 100%;
-}
-
-.section-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.section-title {
-  font-size: 14px;
-  letter-spacing: 0.04em;
-  color: var(--text-4);
-  text-transform: uppercase;
-  margin-bottom: 14px;
-}
-
-.alert-count {
-  margin-bottom: 14px;
-  font-size: 11px;
-  color: var(--text-6);
-  font-variant-numeric: tabular-nums;
 }
 
 .alert-list {
@@ -89,6 +63,8 @@ function open(link) {
 }
 
 .alert-item {
+  /* 默认蓝色，具体级别由 .lv-* 覆盖；整块玻璃都用这个 RGB 上色 */
+  --alert-rgb: 109, 179, 242;
   box-sizing: border-box;
   width: 100%;
   display: flex;
@@ -97,19 +73,22 @@ function open(link) {
   padding: 10px 14px;
   text-align: left;
   cursor: pointer;
-  background: var(--surface-2);
-  border: 1px solid var(--line-0);
-  border-left-width: 3px;
+  background: rgba(var(--alert-rgb), 0.16);
+  border: 1px solid rgba(var(--alert-rgb), 0.34);
   border-radius: var(--radius-md);
   backdrop-filter: blur(var(--glass-card));
+  box-shadow: 0 4px 18px rgba(var(--alert-rgb), 0.06);
   transition:
     background 0.18s,
+    border-color 0.18s,
     transform 0.18s,
-    border-color 0.18s;
+    box-shadow 0.18s;
 }
 
 .alert-item:hover {
-  background: var(--surface-3);
+  background: rgba(var(--alert-rgb), 0.28);
+  border-color: rgba(var(--alert-rgb), 0.6);
+  box-shadow: 0 6px 22px rgba(var(--alert-rgb), 0.14);
   transform: translateY(-1px);
 }
 
@@ -122,18 +101,18 @@ function open(link) {
   outline-offset: 2px;
 }
 
-/* 左侧色条直接编码级别：蓝 < 黄 < 橙 < 红 */
+/* 整块毛玻璃按级别染色：蓝 < 黄 < 橙 < 红 */
 .lv-blue {
-  border-left-color: #6db3f2;
+  --alert-rgb: 109, 179, 242;
 }
 .lv-yellow {
-  border-left-color: #f0d16b;
+  --alert-rgb: 240, 209, 107;
 }
 .lv-orange {
-  border-left-color: #f7a45e;
+  --alert-rgb: 247, 164, 94;
 }
 .lv-red {
-  border-left-color: #f07676;
+  --alert-rgb: 240, 118, 118;
 }
 
 .alert-icon {
@@ -168,22 +147,17 @@ function open(link) {
 
 .alert-level {
   font-size: 11px;
-  color: var(--text-5);
+  font-weight: 600;
+  color: rgb(var(--alert-rgb));
   white-space: nowrap;
 }
 
 .alert-meta {
   font-size: 11px;
-  color: var(--text-6);
+  color: var(--text-5);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.alert-more {
-  margin: 8px 0 0;
-  font-size: 11px;
-  color: var(--text-7);
 }
 
 @media (max-width: 480px) {
