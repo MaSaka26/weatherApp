@@ -255,6 +255,16 @@ const sun = computed(() => {
   }
 })
 
+// 横线图下面那行小字「白昼 X 小时 XX 分」。sun.short 是 12h56 这种紧凑写法，
+// 给主值用；这里展开成中文，读起来更像一句话
+const dayText = computed(() => {
+  const s = sun.value
+  if (!s) return '—'
+  const m = /^(\d+)h(\d{2})$/.exec(s.short)
+  if (!m) return '—'
+  return `${m[1]} 小时 ${m[2]} 分`
+})
+
 // 抛物线（右侧图标）：起点 (0,40)、终点 (100,40)、控制点 (50,-22)。
 // 二次贝塞尔展开后 y(t) = 40 - 124t + 124t²，x 恰好是线性 t*100，光点按进度取位即可
 const dot = computed(() => {
@@ -422,6 +432,29 @@ const dot = computed(() => {
       <div class="card-main">
         <div class="label">日出 · 日落</div>
         <div class="value">{{ sun?.short || '—' }}</div>
+      </div>
+
+      <!-- 横线轨道（只在「桌面 + 九卡」显示）：九卡时这张卡通两格，
+           横向空间富裕，横线比抛物线舒展得多，时间也能直接落在轨道两端。
+           两套 DOM 都渲染、靠 CSS 的 display 切换，不引 JS 断点 —— 和项目里
+           抛物线/横线历代实现的做法一致，窗口缩放时能立刻跟着换 -->
+      <div
+        class="sun-line-wrap"
+        :class="{ night: sun && !sun.isDay }"
+        :aria-label="`日出 ${sun?.rise || '—'}，日落 ${sun?.set || '—'}，白昼 ${dayText}`"
+      >
+        <div class="sun-line">
+          <span class="sun-time">{{ sun?.rise || '--:--' }}</span>
+          <span class="sun-track">
+            <span class="sun-fill" :style="{ width: `${(sun?.pct ?? 0) * 100}%` }"></span>
+            <span
+              v-if="sun?.isDay"
+              class="sun-dot"
+              :style="{ left: `${(sun?.pct ?? 0) * 100}%` }"
+            ></span>
+          </span>
+          <span class="sun-time">{{ sun?.set || '--:--' }}</span>
+        </div>
       </div>
 
       <!-- 抛物线：起落点 (0,40)-(100,40)、控制点 (50,-22)，顶点 y=9。

@@ -789,6 +789,69 @@ body {
   filter: drop-shadow(0 1px 2px var(--shadow-color));
 }
 
+/* 横线轨道版日出日落：只在「桌面 + 九卡」出现（见下方 @media (min-width:1024px)
+   的 .cards-9 段）。九卡时这张卡通两格，宽度富裕，一条横轨 + 光点比抛物线更舒展，
+   日出/日落时间也能直接压在轨道两端，不用挤到弧下面 */
+.sun-line-wrap {
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+.sun-line-wrap.night { opacity: 0.6; }
+/* 三列：时间 | 轨道 | 时间。必须给两个 .sun-time 显式写 grid-row/column ——
+   只让轨道跨行的话，第三个元素会被自动排到第 3 行，时间就散架了 */
+.sun-line {
+  display: grid;
+  grid-template-columns: auto minmax(24px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.sun-time {
+  font-size: 11px;
+  color: var(--text-4);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+.sun-time:first-child { grid-row: 1; grid-column: 1 / 2; }
+.sun-time:last-child { grid-row: 1; grid-column: 3 / 4; text-align: right; }
+.sun-track {
+  position: relative;
+  grid-row: 1;
+  grid-column: 2 / 3;
+  height: 2.5px;
+  border-radius: 999px;
+  background: var(--line-1);
+}
+/* 已走过的那段轨道用日出→白昼的暖色渐变，和抛物线的描边同一套 token */
+.sun-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--sun-from), var(--sun-mid));
+}
+/* 光点：和轨道同高时会被 2.5px 的线吞掉，所以抬到轨道垂直中线并放大 */
+.sun-dot {
+  position: absolute;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin-left: -3.5px;
+  border-radius: 50%;
+  background: var(--text-0);
+  transform: translateY(-50%);
+  filter: drop-shadow(0 0 3px var(--sun-mid));
+}
+.sun-note {
+  font-size: 10px;
+  color: var(--text-6);
+  letter-spacing: 0.2px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* 日出日落：和其它卡同一套骨架——左边是标签 + 白昼时长，右边是一条收紧的抛物线，
    日出/日落时间落在弧的两端下方，弧的形状本身就说明「升起到落下」 */
 .sun-panel {
@@ -1527,6 +1590,22 @@ body {
   .weather-content .details-grid.cards-9 > .sun-card {
     grid-column: span 2;
   }
+  /* 九卡时这张卡通两格、横向空间富裕，把日出日落换成横线轨道版（原本是抛物线）。
+     两套 DOM 都渲染，这里只负责显隐：横线出、抛物线收。
+     为什么不按屏宽写断点、而是挂在 .cards-9 上：六卡时这张卡只占一格，
+     横线挤在 150px 里光点和时间会打架；只有九卡的通两格才撑得开 */
+  .weather-content .details-grid.cards-9 .sun-line-wrap { display: flex; }
+  .weather-content .details-grid.cards-9 .sun-panel { display: none; }
+  /* 左边「日出 · 日落 / 12h56」，右边横轨；轨道吃掉剩下的宽度但别顶到卡片右边缘 */
+  .weather-content .details-grid.cards-9 .sun-line-wrap {
+    flex: 1 1 auto;
+    width: auto;
+    max-width: 320px;
+    gap: 5px;
+  }
+  /* 主值已经是 12h56，底下那行「白昼 12 小时 56 分」就是同一件事说两遍，藏着 */
+  .weather-content .details-grid.cards-9 .sun-note { display: none; }
+  .weather-content .details-grid.cards-9 .sun-time { font-size: clamp(10px, 0.8vw, 12px); }
   /* 末张通两格，左右留白比单格宽，间距按整行重算，别让文字贴边 */
   .weather-content .details-grid.cards-9.layout-row .sun-card.split {
     padding-left: clamp(14px, 1.4vw, 22px);
