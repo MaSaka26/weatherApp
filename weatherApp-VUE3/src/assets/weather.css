@@ -1517,16 +1517,18 @@ body {
   }
   /* 九张卡（设置里切到 9 张时）：改成五列，排成 5 + 4。
      第一行：体感 / 风速 / 湿度 / 气压 / 紫外线，各占 1 格 = 5 格；
-     第二行：日出日落 / 空气质量 / 能见度 各占 1 格，末张降水量占 2 格 = 5 格。
-     两行各填满 5 格，右边缘对齐，不留空位 */
+     第二行：降水量 / 空气质量 / 能见度 各占 1 格，末张日出日落占 2 格 = 5 格。
+     两行各填满 5 格，右边缘对齐，不留空位。
+     日出日落通两格是有理由的：那张卡主体是横向的抛物线弧，
+     单格宽里弧压得又扁又小，通两格才看得出升落轨迹。 */
   .weather-content .details-grid.cards-9 {
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
-  .weather-content .details-grid.cards-9 > .precip-card {
+  .weather-content .details-grid.cards-9 > .sun-card {
     grid-column: span 2;
   }
   /* 末张通两格，左右留白比单格宽，间距按整行重算，别让文字贴边 */
-  .weather-content .details-grid.cards-9.layout-row .precip-card.split {
+  .weather-content .details-grid.cards-9.layout-row .sun-card.split {
     padding-left: clamp(14px, 1.4vw, 22px);
     padding-right: clamp(14px, 1.4vw, 22px);
   }
