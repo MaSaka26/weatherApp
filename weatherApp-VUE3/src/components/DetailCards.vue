@@ -31,7 +31,9 @@ const layoutClass = computed(() =>
 const gridClass = computed(() => [
   layoutClass.value,
   displayAll.value && !collapsing.value ? 'cards-9' : 'cards-6',
-  // 收起途中：三张多出来的卡靠这个类被 order 压到最后一排并淡出
+  // 收起第一段：三张卡原地淡出（不动列数、不动宽度）
+  fading.value ? 'fading' : '',
+  // 收起第二段：切回六列后把它们用 order 压到最后一排
   collapsing.value ? 'collapsing' : '',
 ])
 
@@ -46,6 +48,10 @@ const displayAll = ref(showAll.value)
 
 // 正在收集高度：三张卡还在，但已被 order 顶到最后一行并开始淡出
 const collapsing = ref(false)
+
+// 收起第一段：三张卡还在原位，只把不透明度降到 0。这一段列数与卡片宽度都不动，
+// 眼睛只看到「那三张淡了」。等淡完才切列数（宽度跳变）并开始收高度
+const fading = ref(false)
 
 function setCount(n) {
   if (settings.cardCount === n) return
@@ -73,8 +79,13 @@ function prefersReducedMotion() {
 
 const FOLD_MS = 360
 const EASE = 'cubic-bezier(0.22, 0.61, 0.36, 1)'
+// 三张卡的淡出时长，与 CSS 里 .details-grid.fading 的 transition 保持一致
+const FADE_MS = 200
 let foldAnim = null
 let sunAnim = null
+// 连点作废：两段式中间有一个 200ms 的等待窗口，这期间用户可能又点回去
+let foldToken = 0
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 // 收起时留下来的那六张里，最下面一张的底边就是「收完以后应该有多高」。
 // 直接问布局而不是推算行高与 gap：手机 3 列 3 排、桌面 6 列 2 排都能通用
@@ -146,12 +157,14 @@ async function settleFold(anim) {
   foldAnim = null
   animating.value = false
   collapsing.value = false
+  fading.value = false
   return true
 }
 
 watch(showAll, async (all) => {
   const el = foldEl.value
   if (!el) return
+  const token = ++foldToken
   const from = el.getBoundingClientRect().height
 
   // 系统开了「减少动态效果」就一步到位，不留半截的过渡态
@@ -160,6 +173,7 @@ watch(showAll, async (all) => {
     sunAnim = null
     displayAll.value = all
     collapsing.value = false
+    fading.value = false
     return
   }
 
@@ -176,9 +190,18 @@ watch(showAll, async (all) => {
     return
   }
 
-  // 收起：先把三张多出来的卡让位到最后一排（由 CSS 的 order 推后）并淡出，
-  // 容器高度同时收掉一排；高度到位之后才真正把它们从 DOM 里移除。
-  //
+  // 收起分两段走。
+  // 第一段：三张多出来的卡还在原排布里（五列、238 宽），只是把不透明度降到 0。
+  //   这一段列数和卡片宽度完全不动，所以眼睛只看到「那三张淡了」。
+  // 第二段：切回六列的排布（宽度 238 → 197 在这一帧跳完），同时把高度滑下去。
+  // 为什么必须拆：两件事挤在同一帧时，宽度在第 0 帧就跳完了，高度却要滑 360ms，
+  //   观感是「卡片先猛地变窄，然后才慢慢变矮」，跳变正好发生在最没遮挡的时候。
+  //   拆开以后，跳变落在三张卡刚消失、注意力还在它们身上的那一刻。
+  fading.value = true
+  await nextTick()
+  await sleep(FADE_MS)
+  if (token !== foldToken) return
+
   // 日落这张卡在两套排布里位置不同（九卡在第二行、六卡在第一行第 6 位），
   // 直接重排会让它在一帧之内向上跳一大截。这里用 FLIP：先量旧位置，
   // 重排后立刻用 transform 把它按回旧位置，再补间到 0 —— 它是滑上去的，不是跳上去的
@@ -186,12 +209,14 @@ watch(showAll, async (all) => {
   const sunEl = grid?.querySelector('.sun-card')
   const sunBefore = sunEl ? sunEl.getBoundingClientRect().top : 0
 
-  // 先量「收完应该多高」：这时还没有任何过渡在跑，临时摘卡不会打断动画
+  // 先量「收完应该多高」。这时三张卡已经全透明，临时摘掉它们
+  // 不会打断任何正在跑的过渡（那正是之前 F7 读到全 0 的原因）
   const to = grid ? keptHeightOf(el, grid) : from
 
   animating.value = true
   collapsing.value = true
   await nextTick()
+  if (token !== foldToken) return
 
   // 必须在写 transform 之前量，否则量到的是被 transform 挪过的位置
   const sunAfter = sunEl ? sunEl.getBoundingClientRect().top : 0
@@ -216,6 +241,7 @@ watch(showAll, async (all) => {
   if (!to || Math.abs(to - from) < 1) {
     displayAll.value = false
     collapsing.value = false
+    fading.value = false
     animating.value = false
     return
   }
@@ -224,8 +250,8 @@ watch(showAll, async (all) => {
   // settleFold 会等 DOM 更新后才撤掉 forwards 的终态高度，避免闪一下
   await settleFold(done)
 })
-
 onBeforeUnmount(() => {
+  foldToken++ // 让还在 sleep 里的那一轮直接返回
   foldAnim?.cancel()
   foldAnim = null
   sunAnim?.cancel()
