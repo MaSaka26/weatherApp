@@ -150,6 +150,34 @@ export async function fetchAirQuality(lat, lon, timeoutMs = 8000) {
 }
 
 /**
+ * 天气预警：中央气象台（NMC）公开列表接口，免 Key、带 `Access-Control-Allow-Origin: *`
+ *
+ * 两个必须注意的点：
+ * 1. `signaltype` 与 `signallevel` 即使不筛选也必须显式传空值，少传会直接 417 + HTML 错误页。
+ * 2. 只能按「省」筛，市/县没有参数，所以拿一省列表回去在前端按标题匹配（见 utils/alertParse）。
+ *
+ * 接口偶尔慢（全国 890+ 条约 200 KB），但预警不在首屏链路，5 秒足够，失败就当没有。
+ */
+const ALARM_API = 'https://www.nmc.cn/rest/findAlarm'
+
+export async function fetchAlerts(province, timeoutMs = 5000) {
+  const url =
+    // pageSize 给 200：陕西这类预警大省实测有 160 条，60 会被截断、漏掉本地那条
+    `${ALARM_API}?pageNo=1&pageSize=200&signaltype=&signallevel=` +
+    `&province=${encodeURIComponent(province || '')}`
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+  try {
+    const res = await fetch(url, { signal: ctrl.signal })
+    if (!res.ok) throw new Error('Alert API 请求失败')
+    const data = await res.json()
+    return data?.data?.page?.list ?? []
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
  * 坐标兜底展示，按半球输出正确方向
  */
 export function formatCoords(lat, lon) {

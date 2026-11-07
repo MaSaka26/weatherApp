@@ -11,6 +11,7 @@ import LoadingState from '@/components/LoadingState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import CurrentWeather from '@/components/CurrentWeather.vue'
 import DetailCards from '@/components/DetailCards.vue'
+import WeatherAlert from '@/components/WeatherAlert.vue'
 import HourlyForecast from '@/components/HourlyForecast.vue'
 import RainForecast from '@/components/RainForecast.vue'
 // 雷达约 10 kB（gzip）在首屏关键路径上，且绝大多数访问不会打开它。
@@ -96,6 +97,9 @@ onMounted(() => {
         :daily="store.daily"
         :air="store.air"
       />
+
+      <!-- 天气预警：夹在 6/9 张详情卡与逐小时之间，无本地预警时组件自身不渲染 -->
+      <WeatherAlert :alerts="store.alerts" />
 
       <HourlyForecast :hourly="store.hourly" :current="store.current" />
 

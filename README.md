@@ -56,6 +56,13 @@ npm run dev        # http://localhost:5173
 - 空气质量走独立接口且懒加载：先渲染天气，AQI 到了再补进卡片，**不占用首屏等待时间**
 - 能见度和降水量不需要额外请求，直接从已有的 `current.visibility` / `current.precipitation` 读
 
+**天气预警**（夹在详情卡与逐小时之间）
+- 数据来自中央气象台 `/rest/findAlarm`，免 Key、带 `Access-Control-Allow-Origin: *`，浏览器可直连
+- **只有本地有预警时才出现**，没有就整块不渲染 —— 空态是常态，留一张「无预警」的空卡只会占地方
+- 每条：级别色条（蓝/黄/橙/红）+ 官方预警图标（125×94 PNG，接口直接给 URL）+ 类型 + 级别 + 区域与发布时间；按级别从高到低排，最多 3 条
+- 点整条在新窗口打开 NMC 详情页（详情页没有 CORS 头，正文取不到，只能跳转）
+- 「本地」判定：接口只能按**省**筛（市县无参数），所以取回一省列表后，用标题里的区域串匹配当前城市名（`湖北省荆州市松滋市气象台发布…` 命中「松滋」即算本地）
+
 **逐小时预报**
 - 横向滚动 24 小时，含温度、天气图标、降水概率
 - 昼夜按接口返回的 `is_day` 逐小时判定，不再用固定时间段猜测
@@ -90,13 +97,16 @@ npm run dev        # http://localhost:5173
 
 ## 技术要点
 
-**数据源**（全部 Open-Meteo，无 API Key）
+**数据源**（全部免 API Key）
 
 | 接口 | 用途 |
 | --- | --- |
 | `api.open-meteo.com/v1/forecast` | 实况 + 24h 逐小时 + 16 天预报（`forecast_days=16`） |
 | `air-quality-api.open-meteo.com/v1/air-quality` | AQI、PM2.5、PM10 |
 | `geocoding-api.open-meteo.com/v1/search` | 地名反查（备用） |
+| `www.nmc.cn/rest/findAlarm` | 省级天气预警列表（中央气象台） |
+| `image.nmc.cn/product/...` | NMC 雷达拼图 |
+| `image.nmc.cn/assets/img/alarm/...` | NMC 预警图标 |
 
 地名解析优先走本地表 `src/data/china-places.json`（394 个地级市 + 2814 个区县，区县挂在所属地级市下），命中即用，避免网络往返。
 
@@ -125,15 +135,16 @@ npm run dev        # http://localhost:5173
 ```
 weatherApp-VUE3/
 ├── src/
-│   ├── api/weather.js          # 三个 Open-Meteo 接口封装
+│   ├── api/weather.js          # Open-Meteo 四个接口 + NMC 预警接口封装
 │   ├── assets/
 │   │   ├── weather.css         # 全局样式与设计令牌（1736 行，单文件集中管理）
 │   │   ├── icons.js            # 23 个 Tabler 图标的 path 数据
 │   │   └── icons/*.svg         # 同上，用于生成 icons.js
-│   ├── components/             # 21 个组件
+│   ├── components/             # 22 个组件
 │   │   ├── CurrentWeather.vue  # 温度 + 时钟
 │   │   ├── DetailCards.vue     # 详情卡容器（6 / 9 张）
 │   │   ├── NeedleDial / DialGauge / WindCompass / UvGauge
+│   │   ├── WeatherAlert.vue    # 天气预警（无本地预警时整块不渲染）
 │   │   ├── HourlyForecast.vue
 │   │   ├── RainForecast.vue    # 降水条目（左文 + 12 小时强度柱条 + 手绘 SVG）
 │   │   ├── RainRadarPreview.vue# 全屏 NMC 雷达回放（1588 行）
@@ -148,6 +159,7 @@ weatherApp-VUE3/
 │   │   ├── lifeIndex.js        # 六大生活指数规则
 │   │   ├── aqi.js              # AQI 六级分档 + PM2.5/PM10 读数
 │   │   ├── rainOutlook.js      # 降水展望（未来多少小时有雨）
+│   │   ├── alertParse.js       # 预警标题解析 + 按城市名判本地
 │   │   ├── weatherCodes.js     # WMO 天气码 → 中文 + 昼夜
 │   │   └── placeLookup / placeSearch
 │   └── views/WeatherHome.vue
@@ -187,7 +199,7 @@ weatherApp-VUE3/
 1. **完全离线不可行**。雷达图是实时发布的滚动数据，缓存意义有限；且 NMC 无离线授权说明。断网时用不了雷达回放。
 2. **PM2.5 之外的地图叠加未做**。NMC 只有雷达拼图这一种产品，没有可叠加到地图的瓦片；想要「任意缩放 + 叠加」只能自建瓦片服务（成本与授权都不划算）。
 3. **多城市 / 收藏未做**。目前只有定位 + 搜索单个地点，没有城市列表、没有收藏、没有对比。
-4. **天气预警未接**。中国气象局的预警接口需申请，暂未接入，因此没有暴雨/大风/高温的红色提醒。
+4. **预警只能看到标题，看不到正文**。NMC 详情页没有 CORS 头，浏览器 fetch 读不了「防御指南」全文，只能点开新窗口。另外接口只支持按省筛选，本地判定靠在标题里匹配城市名——如果某条预警的标题写的是上级市台发布、区域串里不含当前城市名，就会被漏掉（保守地少报，不会多报）。
 5. **空气质量只有 AQI / PM2.5 / PM10**，没有 O₃、NO₂、SO₂、CO 的细分展示，也没有分时段预报；中国区无花粉数据（接口返回空），所以也没接。
 6. **降水条目不区分降水类型**。只判断「有没有雨」，没有雨/雪/冻雨的分别文案；强度已用 12 小时柱条展示（`intensities`），但柱条只有粗细高低的档位，没有标出每格对应的具体时刻。
 7. **无 PWA / 离线壳**。没有 Service Worker，断网时整页不可用。
