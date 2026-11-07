@@ -352,39 +352,26 @@ const dot = computed(() => {
       <UvGauge :value="uvMax" />
     </div>
 
-    <div class="detail-card split sun-card">
+
+    <!-- 降水量：上一小时的累计毫米数，不是瞬时强度，所以小字写「小雨」而不是「正在下小雨」 -->
+    <div v-if="settings.cardCount === 9" class="detail-card split precip-card">
       <div class="card-main">
-        <div class="label">日出 · 日落</div>
-        <div class="value">{{ sun?.short || '—' }}</div>
+        <div class="label">降水量</div>
+        <div class="value">{{ precipValue }}<span class="unit">mm</span></div>
       </div>
-
-      <!-- 抛物线：起落点 (0,40)-(100,40)、控制点 (50,-22)，顶点 y=9。
-           和横向 100 单位比只有 31 单位高，卡里显得紧凑，不会把整张卡撑满 -->
-      <div class="sun-panel" :class="{ night: sun && !sun.isDay }">
-        <svg class="sun-svg" viewBox="0 0 100 44" aria-hidden="true">
-          <defs>
-            <linearGradient id="sunArcGrad" x1="0" y1="0" x2="1" y2="0">
-              <stop class="stop-a" offset="0%" />
-              <stop class="stop-b" offset="100%" />
-            </linearGradient>
-          </defs>
-          <path class="arc-track" d="M0 40 Q50 -22 100 40" />
-          <path
-            v-if="sun"
-            class="arc-fill"
-            d="M0 40 Q50 -22 100 40"
-            pathLength="100"
-            :style="{ '--dash': `${sun.pct * 100} 100` }"
-          />
-          <circle v-if="sun?.isDay" class="arc-dot" :cx="dot.x" :cy="dot.y" r="3.2" />
+      <DialGauge
+        :value="precipDial"
+        :min="0"
+        :max="10"
+        :caption="precipText"
+        :label="`近一小时降水量 ${precipValue} 毫米，${precipText}`"
+      >
+        <svg class="d-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 18a4.6 4.4 0 0 1 0-9a5 4.5 0 0 1 11 2h1a3.5 3.5 0 0 1 0 7" />
+          <path d="M11 13v2m0 3v2m4-5v2m0 3v2" />
         </svg>
-        <div class="sun-times">
-          <span>{{ sun?.rise || '--:--' }}</span>
-          <span>{{ sun?.set || '--:--' }}</span>
-        </div>
-      </div>
+      </DialGauge>
     </div>
-
     <!-- 空气质量：只有切到 9 张时才渲染。
          主值是 AQI 数字，环心写等级简称，环下写 PM2.5 / PM10；
          分档断点与 lifeIndex 里「户外 / 疾病」用的是同一套，卡片和生活指数结论不会互相打架 -->
@@ -431,24 +418,37 @@ const dot = computed(() => {
       </DialGauge>
     </div>
 
-    <!-- 降水量：上一小时的累计毫米数，不是瞬时强度，所以小字写「小雨」而不是「正在下小雨」 -->
-    <div v-if="settings.cardCount === 9" class="detail-card split precip-card">
+    <div class="detail-card split sun-card">
       <div class="card-main">
-        <div class="label">降水量</div>
-        <div class="value">{{ precipValue }}<span class="unit">mm</span></div>
+        <div class="label">日出 · 日落</div>
+        <div class="value">{{ sun?.short || '—' }}</div>
       </div>
-      <DialGauge
-        :value="precipDial"
-        :min="0"
-        :max="10"
-        :caption="precipText"
-        :label="`近一小时降水量 ${precipValue} 毫米，${precipText}`"
-      >
-        <svg class="d-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M7 18a4.6 4.4 0 0 1 0-9a5 4.5 0 0 1 11 2h1a3.5 3.5 0 0 1 0 7" />
-          <path d="M11 13v2m0 3v2m4-5v2m0 3v2" />
+
+      <!-- 抛物线：起落点 (0,40)-(100,40)、控制点 (50,-22)，顶点 y=9。
+           和横向 100 单位比只有 31 单位高，卡里显得紧凑，不会把整张卡撑满 -->
+      <div class="sun-panel" :class="{ night: sun && !sun.isDay }">
+        <svg class="sun-svg" viewBox="0 0 100 44" aria-hidden="true">
+          <defs>
+            <linearGradient id="sunArcGrad" x1="0" y1="0" x2="1" y2="0">
+              <stop class="stop-a" offset="0%" />
+              <stop class="stop-b" offset="100%" />
+            </linearGradient>
+          </defs>
+          <path class="arc-track" d="M0 40 Q50 -22 100 40" />
+          <path
+            v-if="sun"
+            class="arc-fill"
+            d="M0 40 Q50 -22 100 40"
+            pathLength="100"
+            :style="{ '--dash': `${sun.pct * 100} 100` }"
+          />
+          <circle v-if="sun?.isDay" class="arc-dot" :cx="dot.x" :cy="dot.y" r="3.2" />
         </svg>
-      </DialGauge>
+        <div class="sun-times">
+          <span>{{ sun?.rise || '--:--' }}</span>
+          <span>{{ sun?.set || '--:--' }}</span>
+        </div>
+      </div>
     </div>
       </div>
     </div>
