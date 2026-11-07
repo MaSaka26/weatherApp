@@ -1,7 +1,8 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 
-import { geocodeCity, fetchWeather, fetchAirQuality, reverseGeocode, formatCoords } from '@/api/weather'
+import { geocodeCity, fetchWeather, fetchAirQuality, fetchAlerts, reverseGeocode, formatCoords } from '@/api/weather'
+import { buildAlerts, provinceOf } from '@/utils/alertParse'
 import { lookupPlace } from '@/utils/placeLookup'
 import { getSkyClass, nowIsDay } from '@/utils/weatherCodes'
 
@@ -21,6 +22,8 @@ export const useWeatherStore = defineStore('weather', () => {
   const data = ref(null)
   // 空气质量是独立接口，可能拿不到，单独存放、不阻塞主流程
   const air = ref(null)
+  // 本地天气预警：{ list, top, total }。没有预警时 list 为空，界面整块隐藏
+  const alerts = ref({ list: [], top: 0, total: 0 })
 
   // ─── UI 状态：loading | error | success ─────────────────
   const status = ref('loading')
@@ -83,6 +86,31 @@ export const useWeatherStore = defineStore('weather', () => {
     air.value = next
   }
 
+  // 天气预警同样不进首屏：接口要按省拉一整个列表（890+ 条、约 200 KB），
+  // 和空气质量一起在主天气渲染之后再补，没有预警时界面什么都不显示。
+  async function fetchAlertsSafe(province) {
+    if (!province) return []
+    try {
+      return await fetchAlerts(province)
+    } catch {
+      return []
+    }
+  }
+
+  let alertToken = 0
+  async function loadAlerts(province, name) {
+    const token = ++alertToken
+    alerts.value = { list: [], top: 0, total: 0 } // 先清空，避免上一座城市的预警留在新城市下
+    const raw = await fetchAlertsSafe(province)
+    if (token !== alertToken) return
+    alerts.value = buildAlerts(raw, name)
+  }
+
+  // 按当前 cityDetail（「湖北省 · 荆州市」）推出省级全名，再拉该省预警
+  function refreshAlerts() {
+    loadAlerts(provinceOf(cityDetail.value), cityName.value)
+  }
+
   // ─── 按城市名加载（本地候选之外的兜底，走地理编码） ─────
   async function loadCity(city) {
     placeToken += 1 // 让尚未返回的定位反查结果失效
@@ -97,6 +125,7 @@ export const useWeatherStore = defineStore('weather', () => {
       data.value = await fetchWeather(geo.lat, geo.lon)
       showContent()
       loadAir(geo.lat, geo.lon)
+      refreshAlerts()
     } catch (err) {
       if (err.message === 'CITY_NOT_FOUND') {
         showError('未找到城市', `未找到「${city}」，请检查城市名称是否正确。`)
@@ -120,6 +149,7 @@ export const useWeatherStore = defineStore('weather', () => {
       data.value = await fetchWeather(place.lat, place.lon)
       showContent()
       loadAir(place.lat, place.lon)
+      refreshAlerts()
     } catch (err) {
       showError('加载失败', err.message)
     }
@@ -190,6 +220,7 @@ export const useWeatherStore = defineStore('weather', () => {
       locationSource.value = place.source
       showContent()
       loadAir(lat.value, lon.value)
+      refreshAlerts()
     } catch (err) {
       if (token !== placeToken) return
       if (err.code === 1) {
@@ -212,6 +243,7 @@ export const useWeatherStore = defineStore('weather', () => {
       data.value = await fetchWeather(lat.value, lon.value)
       showContent()
       loadAir(lat.value, lon.value)
+      refreshAlerts()
     } catch (err) {
       showError('数据加载失败', err.message + '。请下拉刷新重试。')
     }
@@ -234,6 +266,7 @@ export const useWeatherStore = defineStore('weather', () => {
     locationSource,
     data,
     air,
+    alerts,
     status,
     errorTitle,
     errorDesc,
