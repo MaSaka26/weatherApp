@@ -450,6 +450,19 @@ body {
 /* 展开 / 收起动画期间才收紧溢出，平时放开，表盘和卡片描边都不被裁 */
 .cards-fold.folding { overflow: hidden; }
 
+/* 收起途中的「让位」：此刻网格已经退回六列，但多出来的三张卡还在 DOM 里
+   （要等高度收完才卸载，否则它们会在高度开始收之前就凭空消失）。
+   靠 order 把它们推到最后一排，并以淡出代替瞬隐——它们从第二排的位置浮走，
+   而不是把留在场上的六张挤开 */
+.details-grid.collapsing > .precip-card,
+.details-grid.collapsing > .air-card,
+.details-grid.collapsing > .vis-card {
+  order: 99;
+  opacity: 0;
+  transition: opacity 200ms ease;
+  pointer-events: none;
+}
+
 .details-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -845,13 +858,6 @@ body {
   transform: translateY(-50%);
   filter: drop-shadow(0 0 3px var(--sun-mid));
 }
-.sun-note {
-  font-size: 10px;
-  color: var(--text-6);
-  letter-spacing: 0.2px;
-  font-variant-numeric: tabular-nums;
-}
-
 /* 日出日落：和其它卡同一套骨架——左边是标签 + 白昼时长，右边是一条收紧的抛物线，
    日出/日落时间落在弧的两端下方，弧的形状本身就说明「升起到落下」 */
 .sun-panel {
@@ -1603,8 +1609,8 @@ body {
     max-width: 320px;
     gap: 5px;
   }
-  /* 主值已经是 12h56，底下那行「白昼 12 小时 56 分」就是同一件事说两遍，藏着 */
-  .weather-content .details-grid.cards-9 .sun-note { display: none; }
+  /* 主值已经是 12h56，底下那行「白昼 12 小时 56 分」会把同一件事说两遍，
+     所以模板里没有 .sun-note 这个元素，这里也不需要隐藏规则 */
   .weather-content .details-grid.cards-9 .sun-time { font-size: clamp(10px, 0.8vw, 12px); }
   /* 末张通两格，左右留白比单格宽，间距按整行重算，别让文字贴边 */
   .weather-content .details-grid.cards-9.layout-row .sun-card.split {
