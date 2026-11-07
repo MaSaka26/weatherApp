@@ -23,11 +23,29 @@ const layoutClass = computed(() =>
 )
 
 // 六卡 / 九卡由设置切换：九卡在桌面排成 5+4（末张占两格），手机九张正好三列三行
-const gridClass = computed(() => [layoutClass.value, settings.cardCount === 9 ? 'cards-9' : 'cards-6'])
+//
+// 列数跟的是「正在显示的那套排布」，不是 settings.cardCount：
+// 收起动画期间要先退回到六列（日出日落回到第一行第 6 位），那三张卡则被
+// order 顶到第二排去淡出。如果这里直接跟着 cardCount 走，两者会在同一帧里
+// 同时变化，日出日落先跳一行再跟着缩，反而更乱
+const gridClass = computed(() => [
+  layoutClass.value,
+  displayAll.value && !collapsing.value ? 'cards-9' : 'cards-6',
+  // 收起途中：三张多出来的卡靠这个类被 order 压到最后一排并淡出
+  collapsing.value ? 'collapsing' : '',
+])
 
 // 首页直接把卡片数量做成 16 天预报那套「列表 / 曲线」同款切换钮。
 // 数据仍然只走 settings.cardCount —— 设置面板里那一项保留，两处改的是同一个值，不会各说各话
 const showAll = computed(() => settings.cardCount === 9)
+
+// 实际渲染几张。收起过渡期间它仍然是 9（三张卡先留在 DOM 里被裁剪出去），
+// 等容器高度收到 6 张的尺寸之后才置 false 真正移除 —— 否则那三张会在
+// 高度开始收之前就凭空消失，剩下的卡再猛地缩一下，看着很跳
+const displayAll = ref(showAll.value)
+
+// 正在收集高度：三张卡还在，但已被 order 顶到最后一行并开始淡出
+const collapsing = ref(false)
 
 function setCount(n) {
   if (settings.cardCount === n) return
@@ -36,8 +54,11 @@ function setCount(n) {
 
 // 展开 / 收起动画：纯 CSS 做不到 —— grid 的列数（6 列 → 5 列）与行数一变，
 // 高度是瞬时跳变的，没有可过渡的中间值。这里先量旧高度，DOM 更新后再量新高度，
-// 用 WAAPI 把高度补间出来，同时折叠容器在这段时间里 overflow: hidden，
-// 于是展开看起来是「从下面长出来」，收起看起来是「往上收回去」
+// 用 WAAPI 把高度补间出来，同时折叠容器在这段时间里 overflow: hidden。
+//
+// 收起走两段：① 三张卡被 order 推到最后一排并淡出，容器高度同时从两排收到一排；
+// ② 高度到位后才把三张卡从 DOM 移除。因为第 6 张（日出日落）此时已经在
+// 六卡的正确位置上，它不会先跳到第二行再跳回来
 const foldEl = ref(null)
 const animating = ref(false)
 
@@ -51,39 +72,164 @@ function prefersReducedMotion() {
 }
 
 const FOLD_MS = 360
+const EASE = 'cubic-bezier(0.22, 0.61, 0.36, 1)'
 let foldAnim = null
+let sunAnim = null
 
-watch(showAll, async () => {
-  const el = foldEl.value
-  if (!el) return
-  const from = el.getBoundingClientRect().height
-  await nextTick()
-  const to = el.getBoundingClientRect().height
-  if (prefersReducedMotion() || !from || !to || Math.abs(to - from) < 1) return
+// 收起时留下来的那六张里，最下面一张的底边就是「收完以后应该有多高」。
+// 直接问布局而不是推算行高与 gap：手机 3 列 3 排、桌面 6 列 2 排都能通用
+const EXTRA_CLASSES = ['precip-card', 'air-card', 'vis-card']
 
+function keptHeightOf(fold, grid) {
+  // 只把多出来的三张「从网格里摘掉」是不够的——它们还在的话，
+  // 手机 3 列会排出 3 排、而 grid-auto-rows:1fr 会按最高那张卡（空气卡带表盘）
+  // 把每一排都撑高，于是留下来的 6 张虽然只占 2 排，量出来仍比收完后更高。
+  // 这里临时 display:none 把它们移出布局，量到的才是收完后的真实高度。
+  //
+  // 调用时必须还没有任何过渡在跑：元素一旦离开布局，正在跑的 opacity 过渡会被打断，
+  // 恢复显示后又不会从 1 重来，三张卡就会瞬间全透明。所以调用点放在写 collapsing 之前，
+  // 并在还原之后强制一次重排，让浏览器把这些样式改动落实成一帧
+  // 桌面九卡是五列排布，留下来的六张在五列里仍要占两排，直接量会得到「和现在一样高」，
+  // 于是被判成高度没变、收起动画整个跳过。所以量之前先把网格临时切回六列的排布
+  const wasNine = grid.classList.contains('cards-9')
+  const extras = Array.from(grid.children).filter((c) =>
+    EXTRA_CLASSES.some((k) => c.classList.contains(k)),
+  )
+  const prev = extras.map((c) => c.style.display)
+  extras.forEach((c) => {
+    c.style.display = 'none'
+  })
+  if (wasNine) {
+    grid.classList.remove('cards-9')
+    grid.classList.add('cards-6')
+  }
+  const top = fold.getBoundingClientRect().top
+  const kept = Array.from(grid.children).filter((c) => c.style.display !== 'none')
+  const bottom = kept.length ? Math.max(...kept.map((c) => c.getBoundingClientRect().bottom)) : 0
+  if (wasNine) {
+    grid.classList.remove('cards-6')
+    grid.classList.add('cards-9')
+  }
+  extras.forEach((c, i) => {
+    c.style.display = prev[i]
+  })
+  void grid.offsetHeight // 强制重排：还原与随后的 collapsing 必须是两帧，否则过渡不会启动
+  return Math.max(0, bottom - top)
+}
+
+function runFold(el, from, to) {
   animating.value = true
   // 连点时必须先把上一段断言作废：两段 WAAPI 同时作用于 height，
   // 收尾时谁最后写谁生效，容易把容器停在中间高度
   foldAnim?.cancel()
+  // fill: forwards 是关键。收起结束时三张卡还留在 DOM 里（要等高度到位才卸载），
+  // 此时若动画一结束就失效，容器会瞬间弹回三行的高度再跌回去——肉眼是闪一下。
+  // 留住终态高度，等 DOM 更新完再撤（见 settleFold）
   const anim = el.animate(
     [{ height: `${from}px` }, { height: `${to}px` }],
-    { duration: FOLD_MS, easing: 'cubic-bezier(0.22, 0.61, 0.36, 1)' },
+    { duration: FOLD_MS, easing: EASE, fill: 'forwards' },
   )
   foldAnim = anim
-  // 被下一次切换打断时 finished 会 reject，交给新一轮接管，这里不清理
-  anim.finished.then(
-    () => {
-      if (foldAnim !== anim) return
-      animating.value = false
-      foldAnim = null
-    },
-    () => {},
+  return anim.finished.then(
+    () => anim,
+    () => null,
   )
+}
+
+// 收尾顺序不能反：先改 displayAll 让三张卡从 DOM 里消失，等 Vue 把 DOM 更新完，
+// 再撤掉 forwards 填充。这时候容器的自然高度已经等于动画终值，撤掉不会有任何跳动
+async function settleFold(anim) {
+  if (!anim || foldAnim !== anim) return false
+  displayAll.value = showAll.value
+  await nextTick()
+  foldAnim?.cancel()
+  foldAnim = null
+  animating.value = false
+  collapsing.value = false
+  return true
+}
+
+watch(showAll, async (all) => {
+  const el = foldEl.value
+  if (!el) return
+  const from = el.getBoundingClientRect().height
+
+  // 系统开了「减少动态效果」就一步到位，不留半截的过渡态
+  if (prefersReducedMotion()) {
+    sunAnim?.cancel()
+    sunAnim = null
+    displayAll.value = all
+    collapsing.value = false
+    return
+  }
+
+  if (all) {
+    // 展开：三张卡先出现（高度还没放下来，所以被裁在可视区外），
+    // 再把容器高度放下去，看起来是从下面长出来
+    displayAll.value = true
+    collapsing.value = false
+    await nextTick()
+    const to = el.getBoundingClientRect().height
+    if (!from || !to || Math.abs(to - from) < 1) return
+    const done = await runFold(el, from, to)
+    await settleFold(done)
+    return
+  }
+
+  // 收起：先把三张多出来的卡让位到最后一排（由 CSS 的 order 推后）并淡出，
+  // 容器高度同时收掉一排；高度到位之后才真正把它们从 DOM 里移除。
+  //
+  // 日落这张卡在两套排布里位置不同（九卡在第二行、六卡在第一行第 6 位），
+  // 直接重排会让它在一帧之内向上跳一大截。这里用 FLIP：先量旧位置，
+  // 重排后立刻用 transform 把它按回旧位置，再补间到 0 —— 它是滑上去的，不是跳上去的
+  const grid = el.querySelector('.details-grid')
+  const sunEl = grid?.querySelector('.sun-card')
+  const sunBefore = sunEl ? sunEl.getBoundingClientRect().top : 0
+
+  // 先量「收完应该多高」：这时还没有任何过渡在跑，临时摘卡不会打断动画
+  const to = grid ? keptHeightOf(el, grid) : from
+
+  animating.value = true
+  collapsing.value = true
+  await nextTick()
+
+  // 必须在写 transform 之前量，否则量到的是被 transform 挪过的位置
+  const sunAfter = sunEl ? sunEl.getBoundingClientRect().top : 0
+  const dy = Math.round(sunBefore - sunAfter)
+
+  if (sunEl && Math.abs(dy) > 1) {
+    sunAnim?.cancel()
+    sunAnim = sunEl.animate(
+      [{ transform: `translateY(${dy}px)` }, { transform: 'translateY(0)' }],
+      { duration: FOLD_MS, easing: EASE, fill: 'both' },
+    )
+    // 补间结束后把动画撤掉：此时元素本身就在终点，撤掉不会有任何位移
+    sunAnim.finished.then(
+      () => {
+        sunAnim?.cancel()
+        sunAnim = null
+      },
+      () => {},
+    )
+  }
+
+  if (!to || Math.abs(to - from) < 1) {
+    displayAll.value = false
+    collapsing.value = false
+    animating.value = false
+    return
+  }
+  const done = await runFold(el, from, to)
+  // 高度已经是一排了，这时移除三张卡不会再有任何跳动；
+  // settleFold 会等 DOM 更新后才撤掉 forwards 的终态高度，避免闪一下
+  await settleFold(done)
 })
 
 onBeforeUnmount(() => {
   foldAnim?.cancel()
   foldAnim = null
+  sunAnim?.cancel()
+  sunAnim = null
 })
 
 // 空气质量：AQI 当主值，PM2.5 / PM10 当小字，等级名走 aqi.js 的六级分档
@@ -364,7 +510,7 @@ const dot = computed(() => {
 
 
     <!-- 降水量：上一小时的累计毫米数，不是瞬时强度，所以小字写「小雨」而不是「正在下小雨」 -->
-    <div v-if="settings.cardCount === 9" class="detail-card split precip-card">
+    <div v-if="displayAll" class="detail-card split precip-card">
       <div class="card-main">
         <div class="label">降水量</div>
         <div class="value">{{ precipValue }}<span class="unit">mm</span></div>
@@ -385,7 +531,7 @@ const dot = computed(() => {
     <!-- 空气质量：只有切到 9 张时才渲染。
          主值是 AQI 数字，环心写等级简称，环下写 PM2.5 / PM10；
          分档断点与 lifeIndex 里「户外 / 疾病」用的是同一套，卡片和生活指数结论不会互相打架 -->
-    <div v-if="settings.cardCount === 9" class="detail-card split air-card">
+    <div v-if="displayAll" class="detail-card split air-card">
       <div class="card-main">
         <div class="label">空气质量</div>
         <div class="value">{{ aqiValue }}<span class="unit">AQI</span></div>
@@ -409,7 +555,7 @@ const dot = computed(() => {
     </div>
 
     <!-- 能见度：接口给米，换算成公里显示。表盘上限 30 km，再远对出行没区别 -->
-    <div v-if="settings.cardCount === 9" class="detail-card split vis-card">
+    <div v-if="displayAll" class="detail-card split vis-card">
       <div class="card-main">
         <div class="label">能见度</div>
         <div class="value">{{ visibilityValue }}<span class="unit">km</span></div>
