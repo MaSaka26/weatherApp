@@ -24,6 +24,10 @@ export const useWeatherStore = defineStore('weather', () => {
   const air = ref(null)
   // 本地天气预警：{ list, top, total }。没有预警时 list 为空，界面整块隐藏
   const alerts = ref({ list: [], top: 0, total: 0 })
+  // 预警请求结果单独存：idle（还没请求）| ok（成功，可能 0 条）| error（超时/非 200/解析失败/网络被拦）
+  // 必须和 alerts 分开 —— ok + 0 条要整块隐藏（空态是常态），只有 error 才显示「获取失败 + 刷新」
+  const alertStatus = ref('idle')
+  const alertRefreshing = ref(false)
 
   // ─── UI 状态：loading | error | success ─────────────────
   const status = ref('loading')
@@ -88,27 +92,41 @@ export const useWeatherStore = defineStore('weather', () => {
 
   // 天气预警同样不进首屏：接口要按省拉一整个列表（890+ 条、约 200 KB），
   // 和空气质量一起在主天气渲染之后再补，没有预警时界面什么都不显示。
+  // 返回 { ok, list } 而不是直接返回数组：ok=false 才是「接口失败」，
+  // ok=true 且 list 为空是「今天确实没有本地预警」—— 两者界面必须区分，
+  // 否则会把正常的空态误报成加载失败。无省名（境外城市）算 ok，不报错。
   async function fetchAlertsSafe(province) {
-    if (!province) return []
+    if (!province) return { ok: true, list: [] }
     try {
-      return await fetchAlerts(province)
+      return { ok: true, list: await fetchAlerts(province) }
     } catch {
-      return []
+      return { ok: false, list: [] }
     }
   }
 
   let alertToken = 0
-  async function loadAlerts(province, name) {
+  // fromRetry：失败提示条上的「刷新」触发的重试。此时保留 error 状态让提示条留在原地
+  // （按钮变成「重试中…」）；切城市时 fromRetry=false，要清掉上一座城市残留的错误。
+  async function loadAlerts(province, name, fromRetry = false) {
     const token = ++alertToken
     alerts.value = { list: [], top: 0, total: 0 } // 先清空，避免上一座城市的预警留在新城市下
-    const raw = await fetchAlertsSafe(province)
-    if (token !== alertToken) return
-    alerts.value = buildAlerts(raw, name)
+    if (!fromRetry) alertStatus.value = 'idle'
+    alertRefreshing.value = true
+    const result = await fetchAlertsSafe(province)
+    if (token !== alertToken) return // 期间又切了城市或又点了一次刷新，这次结果作废
+    alertRefreshing.value = false
+    alerts.value = buildAlerts(result.list, name)
+    alertStatus.value = result.ok ? 'ok' : 'error'
   }
 
   // 按当前 cityDetail（「湖北省 · 荆州市」）推出省级全名，再拉该省预警
   function refreshAlerts() {
     loadAlerts(provinceOf(cityDetail.value), cityName.value)
+  }
+
+  // 失败提示条上的刷新：只重试预警这一路，不重拉整个天气
+  function retryAlerts() {
+    loadAlerts(provinceOf(cityDetail.value), cityName.value, true)
   }
 
   // ─── 按城市名加载（本地候选之外的兜底，走地理编码） ─────
@@ -267,6 +285,8 @@ export const useWeatherStore = defineStore('weather', () => {
     data,
     air,
     alerts,
+    alertStatus,
+    alertRefreshing,
     status,
     errorTitle,
     errorDesc,
@@ -281,5 +301,6 @@ export const useWeatherStore = defineStore('weather', () => {
     loadByGeolocation,
     refresh,
     retry,
+    retryAlerts,
   }
 })

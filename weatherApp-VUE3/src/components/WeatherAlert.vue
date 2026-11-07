@@ -9,16 +9,29 @@
  *
  * 样式上不要标题栏、不要「多少条」，整块毛玻璃按预警级别染色（黄警就是黄色玻璃），
  * 而不是只在左边画一条色条。
+ *
+ * status（由 store 提供）用来区分「确实没有预警」和「接口失败」：
+ *   - ok + total>0 → 预警卡片
+ *   - ok + total=0 / idle → 整块隐藏（正常空态，不打扰用户）
+ *   - error → 一行中性灰提示 + 刷新按钮，点击只重试预警这一路（不重拉整个天气）
+ * 提示条刻意用中性灰而不是红色：接口失败不是灾害级别，红色会和蓝/黄/橙/红预警色语义打架。
  */
 import { computed } from 'vue'
 
 const props = defineProps({
   alerts: { type: Object, default: () => ({ list: [], top: 0, total: 0 }) },
+  // idle | ok | error
+  status: { type: String, default: 'idle' },
+  refreshing: { type: Boolean, default: false },
 })
+
+const emit = defineEmits(['refresh'])
 
 const LEVEL_CLASS = { 1: 'lv-blue', 2: 'lv-yellow', 3: 'lv-orange', 4: 'lv-red' }
 
 const visible = computed(() => props.alerts.list.slice(0, 3))
+const showList = computed(() => props.alerts.total > 0)
+const showError = computed(() => props.status === 'error' && !showList.value)
 
 function open(link) {
   if (!link) return
@@ -27,8 +40,8 @@ function open(link) {
 </script>
 
 <template>
-  <section v-if="alerts.total > 0" class="alert-section">
-    <div class="alert-list">
+  <section v-if="showList || showError" class="alert-section">
+    <div v-if="showList" class="alert-list">
       <button
         v-for="item in visible"
         :key="item.id"
@@ -46,6 +59,20 @@ function open(link) {
           </span>
           <span class="alert-meta">{{ item.region }} · {{ item.issued }}</span>
         </span>
+      </button>
+    </div>
+
+    <!-- 接口失败：一行轻提示 + 只重试预警的刷新按钮。中性灰玻璃，不占用灾害级别配色 -->
+    <div v-else class="alert-fail" role="status">
+      <span class="alert-fail-text">预警信息暂时获取失败</span>
+      <button
+        type="button"
+        class="alert-retry"
+        :disabled="refreshing"
+        @click="emit('refresh')"
+      >
+        <span class="alert-retry-icon" :class="{ spinning: refreshing }" aria-hidden="true">⟳</span>
+        {{ refreshing ? '重试中…' : '刷新' }}
       </button>
     </div>
   </section>
@@ -160,6 +187,83 @@ function open(link) {
   white-space: nowrap;
 }
 
+/* 失败提示条：刻意做成比预警卡更薄、更低调的中性灰玻璃 */
+.alert-fail {
+  box-sizing: border-box;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(var(--glass-soft));
+}
+
+.alert-fail-text {
+  font-size: 12px;
+  color: var(--text-6);
+}
+
+.alert-retry {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-5);
+  background: var(--surface-3);
+  border: 1px solid var(--line-1);
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    color 0.18s,
+    border-color 0.18s,
+    background 0.18s;
+}
+
+.alert-retry:hover:not(:disabled) {
+  color: var(--text-1);
+  border-color: var(--line-2);
+  background: var(--surface-4);
+}
+
+.alert-retry:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.alert-retry:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.alert-retry-icon {
+  display: inline-block;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.alert-retry-icon.spinning {
+  animation: alert-spin 0.8s linear infinite;
+}
+
+@keyframes alert-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alert-retry-icon.spinning {
+    animation: none;
+  }
+}
+
 @media (max-width: 480px) {
   .alert-icon {
     width: 28px;
@@ -171,6 +275,9 @@ function open(link) {
   .alert-item {
     padding: 9px 12px;
     gap: 10px;
+  }
+  .alert-fail {
+    padding: 8px 12px;
   }
 }
 </style>

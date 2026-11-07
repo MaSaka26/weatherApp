@@ -98,8 +98,13 @@ onMounted(() => {
         :air="store.air"
       />
 
-      <!-- 天气预警：夹在 6/9 张详情卡与逐小时之间，无本地预警时组件自身不渲染 -->
-      <WeatherAlert :alerts="store.alerts" />
+      <!-- 天气预警：夹在 6/9 张详情卡与逐小时之间。无本地预警整块隐藏，接口失败显示一行轻提示 + 刷新 -->
+      <WeatherAlert
+        :alerts="store.alerts"
+        :status="store.alertStatus"
+        :refreshing="store.alertRefreshing"
+        @refresh="store.retryAlerts()"
+      />
 
       <HourlyForecast :hourly="store.hourly" :current="store.current" />
 
