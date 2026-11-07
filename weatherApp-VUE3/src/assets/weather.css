@@ -442,6 +442,14 @@ body {
    手机、平板、桌面三档都听同一个设置：
    - layout-row   左文右图（默认）
    - layout-stack 文字在上、图形在下 */
+
+/* 详情卡区块：标题行 + 折叠容器。首页就能切 6 / 9 张，外观沿用 16 天预报那套切换钮 */
+.cards-section { margin: 20px 0 24px; }
+/* 标题已经在 section-head 里给了下边距，网格自己不再重复留白 */
+.cards-section .details-grid { margin: 0; }
+/* 展开 / 收起动画期间才收紧溢出，平时放开，表盘和卡片描边都不被裁 */
+.cards-fold.folding { overflow: hidden; }
+
 .details-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1493,6 +1501,11 @@ body {
   .weather-content .clock-date, .weather-content .clock-doy { font-size: 13px; }
 
   /* 六张卡：一行 × 六列，卡片内部排布跟随设置里的「卡片布局」 */
+  /* 外层区块撑满内容列；纵向间距交给 .weather-content 的 gap，这里归零免得叠加 */
+  .weather-content .cards-section {
+    width: 100%;
+    margin: 0;
+  }
   .weather-content .details-grid {
     width: 100%;
     height: auto;

@@ -42,7 +42,9 @@ npm run dev        # http://localhost:5173
 **九卡详情**（体感、风速、湿度、气压、紫外线、日出日落，可再展开三张）
 - 体感：指针表盘；风速：罗盘；湿度/气压：环形表盘；紫外线：UV 表盘；日出日落：弧形轨迹
 - 默认 **6 张**：手机 3 列 × 2 行、平板 3 列 × 2 行、桌面一行六列
-- 设置面板「卡片数量」切到 **9 张**时，再补空气质量、能见度、降水量三张
+- 首页「天气详情」标题右侧有 **6 张 / 9 张** 切换钮（和 16 天预报的「列表 / 曲线」同一套样式），点一下就地展开或收起，不必进设置面板
+- 切换走高度补间动画：展开是往下长出来、收起是往上收回去（360ms）；系统开启「减少动态效果」时直接跳变
+- 设置面板「卡片数量」与首页那颗切换钮是**同一个值**，改哪边都会一起变
 - 「左右 / 上下」图文布局可在设置面板切换
 
 **第 7–9 张：空气质量 / 能见度 / 降水量**（9 张模式才出现）
@@ -125,7 +127,7 @@ weatherApp-VUE3/
 ├── src/
 │   ├── api/weather.js          # 三个 Open-Meteo 接口封装
 │   ├── assets/
-│   │   ├── weather.css         # 全局样式与设计令牌（1628 行，单文件集中管理）
+│   │   ├── weather.css         # 全局样式与设计令牌（1641 行，单文件集中管理）
 │   │   ├── icons.js            # 23 个 Tabler 图标的 path 数据
 │   │   └── icons/*.svg         # 同上，用于生成 icons.js
 │   ├── components/             # 21 个组件
@@ -134,7 +136,7 @@ weatherApp-VUE3/
 │   │   ├── NeedleDial / DialGauge / WindCompass / UvGauge
 │   │   ├── HourlyForecast.vue
 │   │   ├── RainForecast.vue    # 降水条目（左文 + 12 小时强度柱条 + 手绘 SVG）
-│   │   ├── RainRadarPreview.vue# 全屏 NMC 雷达回放（1587 行）
+│   │   ├── RainRadarPreview.vue# 全屏 NMC 雷达回放（1588 行）
 │   │   ├── DailyForecast / DailyChart
 │   │   ├── LifeIndex.vue       # 生活指数
 │   │   ├── TablerIcon.vue      # 通用图标组件
@@ -193,7 +195,7 @@ weatherApp-VUE3/
 
 ### 工程债
 
-- `weather.css` 单文件 1628 行，全局样式与组件样式混在一起，长期应拆分为设计令牌 + 组件级样式。
+- `weather.css` 单文件 1641 行，全局样式与组件样式混在一起，长期应拆分为设计令牌 + 组件级样式。
 - `RainRadarPreview.vue` 1588 行（已从 2301 行的 Leaflet/RainViewer 版重写精简），帧探测、滚动刷新、预载、双缓冲播放与视图仍在同一 SFC，可抽成 `useRadarPlayer` composable。
 - `ui-review/` 被 `.gitignore` 忽略，验证脚本不进版本库，换机器就丢失。若这些脚本要长期用，应单独放行或移到独立仓库。
 
