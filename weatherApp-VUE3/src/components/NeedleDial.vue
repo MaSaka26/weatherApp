@@ -12,7 +12,7 @@ const props = defineProps({
   label: { type: String, default: '' },
 })
 
-const { shown, tween } = useTween()
+const { shown, tween } = useTween(1000, { snapFirst: true })
 
 const START = 225
 const SWEEP = 270

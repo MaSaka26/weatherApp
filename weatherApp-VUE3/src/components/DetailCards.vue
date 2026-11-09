@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import { setSetting, settings } from '@/composables/useSettings'
+import { useTween } from '@/composables/useTween'
 import { aqiText, readAir } from '@/utils/aqi'
 import DialGauge from '@/components/DialGauge.vue'
 import NeedleDial from '@/components/NeedleDial.vue'
@@ -437,10 +438,17 @@ const dayText = computed(() => {
   return `${m[1]} 小时 ${m[2]} 分`
 })
 
+// 白昼进度也走补间：数据和表盘同时到，四颗表盘扫 1s、日出日落瞬跳会很割裂。
+// 冷启动时首个值是占位符的 0（不扫），真实数据到达才从 0 长到目标刻度；
+// 有缓存时首值已是真实进度，直接落位，不会再「从日出重新走一遍」。
+const { shown: sunPctShown, tween: tweenSun } = useTween(1000, { snapFirst: true })
+const sunPct = computed(() => sunPctShown.value)
+watch(() => sun.value?.pct ?? 0, (v) => tweenSun(v), { immediate: true })
+
 // 抛物线（右侧图标）：起点 (0,40)、终点 (100,40)、控制点 (50,-22)。
 // 二次贝塞尔展开后 y(t) = 40 - 124t + 124t²，x 恰好是线性 t*100，光点按进度取位即可
 const dot = computed(() => {
-  const t = sun.value?.pct ?? 0
+  const t = sunPct.value
   return { x: t * 100, y: 40 + t * (124 * t - 124) }
 })
 </script>
@@ -618,11 +626,11 @@ const dot = computed(() => {
         <div class="sun-line">
           <span class="sun-time">{{ sun?.rise || '--:--' }}</span>
           <span class="sun-track">
-            <span class="sun-fill" :style="{ width: `${(sun?.pct ?? 0) * 100}%` }"></span>
+            <span class="sun-fill" :style="{ width: `${sunPct * 100}%` }"></span>
             <span
               v-if="sun?.isDay"
               class="sun-dot"
-              :style="{ left: `${(sun?.pct ?? 0) * 100}%` }"
+              :style="{ left: `${sunPct * 100}%` }"
             ></span>
           </span>
           <span class="sun-time">{{ sun?.set || '--:--' }}</span>
@@ -645,7 +653,7 @@ const dot = computed(() => {
             class="arc-fill"
             d="M0 40 Q50 -22 100 40"
             pathLength="100"
-            :style="{ '--dash': `${sun.pct * 100} 100` }"
+            :style="{ '--dash': `${sunPct * 100} 100` }"
           />
           <circle v-if="sun?.isDay" class="arc-dot" :cx="dot.x" :cy="dot.y" r="3.2" />
         </svg>

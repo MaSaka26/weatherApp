@@ -47,8 +47,9 @@ const stops = ref(STOPS.map((s) => ({ pos: s.pos, rgb: hexToRgb(s.fallback) })))
 
 const hasValue = computed(() => Number.isFinite(props.value))
 
-// 展示中的数值：跟随 props 做一次 0.7s 缓动，切城市/刷新时表盘是「扫过去」而不是瞬移
-const { shown, tween } = useTween()
+// 展示中的数值：从 0 扫到真实值，1s 缓出。和湿度/气压/体感三颗同一个时长，
+// 数据晚到时四颗表盘一起扫过去，不会一颗已经到位、另一颗还在原地
+const { shown, tween } = useTween(1000, { snapFirst: true })
 
 const range = computed(() => (props.max > 0 ? props.max : 11))
 const ratio = computed(() => Math.min(1, Math.max(0, shown.value / range.value)))
