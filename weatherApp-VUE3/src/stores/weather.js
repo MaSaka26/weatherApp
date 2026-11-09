@@ -5,21 +5,27 @@ import { geocodeCity, fetchWeather, fetchAirQuality, fetchAlerts, reverseGeocode
 import { buildAlerts, provinceOf } from '@/utils/alertParse'
 import { lookupPlace } from '@/utils/placeLookup'
 import { getSkyClass, nowIsDay } from '@/utils/weatherCodes'
+import { readWeatherCache, writeWeatherCache } from '@/utils/weatherCache'
+import { buildPlaceholderWeather } from '@/utils/weatherPlaceholder'
 
 export const useWeatherStore = defineStore('weather', () => {
+  // 上一次成功的主天气 + 位置。有就直接拿来当首屏，没有就是 0 占位骨架 ——
+  // 两条路都能立刻画出完整仪表盘，不再有整页 loading。
+  const cached = readWeatherCache()
+
   // ─── 位置 ───────────────────────────────────────────────
-  const lat = ref(null)
-  const lon = ref(null)
-  const cityName = ref('')
+  const lat = ref(cached?.place?.lat ?? null)
+  const lon = ref(cached?.place?.lon ?? null)
+  const cityName = ref(cached?.place?.cityName ?? '')
   // 城市名下方的行政归属（省 · 市），让“松滋”这类县级地名有坐标感
-  const cityDetail = ref('')
+  const cityDetail = ref(cached?.place?.cityDetail ?? '')
   // 地名来源：county（区县）| city（地级市）| near（就近估算）| search（用户搜索）| reverse（境外反查）| coord（坐标）
-  const locationSource = ref('')
+  const locationSource = ref(cached?.place?.locationSource ?? '')
   // 地名请求令牌：新的定位/搜索会让旧的异步结果失效，避免互相覆盖
   let placeToken = 0
 
   // ─── 数据 ───────────────────────────────────────────────
-  const data = ref(null)
+  const data = ref(cached?.data ?? buildPlaceholderWeather())
   // 空气质量是独立接口，可能拿不到，单独存放、不阻塞主流程
   const air = ref(null)
   // 本地天气预警：{ list, top, total }。没有预警时 list 为空，界面整块隐藏
@@ -30,14 +36,27 @@ export const useWeatherStore = defineStore('weather', () => {
   const alertRefreshing = ref(false)
 
   // ─── UI 状态：loading | error | success ─────────────────
-  const status = ref('loading')
+  // 一进页面就是 success：有缓存画缓存，没缓存画 0 占位骨架，
+  // 两种情况都必须立刻出完整仪表盘。整页 loading 只在真的无从显示时才会出现，
+  // 而那种情况现在被占位骨架兜住了，所以 status 的 loading 分支基本不再触发。
+  const status = ref('success')
   const errorTitle = ref('')
   const errorDesc = ref('')
+
+  // 后台是否正在拉数据。右上角刷新按钮的旋转绑定这个值 ——
+  // 首屏自动拉、定时拉、手动点，三种来源共用一个旋转动画，
+  // 而不是各自维护一份「我在转」的局部状态。
+  const isFetching = ref(false)
 
   // 每次成功渲染自增，用于重建 DOM 以重放 fadeUp 动画
   const renderKey = ref(0)
   // 底部“数据来源”提示中的更新时间
   const lastUpdated = ref('')
+
+  // 上次成功拉到天气的时刻（毫秒）。定时刷新用它做节流判断。
+  // 有缓存时从缓存的 savedAt 起算 —— 刚打开页面、数据是 30 秒前的，
+  // 不该因为「距上次成功已 6 分钟」的误判而立刻再拉一遍。
+  let lastSuccessAt = cached?.savedAt ?? 0
 
   const current = computed(() => data.value?.current ?? null)
   const hourly = computed(() => data.value?.hourly ?? null)
@@ -52,20 +71,31 @@ export const useWeatherStore = defineStore('weather', () => {
   })
 
   // ─── 状态切换 ───────────────────────────────────────────
-  function showLoading() {
-    status.value = 'loading'
-  }
-
+  // 没有 showLoading 了：页面一进来就是完整仪表盘，不存在「整页 loading」这个态。
+  // showError 只留给「连坐标都拿不到、屏幕上真的一无所有」那一种情况。
   function showError(title, desc) {
     errorTitle.value = title
     errorDesc.value = desc
     status.value = 'error'
   }
 
-  function showContent() {
+  // 成功落地的统一出口：刷时间戳、记下这次成功的时刻并落盘。
+  // 不再负责切 status —— 页面始终是 success，注入数据即可。
+  function commitWeather() {
     renderKey.value += 1
     lastUpdated.value = new Date().toLocaleString('zh-CN')
+    lastSuccessAt = Date.now()
     status.value = 'success'
+    writeWeatherCache({
+      data: data.value,
+      place: {
+        lat: lat.value,
+        lon: lon.value,
+        cityName: cityName.value,
+        cityDetail: cityDetail.value,
+        locationSource: locationSource.value,
+      },
+    })
   }
 
   // 空气质量拿不到不该影响整页：超时/网络错误一律降级为 null，由卡片显示「暂无数据」
@@ -129,27 +159,89 @@ export const useWeatherStore = defineStore('weather', () => {
     loadAlerts(provinceOf(cityDetail.value), cityName.value, true)
   }
 
+  // ─── 主天气统一落地 ─────────────────────────────────────
+  // 只有这一处碰 data 与 isFetching，四条入口（定位 / 搜索 / 候选 / 刷新）都走它，
+  // 免得每加一个入口就要重复一遍「开旋转 → 拉数据 → 关旋转 → 清错误」。
+  // 失败绝不切整页错误态：仪表盘已经在屏幕上（缓存或占位骨架），
+  // 把它抹掉换成一张错误卡，比保留上一份数据更糟。错误只记进 lastError，
+  // 由底部那行小字提示「数据更新失败」。
+  let fetchToken = 0
+  const lastError = ref('')
+
+  // 地名统一落地：只在 loadMain 拿到数据之后调用一次。
+  // 有缓存时屏幕上正显示着「松滋 19°」，这时若先把标题改成「荆州」，
+  // 就会出现「城市名和数字不是一座城」的错配窗口。
+  function applyPlace(place) {
+    if (!place) return
+    if (place.lat != null) lat.value = place.lat
+    if (place.lon != null) lon.value = place.lon
+    if (place.name) cityName.value = place.name
+    if (place.detail != null) cityDetail.value = place.detail
+    if (place.source != null) locationSource.value = place.source
+  }
+
+  // 解析出来、但因为天气请求失败而没能落地的地名。
+  // 场景：首屏拿到定位坐标并解析出「松滋」，但天气接口超时 → 地名不能落地
+  // （否则会出现「松滋 + 缓存里荆州的数字」）。等下一次请求成功时再补上，
+  // 否则用户会一直看到缓存里的旧城市名，而地图/数字已经是新位置的了。
+  let pendingPlace = null
+
+  async function loadMain(latitude, longitude, { quiet = false, place = null } = {}) {
+    const token = ++fetchToken
+    isFetching.value = true
+    if (place) pendingPlace = place
+    try {
+      const next = await fetchWeather(latitude, longitude)
+      if (token !== fetchToken) return false // 期间又发起了新的请求，这次结果作废
+      data.value = next
+      // 地名与数据必须在同一拍落地：先写数据再写地名会让屏幕短暂显示
+      // 「新数字 + 旧城市名」；而地名在数据没回来时抢先覆盖缓存城市名，
+      // 又会变成「新城市名 + 旧城市的数字」。所以只有成功这一刻才写入。
+      if (pendingPlace) {
+        applyPlace(pendingPlace)
+        pendingPlace = null
+      }
+      lastError.value = ''
+      commitWeather()
+      loadAir(latitude, longitude)
+      refreshAlerts()
+      return true
+    } catch (err) {
+      if (token !== fetchToken) return false
+      // 静默刷新（定时那一轮）失败不留任何痕迹：屏幕上还有上一份好数据，
+      // 悄悄等下一次重试即可；手动刷新/切城市才把原因落到最后一行小字
+      if (!quiet) lastError.value = err?.message || '网络请求失败'
+      return false
+    } finally {
+      if (token === fetchToken) isFetching.value = false
+    }
+  }
+
   // ─── 按城市名加载（本地候选之外的兜底，走地理编码） ─────
   async function loadCity(city) {
     placeToken += 1 // 让尚未返回的定位反查结果失效
-    showLoading()
+    const token = placeToken
+    isFetching.value = true
     try {
       const geo = await geocodeCity(city)
+      if (token !== placeToken) return
+      // 地名不在这里写，交给 loadMain 和数据一起落地
       lat.value = geo.lat
       lon.value = geo.lon
-      cityName.value = geo.name
-      cityDetail.value = formatSearchDetail(geo)
-      locationSource.value = 'search'
-      data.value = await fetchWeather(geo.lat, geo.lon)
-      showContent()
-      loadAir(geo.lat, geo.lon)
-      refreshAlerts()
+      isFetching.value = false
+      await loadMain(geo.lat, geo.lon, {
+        place: {
+          name: geo.name,
+          detail: formatSearchDetail(geo),
+          source: 'search',
+        },
+      })
     } catch (err) {
-      if (err.message === 'CITY_NOT_FOUND') {
-        showError('未找到城市', `未找到「${city}」，请检查城市名称是否正确。`)
-      } else {
-        showError('加载失败', err.message)
-      }
+      isFetching.value = false
+      if (token !== placeToken) return
+      // 城市名打错是用户输入问题，不是「页面挂了」：仪表盘留着，只在最后一行小字说明
+      lastError.value =
+        err.message === 'CITY_NOT_FOUND' ? `未找到「${city}」` : err.message || '加载失败'
     }
   }
 
@@ -157,20 +249,12 @@ export const useWeatherStore = defineStore('weather', () => {
   // place: placeSearch 的候选条目 { name, detail, lat, lon }
   async function loadPlace(place) {
     placeToken += 1
-    showLoading()
-    try {
-      lat.value = place.lat
-      lon.value = place.lon
-      cityName.value = place.name
-      cityDetail.value = place.detail
-      locationSource.value = 'search'
-      data.value = await fetchWeather(place.lat, place.lon)
-      showContent()
-      loadAir(place.lat, place.lon)
-      refreshAlerts()
-    } catch (err) {
-      showError('加载失败', err.message)
-    }
+    lat.value = place.lat
+    lon.value = place.lon
+    // 地名同样交给 loadMain：切城市时先把标题换掉，会有一瞬间标题是B、数字还是A
+    await loadMain(place.lat, place.lon, {
+      place: { name: place.name, detail: place.detail, source: 'search' },
+    })
   }
 
   // ─── 地点名解析 ─────────────────────────────────────────
@@ -208,8 +292,8 @@ export const useWeatherStore = defineStore('weather', () => {
 
   // ─── 浏览器定位加载 ─────────────────────────────────────
   async function loadByGeolocation() {
-    showLoading()
     const token = ++placeToken
+    isFetching.value = true
     try {
       const pos = await new Promise((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, {
@@ -222,49 +306,70 @@ export const useWeatherStore = defineStore('weather', () => {
       lat.value = pos.coords.latitude
       lon.value = pos.coords.longitude
 
-      // 天气与地名同时请求，全部就绪后一次性渲染，避免先坐标后地名的闪烁。
-      // 空气质量不在此列：它慢得多，让它单独补（见 loadAir 的注释）
-      const [weather, place] = await Promise.all([
-        fetchWeather(lat.value, lon.value),
-        resolvePlace(lat.value, lon.value),
-      ])
-
-      // 等待期间若已切换到别的城市，丢弃这次结果
+      // 地名走本地行政区表，基本 0 毫秒；与天气并行没有意义，先拿地名再拉天气
+      const place = await resolvePlace(lat.value, lon.value)
       if (token !== placeToken) return
 
-      data.value = weather
-      cityName.value = place.text
-      cityDetail.value = place.detail
-      locationSource.value = place.source
-      showContent()
-      loadAir(lat.value, lon.value)
-      refreshAlerts()
+      // 地名先挂起、不写入 —— 有缓存时屏幕上正显示着「松滋 19°」，
+      // 这时把标题改成「荆州」而数字还是松滋的，会出现「城市名和数字不是一座城」。
+      // 交给 loadMain：数据与地名在同一拍落地。
+      isFetching.value = false
+      await loadMain(lat.value, lon.value, {
+        place: { name: place.text, detail: place.detail, source: place.source },
+      })
     } catch (err) {
+      isFetching.value = false
       if (token !== placeToken) return
-      if (err.code === 1) {
-        showError('定位已关闭', '请在浏览器设置中允许定位，或手动搜索城市名称。')
-      } else if (err.code === 2) {
-        showError('定位失败', '无法获取位置信息，请手动搜索城市。')
-      } else if (err.code === 3) {
-        showError('定位超时', '定位请求超时，请手动搜索城市。')
+      const reason =
+        err.code === 1
+          ? ['定位已关闭', '请在浏览器设置中允许定位，或手动搜索城市名称。']
+          : err.code === 2
+            ? ['定位失败', '无法获取位置信息，请手动搜索城市。']
+            : err.code === 3
+              ? ['定位超时', '定位请求超时，请手动搜索城市。']
+              : ['数据加载失败', err.message || '网络请求失败，请稍后重试。']
+      // 只有连坐标都没拿到、屏幕上又没有任何可画的东西时才整页报错；
+      // 否则仪表盘已经有缓存或占位骨架，错误降到小字位置即可
+      if (lat.value == null) {
+        showError(reason[0], reason[1])
       } else {
-        showError('数据加载失败', err.message || '网络请求失败，请稍后重试。')
+        lastError.value = reason[0]
       }
     }
   }
 
-  // ─── 刷新 ───────────────────────────────────────────────
-  async function refresh() {
+  // ─── 刷新（手动 / 定时共用） ─────────────────────────────
+  // 不再切整页 loading：数据原地替换，用户只看到数字自己变了。
+  async function refresh({ quiet = false } = {}) {
+    if (lat.value == null || lon.value == null) return false
+    return loadMain(lat.value, lon.value, { quiet })
+  }
+
+  // ─── 6 分钟自动刷新（节流） ─────────────────────────────
+  // 规则：距上次成功满 6 分钟才真正请求。每分钟醒一次做判断，
+  // 所以是「数据超过 6 分钟就补一枪」，不是「每 6 分钟硬拉一次」。
+  // 页面在后台不请求；切回前台那一拍会立刻补上（此时差值早已超过阈值）。
+  const REFRESH_MIN_MS = 6 * 60 * 1000
+  const TICK_MS = 60 * 1000
+  let autoTimer = null
+
+  function maybeAutoRefresh() {
     if (lat.value == null || lon.value == null) return
-    showLoading()
-    try {
-      data.value = await fetchWeather(lat.value, lon.value)
-      showContent()
-      loadAir(lat.value, lon.value)
-      refreshAlerts()
-    } catch (err) {
-      showError('数据加载失败', err.message + '。请下拉刷新重试。')
-    }
+    if (isFetching.value) return
+    if (typeof document !== 'undefined' && document.hidden) return
+    if (Date.now() - lastSuccessAt < REFRESH_MIN_MS) return
+    refresh({ quiet: true })
+  }
+
+  function startAutoRefresh() {
+    if (autoTimer != null) return
+    autoTimer = setInterval(maybeAutoRefresh, TICK_MS)
+  }
+
+  function stopAutoRefresh() {
+    if (autoTimer == null) return
+    clearInterval(autoTimer)
+    autoTimer = null
   }
 
   // ─── 错误页重试 ─────────────────────────────────────────
@@ -290,6 +395,8 @@ export const useWeatherStore = defineStore('weather', () => {
     status,
     errorTitle,
     errorDesc,
+    isFetching,
+    lastError,
     renderKey,
     lastUpdated,
     current,
@@ -302,5 +409,7 @@ export const useWeatherStore = defineStore('weather', () => {
     refresh,
     retry,
     retryAlerts,
+    startAutoRefresh,
+    stopAutoRefresh,
   }
 })

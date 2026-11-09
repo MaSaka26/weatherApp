@@ -1,5 +1,5 @@
 <script setup>
-import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { useWeatherStore } from '@/stores/weather'
 
@@ -7,7 +7,6 @@ import SkyBackground from '@/components/SkyBackground.vue'
 import RefreshButton from '@/components/RefreshButton.vue'
 import SettingsButton from '@/components/SettingsButton.vue'
 import SearchBar from '@/components/SearchBar.vue'
-import LoadingState from '@/components/LoadingState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import CurrentWeather from '@/components/CurrentWeather.vue'
 import DetailCards from '@/components/DetailCards.vue'
@@ -53,8 +52,16 @@ function openRadar() {
 }
 
 onMounted(() => {
-  // 进入页面先尝试浏览器定位，失败则提示手动搜索
+  // 进页面先尝试浏览器定位，失败则提示手动搜索。
+  // 注意这里不等数据：模板已经用缓存（或 0 占位骨架）画好了完整仪表盘，
+  // 数据回来只是把数字替换掉。
   store.loadByGeolocation()
+  // 每分钟检查一次「距上次成功是否已满 6 分钟」，满足才真正请求 —— 节流在这里
+  store.startAutoRefresh()
+})
+
+onBeforeUnmount(() => {
+  store.stopAutoRefresh()
 })
 </script>
 
@@ -68,17 +75,17 @@ onMounted(() => {
       <SettingsButton />
     </div>
 
-    <LoadingState v-if="store.status === 'loading'" />
-
+    <!-- 只有「连坐标都拿不到、屏幕上连占位骨架都没有」时才整页报错。
+         正常路径下 status 恒为 success，仪表盘从第一帧就在。 -->
     <ErrorState
-      v-else-if="store.status === 'error'"
+      v-if="store.status === 'error'"
       :title="store.errorTitle"
       :desc="store.errorDesc"
       @retry="store.retry"
     />
 
     <div
-      v-else-if="store.status === 'success'"
+      v-else
       :key="store.renderKey"
       class="weather-content active"
     >
@@ -121,7 +128,13 @@ onMounted(() => {
 
       <LifeIndex v-if="store.current" :current="store.current" :daily="store.daily" :air="store.air" />
 
-      <div class="location-hint">数据来源: Open-Meteo · {{ store.lastUpdated }}</div>
+      <!-- 失败不再抹掉整页：数据更新失败时保留上一份数据，只在这一行说明。
+           「占位中」表示屏幕上还是 0 骨架，从没拿到过真数据。 -->
+      <div class="location-hint" :class="{ 'hint-warn': store.lastError }">
+        <template v-if="store.lastError">数据更新失败 · {{ store.lastError }}</template>
+        <template v-else-if="!store.lastUpdated">正在获取天气与位置…</template>
+        <template v-else>数据来源: Open-Meteo · {{ store.lastUpdated }}</template>
+      </div>
     </div>
   </div>
 
