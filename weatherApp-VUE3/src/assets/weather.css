@@ -789,6 +789,23 @@ body {
   stroke: none;
   filter: drop-shadow(0 1px 2px var(--shadow-color));
 }
+/* 指针转向：绕 viewBox 中心旋转，600ms 缓出。
+   只加在 .smooth 上 —— 首帧还没上这个类，指针直接就位，
+   不会出现「刚打开页面指针从 0° 扫过去」的假加载感。
+   transform-origin 配合 transform-box: view-box，50% 50% 才是圆心；
+   少了 transform-box，百分比会相对元素自身包围盒算，指针会绕错点甩出去 */
+.wind-compass .wc-needle-group {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+}
+.wind-compass .wc-needle-group.smooth {
+  transition: transform 600ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .wind-compass .wc-needle-group.smooth {
+    transition: none;
+  }
+}
 
 /* 横线轨道版日出日落：只在「桌面 + 九卡」出现（见下方 @media (min-width:1024px)
    的 .cards-9 段）。九卡时这张卡通两格，宽度富裕，一条横轨 + 光点比抛物线更舒展，

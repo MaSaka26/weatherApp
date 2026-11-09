@@ -48,8 +48,6 @@ export const useWeatherStore = defineStore('weather', () => {
   // 而不是各自维护一份「我在转」的局部状态。
   const isFetching = ref(false)
 
-  // 每次成功渲染自增，用于重建 DOM 以重放 fadeUp 动画
-  const renderKey = ref(0)
   // 底部“数据来源”提示中的更新时间
   const lastUpdated = ref('')
 
@@ -81,8 +79,9 @@ export const useWeatherStore = defineStore('weather', () => {
 
   // 成功落地的统一出口：刷时间戳、记下这次成功的时刻并落盘。
   // 不再负责切 status —— 页面始终是 success，注入数据即可。
+  // 也不动 DOM：数据只通过 current/hourly/daily 这些 computed 传下去，
+  // 由各组件用 useTween 平滑扫到新值。
   function commitWeather() {
-    renderKey.value += 1
     lastUpdated.value = new Date().toLocaleString('zh-CN')
     lastSuccessAt = Date.now()
     status.value = 'success'
@@ -397,7 +396,6 @@ export const useWeatherStore = defineStore('weather', () => {
     errorDesc,
     isFetching,
     lastError,
-    renderKey,
     lastUpdated,
     current,
     hourly,

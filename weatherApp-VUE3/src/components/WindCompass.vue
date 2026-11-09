@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 
 const props = defineProps({
   // 风向角（气象惯例：0 = 正北，90 = 正东，即「风从哪个方位吹来」）
@@ -45,7 +45,24 @@ const ticks = computed(() => {
 
 // 指针照参考图做成「一整根穿过圆心」：箭头指向风吹去的方向（风向 + 180），
 // 尾端的小圆点落在来风那侧（所以「南风」时箭头朝北、圆点在 5 点钟方向）
-const needleAngle = computed(() => ((Number(props.direction) || 0) + 180) % 360)
+//
+// 角度用累加值而不是直接取 0–360：数据每 6 分钟刷新一次，风向常在小范围内来回，
+// 但「350° → 10°」直接换值会让指针倒着甩 340°。这里把差值折到 ±180° 再累加，
+// 指针永远走最短的一边，数值连续，CSS transition 才有平滑可言。
+const targetAngle = computed(() => ((Number(props.direction) || 0) + 180) % 360)
+const shownAngle = ref(targetAngle.value)
+
+watch(targetAngle, (next) => {
+  const prev = shownAngle.value
+  let delta = ((next - prev + 540) % 360) - 180
+  if (delta === -180) delta = 180
+  shownAngle.value = prev + delta
+})
+
+// 首帧不要动画：页面刚画出来时指针应当已经停在正确位置，
+// 而不是从 0° 慢慢扫过去（那看起来像「数据刚加载完」的假象）。
+const ready = ref(false)
+onMounted(() => requestAnimationFrame(() => { ready.value = true }))
 </script>
 
 <template>
@@ -64,7 +81,14 @@ const needleAngle = computed(() => ((Number(props.direction) || 0) + 180) % 360)
       <!-- 指针整组绕圆心旋转：0° 时箭头朝正北。白针穿过小轴心，一眼能看出是根指针。
            箭头尖 r=30、尾点 r=24，都收在方位字（半径 37，字号 11 → 内侧约 31.5）以内，
            针不会顶到「北 / 南」这些字上 -->
-      <g :transform="`rotate(${needleAngle} 50 50)`">
+      <!-- 用 style 里的 CSS transform 而不是 transform 属性：
+           属性变化不会被 CSS transition 补间，只有 CSS 属性才会。
+           transform-box: view-box 让 50% 50% 正好是 viewBox 的中心 -->
+      <g
+        class="wc-needle-group"
+        :class="{ smooth: ready }"
+        :style="{ transform: `rotate(${shownAngle}deg)` }"
+      >
         <line class="wc-needle" x1="50" y1="26" x2="50" y2="74" />
         <path class="wc-head" d="M50 20 55.2 30.6H44.8Z" />
         <circle class="wc-tail" cx="50" cy="74" r="3.2" />

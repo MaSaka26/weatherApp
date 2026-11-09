@@ -84,9 +84,11 @@ onBeforeUnmount(() => {
       @retry="store.retry"
     />
 
+    <!-- 不绑 :key —— 数据到达时只让子组件收到新的 prop，Vue 原地打补丁即可。
+         早先这里绑了 store.renderKey，每次取数成功就 +1，等于把整棵内容树销毁重建，
+         于是页面整体闪一下、fadeUp 重播；数值本该平滑扫到新值，却变成了整页刷新。 -->
     <div
       v-else
-      :key="store.renderKey"
       class="weather-content active"
     >
       <CurrentWeather
