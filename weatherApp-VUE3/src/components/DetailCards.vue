@@ -439,9 +439,8 @@ const dayText = computed(() => {
 })
 
 // 白昼进度也走补间：数据和表盘同时到，四颗表盘扫 1s、日出日落瞬跳会很割裂。
-// 冷启动时首个值是占位符的 0（不扫），真实数据到达才从 0 长到目标刻度；
-// 有缓存时首值已是真实进度，直接落位，不会再「从日出重新走一遍」。
-const { shown: sunPctShown, tween: tweenSun } = useTween(1000, { snapFirst: true })
+// 无论冷启动还是缓存命中，都从 0 长到目标刻度（和表盘同一套规则）。
+const { shown: sunPctShown, tween: tweenSun } = useTween(1000)
 const sunPct = computed(() => sunPctShown.value)
 watch(() => sun.value?.pct ?? 0, (v) => tweenSun(v), { immediate: true })
 

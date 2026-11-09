@@ -49,7 +49,7 @@ const hasValue = computed(() => Number.isFinite(props.value))
 
 // 展示中的数值：从 0 扫到真实值，1s 缓出。和湿度/气压/体感三颗同一个时长，
 // 数据晚到时四颗表盘一起扫过去，不会一颗已经到位、另一颗还在原地
-const { shown, tween } = useTween(1000, { snapFirst: true })
+const { shown, tween } = useTween(1000)
 
 const range = computed(() => (props.max > 0 ? props.max : 11))
 const ratio = computed(() => Math.min(1, Math.max(0, shown.value / range.value)))

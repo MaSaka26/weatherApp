@@ -16,7 +16,7 @@ const props = defineProps({
   label: { type: String, default: '' },
 })
 
-const { shown, tween } = useTween(1000, { snapFirst: true })
+const { shown, tween } = useTween(1000)
 
 const ratio = computed(() => {
   const span = props.max - props.min

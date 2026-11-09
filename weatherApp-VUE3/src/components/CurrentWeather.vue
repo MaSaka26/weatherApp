@@ -17,22 +17,10 @@ const props = defineProps({
 // 大号温度走 useTween：数据注入时数字从占位的 0 扫到真值，而不是整页刷新后突然出现。
 // 显示层额外 Math.round —— useTween 给的是小数，温度只要整数（21.4 显示 21）。
 //
-// 首值直接落位、不补间：有缓存的第二次访问，data 一开始就是缓存里的 19°，
-// 若也走 tween 就会看到「0° → 19°」扫一遍，反而像在加载。
+// 不做首值落位的特例：缓存命中时首个值已是真实的 19°，也从 0 扫过来。
+// 和四颗表盘、日出日落同一套规则 —— 要么一起生长，要么一起瞬跳，不能有的扫有的跳。
 const { shown, tween } = useTween(620)
-let firstTemp = true
-watch(
-  () => props.current?.temperature_2m,
-  (v) => {
-    if (firstTemp) {
-      firstTemp = false
-      shown.value = Number.isFinite(v) ? v : 0
-      return
-    }
-    tween(v)
-  },
-  { immediate: true },
-)
+watch(() => props.current?.temperature_2m, (v) => tween(v), { immediate: true })
 const temp = computed(() => Math.round(shown.value))
 const condition = computed(() => getConditionText(props.current.weather_code))
 </script>

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 
 const props = defineProps({
   // 风向角（气象惯例：0 = 正北，90 = 正东，即「风从哪个方位吹来」）
@@ -50,19 +50,38 @@ const ticks = computed(() => {
 // 但「350° → 10°」直接换值会让指针倒着甩 340°。这里把差值折到 ±180° 再累加，
 // 指针永远走最短的一边，数值连续，CSS transition 才有平滑可言。
 const targetAngle = computed(() => ((Number(props.direction) || 0) + 180) % 360)
-const shownAngle = ref(targetAngle.value)
+const shownAngle = ref(0)
+// 还没拨过针：第一次是从正北（0°）顺时针走到目标刻度
+let firstMove = true
 
-watch(targetAngle, (next) => {
+// 每次转向都把差值折到 ±180° 再累加，指针永远走最短的一边。
+// 只有第一次例外：从 0° 直接加到目标值，方向必然是顺时针 ——
+// 用户要的是「先朝北，然后顺时针转过去」，走最短路径会出现逆时针倒甩。
+function stepTo(next) {
   const prev = shownAngle.value
+  if (firstMove) {
+    firstMove = false
+    shownAngle.value = prev + next
+    return
+  }
   let delta = ((next - prev + 540) % 360) - 180
   if (delta === -180) delta = 180
   shownAngle.value = prev + delta
-})
+}
 
-// 首帧不要动画：页面刚画出来时指针应当已经停在正确位置，
-// 而不是从 0° 慢慢扫过去（那看起来像「数据刚加载完」的假象）。
+watch(targetAngle, stepTo)
+
+// 打开页面时指针从 0° 扫到真实角度，和温度、四颗表盘、日出日落同一套规则：
+// 要么一起生长，要么一起瞬跳。缓存命中时也要扫，不能「啪」地定格。
+// 挂载后要分两拍：先把 .smooth 类落到 DOM 上、让浏览器把 0° 记成起点，
+// 下一拍再改角度，transition 才会真的跑起来（同一次 tick 里改会被合并成一次样式计算）
 const ready = ref(false)
-onMounted(() => requestAnimationFrame(() => { ready.value = true }))
+onMounted(async () => {
+  await nextTick()
+  ready.value = true
+  await nextTick()
+  stepTo(targetAngle.value)
+})
 </script>
 
 <template>
