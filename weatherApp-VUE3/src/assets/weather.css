@@ -258,26 +258,6 @@ body {
   letter-spacing: 1px;
 }
 
-/* ===== Loading ===== */
-.loading-spinner {
-  display: none;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 80px 0;
-  gap: 20px;
-}
-.loading-spinner.active { display: flex; }
-.spinner-ring {
-  width: 44px; height: 44px;
-  border-radius: 50%;
-  border: 3px solid var(--line-1);
-  border-top-color: var(--text-4);
-  animation: spin 0.9s linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-.loading-spinner span { font-size: 15px; color: var(--text-6); font-weight: 300; }
-
 /* ===== Error State ===== */
 .error-message {
   display: none;
@@ -1263,6 +1243,10 @@ body {
   color: var(--text-5);
   letter-spacing: 0.5px;
 }
+
+/* 数据更新失败：仪表盘留在屏幕上，只在最后一行说明。
+   用暖色而不是纯红 —— 页面仍然是可用的，只是这一轮没更新上 */
+.location-hint.hint-warn { color: var(--accent-warm); }
 
 /* ===== Responsive ===== */
 @media (max-width: 480px) {

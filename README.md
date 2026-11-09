@@ -34,6 +34,16 @@ npm run dev        # http://localhost:5173
 
 ## 功能
 
+**打开就是完整页面，没有整页 loading**
+- 输入网址进来直接画出整个仪表盘（六卡 / 逐小时 / 16 天 / 生活指数都在），不再先给一个转圈页等数据
+- 首次访问、本地还没有缓存时，所有数字用 **0 占位**（温度 `0°`、湿度 `0%`、气压 `0`、紫外线与日出日落显示 `—`），骨架结构完整
+- 之后每次打开优先读 `localStorage` 里上一次成功拿到的**主天气 + 位置**（`weather:last-good:v1`，24 小时内有效），所以第二次起连数字都是真的，只是可能比此刻晚几分钟
+- 数据到达后原地注入更新，页面不闪、不重排、不回到顶部
+- 右上角刷新按钮在请求期间旋转图标（`aria-busy`），**点它手动刷新也不会切整页 loading**，屏幕上始终有内容可看
+- 过期自动补拉：每分钟检查一次，距上次成功满 **6 分钟**才真正发请求（节流，不是每 6 分钟硬拉一把）；页面在后台时不请求，切回前台立刻补上
+- 失败降级：数据更新失败不抹掉页面，只在底部那行小字变暖色提示「数据更新失败 · 原因」；只有连定位坐标都拿不到、屏幕上真的一无所有时才整页报错
+- 地名与数据永远**同一拍落地**：切城市时不会出现「新城市名 + 旧城市数字」或「新数字 + 旧城市名」的错配；若首屏天气请求失败，解析出的新地名会挂起，等下一次请求成功才一起生效
+
 **顶部**
 - 实时温度、天气状况、今日最高/最低
 - 右侧时钟：精确到秒的本地时间 + 日期 + 当年第几天
@@ -138,7 +148,7 @@ weatherApp-VUE3/
 ├── src/
 │   ├── api/weather.js          # Open-Meteo 四个接口 + NMC 预警接口封装
 │   ├── assets/
-│   │   ├── weather.css         # 全局样式与设计令牌（1736 行，单文件集中管理）
+│   │   ├── weather.css         # 全局样式与设计令牌（1720 行，单文件集中管理）
 │   │   ├── icons.js            # 23 个 Tabler 图标的 path 数据
 │   │   └── icons/*.svg         # 同上，用于生成 icons.js
 │   ├── components/             # 22 个组件
@@ -155,12 +165,14 @@ weatherApp-VUE3/
 │   │   └── SettingsPanel / SearchBar / SkyBackground …
 │   ├── composables/            # useSettings（设置）、useTween（补间）、useWheelScroll
 │   ├── data/china-places.json  # 本地地名表（111 KB）
-│   ├── stores/weather.js       # Pinia：请求编排 + placeToken 防竞态
+│   ├── stores/weather.js       # Pinia：请求编排 + placeToken 防竞态 + 缓存/节流/占位
 │   ├── utils/
 │   │   ├── lifeIndex.js        # 六大生活指数规则
 │   │   ├── aqi.js              # AQI 六级分档 + PM2.5/PM10 读数
 │   │   ├── rainOutlook.js      # 降水展望（未来多少小时有雨）
 │   │   ├── alertParse.js       # 预警标题解析 + 按城市名判本地
+│   │   ├── weatherCache.js     # 上一次成功的主天气+位置（localStorage，24h TTL）
+│   │   ├── weatherPlaceholder.js # 首次访问的 0 占位骨架数据
 │   │   ├── weatherCodes.js     # WMO 天气码 → 中文 + 昼夜
 │   │   └── placeLookup / placeSearch
 │   └── views/WeatherHome.vue
@@ -203,12 +215,12 @@ weatherApp-VUE3/
 4. **预警只能看到标题，看不到正文**。NMC 详情页没有 CORS 头，浏览器 fetch 读不了「防御指南」全文，只能点开新窗口。另外接口只支持按省筛选，本地判定靠在标题里匹配城市名——如果某条预警的标题写的是上级市台发布、区域串里不含当前城市名，就会被漏掉（保守地少报，不会多报）。
 5. **空气质量只有 AQI / PM2.5 / PM10**，没有 O₃、NO₂、SO₂、CO 的细分展示，也没有分时段预报；中国区无花粉数据（接口返回空），所以也没接。
 6. **降水条目不区分降水类型**。只判断「有没有雨」，没有雨/雪/冻雨的分别文案；强度已用 12 小时柱条展示（`intensities`），但柱条只有粗细高低的档位，没有标出每格对应的具体时刻。
-7. **无 PWA / 离线壳**。没有 Service Worker，断网时整页不可用。
+7. **无 PWA / 离线壳**。没有 Service Worker，断网时首次访问（或缓存已过期）整页不可用：能看到 0 占位骨架，但拉不到数据。24 小时内的缓存能让页面至少画出上一次的天气。
 8. **无自动化测试**。`ui-review/` 里的验证脚本是开发期一次性工具，没有进 CI，也没有单测覆盖 `lifeIndex.js` / `rainOutlook.js` 这些纯函数规则——它们其实是最好测的部分。
 
 ### 工程债
 
-- `weather.css` 单文件 1736 行，全局样式与组件样式混在一起，长期应拆分为设计令牌 + 组件级样式。
+- `weather.css` 单文件 1720 行，全局样式与组件样式混在一起，长期应拆分为设计令牌 + 组件级样式。
 - `RainRadarPreview.vue` 1588 行（已从 2301 行的 Leaflet/RainViewer 版重写精简），帧探测、滚动刷新、预载、双缓冲播放与视图仍在同一 SFC，可抽成 `useRadarPlayer` composable。
 - `ui-review/` 被 `.gitignore` 忽略，验证脚本不进版本库，换机器就丢失。若这些脚本要长期用，应单独放行或移到独立仓库。
 
