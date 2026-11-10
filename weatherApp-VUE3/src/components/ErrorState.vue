@@ -8,7 +8,7 @@ defineEmits(['retry'])
 </script>
 
 <template>
-  <div class="error-message active">
+  <div class="error-message active" role="alert">
     <div class="error-icon">⚠️</div>
     <div class="error-title">{{ title }}</div>
     <div class="error-desc">{{ desc }}</div>

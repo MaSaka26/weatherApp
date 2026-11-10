@@ -13,9 +13,12 @@ import { initSettings } from '@/composables/useSettings'
 initSettings()
 
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch((error) => {
-    console.warn('Service worker registration failed', error)
-  }))
+  window.addEventListener('load', () => {
+    const serviceWorkerUrl = `${import.meta.env.BASE_URL}sw.js`
+    navigator.serviceWorker.register(serviceWorkerUrl).catch((error) => {
+      console.warn('Service worker registration failed', error)
+    })
+  })
 }
 
 const app = createApp(App)

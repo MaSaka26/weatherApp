@@ -10,6 +10,10 @@ import { createTweenClock } from '../src/utils/tweenClock.js'
 import { clearWeatherCache, readWeatherCache, WEATHER_CACHE_KEY, WEATHER_CACHE_TTL_MS, writeWeatherCache } from '../src/utils/weatherCache.js'
 import { requestJson } from '../src/api/weather.js'
 import { getSkyClass } from '../src/utils/weatherCodes.js'
+import { inferLocationMode, shouldAutoLocate } from '../src/utils/locationIntent.js'
+import { isWeatherStale } from '../src/utils/weatherFreshness.js'
+import { getZonedParts } from '../src/utils/timezone.js'
+
 
 test('life indices clearly mark missing weather values', () => {
   const results = buildLifeIndices({})
@@ -188,4 +192,41 @@ test('radar play controls wrap frames, reschedule at selected speed, and pause o
   assert.equal(timers.size, 0)
   player.step(1)
   assert.equal(idx.value, 0)
+})
+
+test('location intent stays manual after an explicit city choice', () => {
+  assert.equal(inferLocationMode(null, 'search'), 'manual')
+  assert.equal(inferLocationMode(null, 'common'), 'manual')
+  assert.equal(inferLocationMode(null, 'county'), 'auto')
+  assert.equal(inferLocationMode('manual', 'county'), 'manual')
+  assert.equal(shouldAutoLocate('manual', 30.1, 120.2), false)
+  assert.equal(shouldAutoLocate('manual', null, null), true)
+  assert.equal(shouldAutoLocate('auto', 30.1, 120.2), true)
+})
+
+test('weather data is marked stale only after the freshness window', () => {
+  const now = 10_000_000
+  assert.equal(isWeatherStale(false, now - 60_000, now), false)
+  assert.equal(isWeatherStale(true, now - 5 * 60_000, now), false)
+  assert.equal(isWeatherStale(true, now - 16 * 60_000, now), true)
+})
+
+test('clock uses the selected city timezone instead of the device timezone', () => {
+  const instant = new Date('2026-11-10T00:00:00Z')
+  assert.deepEqual(getZonedParts(instant, 'Asia/Shanghai'), {
+    year: 2026,
+    month: 11,
+    day: 10,
+    hour: 8,
+    minute: 0,
+    second: 0,
+  })
+  assert.deepEqual(getZonedParts(instant, 'America/Los_Angeles'), {
+    year: 2026,
+    month: 11,
+    day: 9,
+    hour: 16,
+    minute: 0,
+    second: 0,
+  })
 })

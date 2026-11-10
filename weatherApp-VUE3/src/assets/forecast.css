@@ -51,6 +51,22 @@
 .hourly-item.now .hour-time { color: var(--accent); font-weight: 600; }
 .hourly-item.now .hour-temp { color: var(--accent); font-weight: 500; }
 
+/* 无数据时保留明确提示，不用 0° / 无雨的假结论填满界面 */
+.forecast-placeholder {
+  display: grid;
+  min-height: 88px;
+  margin: 0;
+  place-items: center;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius-lg);
+  color: var(--text-6);
+  background: var(--surface-1);
+  font-size: 0.8125rem;
+  text-align: center;
+}
+.daily-view-chart.forecast-placeholder { min-height: var(--daily-view-h); }
+.view-btn:disabled { opacity: 0.38; cursor: not-allowed; }
+
 /* ===== Daily Forecast ===== */
 /* 列表与曲线共用同一高度：切换视图时卡片不会跳高跳矮，超出部分滚动查看 */
 .daily-section {
@@ -230,8 +246,8 @@
 }
 .dc-hint {
   text-align: center;
-  font-size: 0.6875rem;
-  letter-spacing: 0.4px;
+  font-size: 0.75rem;
+  letter-spacing: 0.3px;
   color: var(--text-8);
   padding: 0 0 6px;
 }
@@ -254,7 +270,7 @@
   font-weight: 600;
 }
 .dc-x-date {
-  font-size: 0.625rem;
+  font-size: 0.75rem;
   color: var(--text-8);
   letter-spacing: 0.2px;
 }
@@ -263,7 +279,7 @@
   margin: 1px 0;
 }
 .dc-x-cond {
-  font-size: 0.625rem;
+  font-size: 0.75rem;
   color: var(--text-7);
   transform: scale(0.95);
 }

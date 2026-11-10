@@ -65,7 +65,9 @@ function open(link) {
     </div>
 
     <p v-else-if="showEmpty" class="alert-empty" role="status" aria-live="polite">
-      当前暂无预警信息
+      未匹配到当前城市预警，请以
+      <a href="https://www.nmc.cn/publish/alarm.html" target="_blank" rel="noopener">中央气象台</a>
+      发布为准
     </p>
 
     <!-- 接口失败：一行轻提示 + 只重试预警的刷新按钮。中性灰玻璃，不占用灾害级别配色 -->

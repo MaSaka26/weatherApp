@@ -11,6 +11,8 @@ const rootEl = ref(null)
 const candidates = ref([])
 const open = ref(false)
 const activeIndex = ref(-1)
+const listboxId = 'weather-city-suggest'
+const optionId = (index) => `weather-city-option-${index}`
 
 // 本地查表即查即显，不触发天气搜索；自动搜索已按需求取消
 function refreshCandidates() {
@@ -99,6 +101,12 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocPointerDo
         class="search-input"
         type="text"
         placeholder="搜索城市…"
+        role="combobox"
+        aria-label="搜索城市"
+        aria-autocomplete="list"
+        :aria-expanded="open && candidates.length > 0"
+        :aria-controls="listboxId"
+        :aria-activedescendant="activeIndex >= 0 ? optionId(activeIndex) : undefined"
         autocomplete="off"
         @input="onInput"
         @focus="onFocus"
@@ -114,12 +122,19 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocPointerDo
         ✕
       </button>
 
-      <ul v-if="open && candidates.length" class="search-suggest" role="listbox">
+      <ul
+        v-if="open && candidates.length"
+        :id="listboxId"
+        class="search-suggest"
+        role="listbox"
+        aria-label="城市搜索候选"
+      >
         <!-- pointerdown.prevent：抢在输入框 blur 之前完成选中 -->
         <li
           v-for="(item, i) in candidates"
           :key="`${item.path}:${item.level}`"
           class="suggest-item"
+          :id="optionId(i)"
           :class="{ active: i === activeIndex }"
           role="option"
           :aria-selected="i === activeIndex"

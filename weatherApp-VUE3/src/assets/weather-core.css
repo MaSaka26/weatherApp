@@ -61,6 +61,7 @@
   letter-spacing: -2px;
   animation: fadeUp 0.6s 0.1s ease both;
 }
+.current-temp.placeholder { color: var(--text-6); letter-spacing: 0; }
 .current-temp .deg-symbol {
   font-size: 2.25rem;
   font-weight: 200;
@@ -414,6 +415,7 @@
    尺寸只由 --dial-size 控制；SVG 固定 viewBox 0 0 100 100，外径 100 = 边长 */
 .dial {
   --dial-size: 76px;
+  --dial-icon-size: 40%;
   position: relative;
   width: var(--dial-size);
   height: var(--dial-size);
@@ -443,8 +445,9 @@
   pointer-events: none;
 }
 .dial .d-icon {
-  width: 44%;
-  height: 44%;
+  display: block;
+  width: var(--dial-icon-size);
+  height: var(--dial-icon-size);
   fill: var(--accent);
 }
 .precip-gauge .d-icon { fill: var(--text-0); }
@@ -457,8 +460,8 @@
 }
 /* 气压的方向箭头只要描边，圆头才不会显得像根棍子 */
 .dial .d-icon-arrow {
-  width: 30%;
-  height: 30%;
+  width: var(--dial-icon-size);
+  height: var(--dial-icon-size);
   fill: none;
   stroke: var(--accent);
   stroke-width: 2.4;

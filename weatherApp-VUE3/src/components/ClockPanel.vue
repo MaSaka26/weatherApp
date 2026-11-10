@@ -1,24 +1,32 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
+import { getZonedParts } from '@/utils/timezone'
+
+const props = defineProps({
+  // Open-Meteo 的时区名，例如 Asia/Shanghai。空值表示设备本地时区。
+  timezone: { type: String, default: '' },
+})
+
 const now = ref(new Date())
 let timer = null
 
 const pad = (n) => String(n).padStart(2, '0')
 
-const hoursMinutes = computed(() => `${pad(now.value.getHours())}:${pad(now.value.getMinutes())}`)
-const seconds = computed(() => pad(now.value.getSeconds()))
+const zoned = computed(() => getZonedParts(now.value, props.timezone))
+const hoursMinutes = computed(() => `${pad(zoned.value.hour)}:${pad(zoned.value.minute)}`)
+const seconds = computed(() => pad(zoned.value.second))
 
 const dateLabel = computed(() => {
-  const d = now.value
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
+  const d = zoned.value
+  return `${d.year}年${d.month}月${d.day}日`
 })
 
 // 用 UTC 差值算，避开夏令时 / 时区偏移带来的 ±1 天误差
 const dayOfYear = computed(() => {
-  const d = now.value
-  const startOfYear = Date.UTC(d.getFullYear(), 0, 1)
-  const today = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())
+  const d = zoned.value
+  const startOfYear = Date.UTC(d.year, 0, 1)
+  const today = Date.UTC(d.year, d.month - 1, d.day)
   return Math.round((today - startOfYear) / 86400000) + 1
 })
 
@@ -59,7 +67,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="clock-panel">
+  <div class="clock-panel" :title="timezone ? `${timezone} 当地时间` : '设备本地时间'">
     <div class="clock-time">
       <span class="clock-hm">{{ hoursMinutes }}</span>
       <span class="clock-sec">:{{ seconds }}</span>

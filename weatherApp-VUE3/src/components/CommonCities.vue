@@ -2,7 +2,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 
 defineProps({ cities: { type: Array, default: () => [] } })
-const emit = defineEmits(['select', 'remove'])
+const emit = defineEmits(['select', 'remove', 'locate'])
 const open = ref(false)
 const trigger = ref(null)
 const menu = ref(null)
@@ -25,6 +25,11 @@ function toggleMenu() {
 function selectCity(place) {
   open.value = false
   emit('select', place)
+}
+
+function locate() {
+  open.value = false
+  emit('locate')
 }
 
 function onDocumentPointerDown(event) {
@@ -87,6 +92,13 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <p v-else class="common-cities-empty">搜索并查看城市天气后，会自动加入这里</p>
+      <button class="common-cities-locate" type="button" @click="locate">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+        </svg>
+        使用当前位置
+      </button>
       </div>
     </Transition>
   </div>
@@ -164,4 +176,22 @@ onBeforeUnmount(() => {
 }
 .common-city-remove:hover, .common-city-remove:focus-visible { color: var(--text-0); background: var(--surface-5); }
 .common-cities-empty { margin: 0; padding: 10px; color: var(--text-5); font-size: 0.75rem; line-height: 1.5; }
+.common-cities-locate {
+  display: flex;
+  width: 100%;
+  min-height: 42px;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-sm);
+  color: var(--text-3);
+  background: var(--surface-2);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.common-cities-locate:hover,
+.common-cities-locate:focus-visible { color: var(--text-0); background: var(--surface-4); }
 </style>

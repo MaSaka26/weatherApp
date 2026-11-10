@@ -8,9 +8,11 @@ import { getSkyClass, nowIsDay } from '@/utils/weatherCodes'
 import { readWeatherCache, writeWeatherCache } from '@/utils/weatherCache'
 import { buildPlaceholderWeather } from '@/utils/weatherPlaceholder'
 import { createWeatherLoader } from '@/utils/weatherRequest'
+import { inferLocationMode, shouldAutoLocate } from '@/utils/locationIntent'
+import { isWeatherStale } from '@/utils/weatherFreshness'
 
 export const useWeatherStore = defineStore('weather', () => {
-  // 上一次成功的主天气 + 位置。有就直接拿来当首屏，没有就是 0 占位骨架 ——
+  // 上一次成功的主天气 + 位置。有就直接拿来当首屏，没有就是数值占位骨架 ——
   // 两条路都能立刻画出完整仪表盘，不再有整页 loading。
   const cached = readWeatherCache()
 
@@ -22,6 +24,22 @@ export const useWeatherStore = defineStore('weather', () => {
   const cityDetail = ref(cached?.place?.cityDetail ?? '')
   // 地名来源：county（区县）| city（地级市）| near（就近估算）| search（用户搜索）| common（常用城市）| reverse（境外反查）| coord（坐标）
   const locationSource = ref(cached?.place?.locationSource ?? '')
+  // 自动定位与手动选城是两种用户意图。手动选城后不能在下次打开时又被
+  // 浏览器定位悄悄覆盖；单独的 localStorage 键也让这个选择不依赖天气缓存 TTL。
+  const LOCATION_MODE_KEY = 'weather:location-mode:v1'
+  const locationMode = ref(readLocationMode())
+  function readLocationMode() {
+    try {
+      const saved = localStorage.getItem(LOCATION_MODE_KEY)
+      if (saved === 'auto' || saved === 'manual') return saved
+    } catch { /* Storage may be disabled. */ }
+    // 兼容旧缓存：搜索/常用城市属于手动选择，其余来源按自动定位处理。
+    return inferLocationMode(null, cached?.place?.locationSource)
+  }
+  function persistLocationMode(mode) {
+    locationMode.value = mode
+    try { localStorage.setItem(LOCATION_MODE_KEY, mode) } catch { /* Storage may be disabled. */ }
+  }
   const COMMON_CITIES_KEY = 'weather:common-cities:v1'
   const LEGACY_FAVORITES_KEY = 'weather:favorites:v1'
   const MAX_COMMON_CITIES = 12
@@ -91,7 +109,7 @@ export const useWeatherStore = defineStore('weather', () => {
   const alertRefreshing = ref(false)
 
   // ─── UI 状态：loading | error | success ─────────────────
-  // 一进页面就是 success：有缓存画缓存，没缓存画 0 占位骨架，
+  // 一进页面就是 success：有缓存画缓存，没缓存画数值占位骨架，
   // 两种情况都必须立刻出完整仪表盘。整页 loading 只在真的无从显示时才会出现，
   // 而那种情况现在被占位骨架兜住了，所以 status 的 loading 分支基本不再触发。
   const status = ref('success')
@@ -111,7 +129,16 @@ export const useWeatherStore = defineStore('weather', () => {
   // 上次成功拉到天气的时刻（毫秒）。定时刷新用它做节流判断。
   // 有缓存时从缓存的 savedAt 起算 —— 刚打开页面、数据是 30 秒前的，
   // 不该因为「距上次成功已 6 分钟」的误判而立刻再拉一遍。
-  let lastSuccessAt = cached?.savedAt ?? 0
+  const lastSuccessAt = ref(cached?.savedAt ?? 0)
+  const ageTick = ref(Date.now())
+  const STALE_AFTER_MS = 15 * 60 * 1000
+  const dataAgeMs = computed(() =>
+    lastSuccessAt.value ? Math.max(0, ageTick.value - lastSuccessAt.value) : null,
+  )
+  const isStale = computed(() =>
+    isWeatherStale(hasWeatherData.value, lastSuccessAt.value, ageTick.value, STALE_AFTER_MS),
+  )
+  const autoRefreshFailed = ref(false)
 
   const current = computed(() => data.value?.current ?? null)
   const hourly = computed(() => data.value?.hourly ?? null)
@@ -143,7 +170,9 @@ export const useWeatherStore = defineStore('weather', () => {
     hasWeatherData.value = true
     lastUpdated.value = new Date().toLocaleString('zh-CN')
     showingCachedWeather.value = false
-    lastSuccessAt = Date.now()
+    lastSuccessAt.value = Date.now()
+    ageTick.value = lastSuccessAt.value
+    autoRefreshFailed.value = false
     status.value = 'success'
     writeWeatherCache({
       data: data.value,
@@ -153,6 +182,7 @@ export const useWeatherStore = defineStore('weather', () => {
         cityName: cityName.value,
         cityDetail: cityDetail.value,
         locationSource: locationSource.value,
+        locationMode: locationMode.value,
       },
     })
   }
@@ -236,6 +266,7 @@ export const useWeatherStore = defineStore('weather', () => {
     if (place.name) cityName.value = place.name
     if (place.detail != null) cityDetail.value = place.detail
     if (place.source != null) locationSource.value = place.source
+    if (place.mode === 'auto' || place.mode === 'manual') persistLocationMode(place.mode)
   }
 
   // 解析出来、但因为天气请求失败而没能落地的地名。
@@ -260,6 +291,7 @@ export const useWeatherStore = defineStore('weather', () => {
     },
     onSuccess: (_result, place) => {
       lastError.value = ''
+      autoRefreshFailed.value = false
       if (place?.source === 'search') rememberCommonCity()
       commitWeather()
       // 主天气刷新时保留当前 AQI；换地点才先清空，避免旧城市空气质量短暂挂在新城市下。
@@ -286,20 +318,21 @@ export const useWeatherStore = defineStore('weather', () => {
       const geo = await geocodeCity(city, { signal: controller.signal })
       if (token !== placeToken) return
       placeController = null
-      // 地名不在这里写，交给 loadMain 和数据一起落地
-      lat.value = geo.lat
-      lon.value = geo.lon
-      isFetching.value = false
+      // 地名、坐标与天气数据都在 loadMain 成功后一起落地，避免请求失败时
+      // 出现“标题还是旧城市，但刷新坐标已经变成新城市”的错配。
       await loadMain(geo.lat, geo.lon, {
         place: {
           name: geo.name,
           detail: formatSearchDetail(geo),
           source: 'search',
+          mode: 'manual',
+          lat: geo.lat,
+          lon: geo.lon,
         },
       })
     } catch (err) {
-      isFetching.value = false
       if (token !== placeToken) return
+      isFetching.value = false
       // 城市名打错是用户输入问题，不是「页面挂了」：仪表盘留着，只在最后一行小字说明
       lastError.value =
         err.message === 'CITY_NOT_FOUND' ? `未找到「${city}」` : err.message || '加载失败'
@@ -312,11 +345,16 @@ export const useWeatherStore = defineStore('weather', () => {
     placeToken += 1
     cancelPlaceLookup()
     weatherLoader.cancel()
-    lat.value = place.lat
-    lon.value = place.lon
-    // 地名同样交给 loadMain：切城市时先把标题换掉，会有一瞬间标题是B、数字还是A
+    // 地名、坐标与天气数据一起落地：切城市时先把标题换掉，会有一瞬间标题是B、数字还是A
     await loadMain(place.lat, place.lon, {
-      place: { name: place.name, detail: place.detail, source: 'search' },
+      place: {
+        name: place.name,
+        detail: place.detail,
+        source: 'search',
+        mode: 'manual',
+        lat: place.lat,
+        lon: place.lon,
+      },
     })
   }
 
@@ -325,7 +363,14 @@ export const useWeatherStore = defineStore('weather', () => {
     cancelPlaceLookup()
     weatherLoader.cancel()
     return loadMain(place.lat, place.lon, {
-      place: { name: place.name, detail: place.detail, source: 'common' },
+      place: {
+        name: place.name,
+        detail: place.detail,
+        source: 'common',
+        mode: 'manual',
+        lat: place.lat,
+        lon: place.lon,
+      },
     })
   }
 
@@ -377,23 +422,32 @@ export const useWeatherStore = defineStore('weather', () => {
         })
       })
 
-      lat.value = pos.coords.latitude
-      lon.value = pos.coords.longitude
+      // 用户可能还在定位授权弹窗期间就手动搜索了城市。token 必须在任何
+      // 状态写入之前检查，否则旧定位会在搜索完成后覆盖 lat/lon。
+      if (token !== placeToken) return
+      const nextLat = pos.coords.latitude
+      const nextLon = pos.coords.longitude
 
       // 地名走本地行政区表，基本 0 毫秒；与天气并行没有意义，先拿地名再拉天气
-      const place = await resolvePlace(lat.value, lon.value)
+      const place = await resolvePlace(nextLat, nextLon)
       if (token !== placeToken) return
 
       // 地名先挂起、不写入 —— 有缓存时屏幕上正显示着「松滋 19°」，
       // 这时把标题改成「荆州」而数字还是松滋的，会出现「城市名和数字不是一座城」。
       // 交给 loadMain：数据与地名在同一拍落地。
-      isFetching.value = false
-      await loadMain(lat.value, lon.value, {
-        place: { name: place.text, detail: place.detail, source: place.source },
+      await loadMain(nextLat, nextLon, {
+        place: {
+          name: place.text,
+          detail: place.detail,
+          source: place.source,
+          mode: 'auto',
+          lat: nextLat,
+          lon: nextLon,
+        },
       })
     } catch (err) {
-      isFetching.value = false
       if (token !== placeToken) return
+      isFetching.value = false
       const reason =
         err.code === 1
           ? ['定位已关闭', '请在浏览器设置中允许定位，或手动搜索城市名称。']
@@ -412,6 +466,12 @@ export const useWeatherStore = defineStore('weather', () => {
     }
   }
 
+  // 首屏只在“还没有手动选择”时自动定位；手动城市直接从缓存恢复。
+  async function loadInitialLocation() {
+    if (!shouldAutoLocate(locationMode.value, lat.value, lon.value)) return false
+    return loadByGeolocation()
+  }
+
   // ─── 刷新（手动 / 定时共用） ─────────────────────────────
   // 不再切整页 loading：数据原地替换，用户只看到数字自己变了。
   async function refresh({ quiet = false } = {}) {
@@ -428,22 +488,33 @@ export const useWeatherStore = defineStore('weather', () => {
   let autoTimer = null
 
   function maybeAutoRefresh() {
+    ageTick.value = Date.now()
     if (lat.value == null || lon.value == null) return
     if (isFetching.value) return
     if (typeof document !== 'undefined' && document.hidden) return
-    if (Date.now() - lastSuccessAt < REFRESH_MIN_MS) return
-    refresh({ quiet: true })
+    if (Date.now() - lastSuccessAt.value < REFRESH_MIN_MS) return
+    refresh({ quiet: true }).then((success) => {
+      if (!success && hasWeatherData.value) autoRefreshFailed.value = true
+    })
+  }
+
+  function onVisibilityChange() {
+    ageTick.value = Date.now()
+    if (!document.hidden) maybeAutoRefresh()
   }
 
   function startAutoRefresh() {
     if (autoTimer != null) return
     autoTimer = setInterval(maybeAutoRefresh, TICK_MS)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    maybeAutoRefresh()
   }
 
   function stopAutoRefresh() {
     if (autoTimer == null) return
     clearInterval(autoTimer)
     autoTimer = null
+    document.removeEventListener('visibilitychange', onVisibilityChange)
   }
 
   // ─── 错误页重试 ─────────────────────────────────────────
@@ -464,6 +535,7 @@ export const useWeatherStore = defineStore('weather', () => {
     loadCommonCity,
     cityDetail,
     locationSource,
+    locationMode,
     data,
     hasWeatherData,
     animationEpoch,
@@ -478,6 +550,9 @@ export const useWeatherStore = defineStore('weather', () => {
     lastError,
     lastUpdated,
     showingCachedWeather,
+    dataAgeMs,
+    isStale,
+    autoRefreshFailed,
     current,
     hourly,
     daily,
@@ -485,6 +560,7 @@ export const useWeatherStore = defineStore('weather', () => {
     loadCity,
     loadPlace,
     loadByGeolocation,
+    loadInitialLocation,
     refresh,
     retry,
     retryAlerts,

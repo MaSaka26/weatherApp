@@ -61,6 +61,16 @@ function setCount(n) {
   setSetting('cardCount', n)
 }
 
+async function moveTab(event, direction) {
+  const tabs = [...event.currentTarget.parentElement.querySelectorAll('[role="tab"]')]
+  const index = tabs.indexOf(event.currentTarget)
+  const next = tabs[(index + direction + tabs.length) % tabs.length]
+  if (!next) return
+  setCount(Number(next.dataset.count))
+  await nextTick()
+  next.focus()
+}
+
 // 展开 / 收起动画：纯 CSS 做不到 —— grid 的列数（6 列 → 5 列）与行数一变，
 // 高度是瞬时跳变的，没有可过渡的中间值。这里先量旧高度，DOM 更新后再量新高度，
 // 用 WAAPI 把高度补间出来，同时折叠容器在这段时间里 overflow: hidden。
@@ -297,6 +307,7 @@ const VISIBILITY_TEXT = [
   [Infinity, '极佳'],
 ]
 const visibilityM = computed(() => {
+  if (!props.dataReady) return null
   const v = props.current?.visibility
   return typeof v === 'number' ? v : null
 })
@@ -322,6 +333,7 @@ const PRECIP_TEXT = [
   [Infinity, '暴雨'],
 ]
 const precip = computed(() => {
+  if (!props.dataReady) return null
   const v = props.current?.precipitation
   return typeof v === 'number' ? v : null
 })
@@ -341,6 +353,7 @@ function pick(table, v) {
 
 // 气压取海平面气压，跨海拔可比；站点气压在山城会明显偏低
 const pressure = computed(() => {
+  if (!props.dataReady) return null
   const value = props.current?.pressure_msl
   return Number.isFinite(value) ? Math.round(value) : null
 })
@@ -391,6 +404,7 @@ const HUMIDITY_TEXT = [
   [Infinity, '很潮湿'],
 ]
 const humidity = computed(() => {
+  if (!props.dataReady) return null
   const v = props.current?.relative_humidity_2m
   return typeof v === 'number' ? v : null
 })
@@ -398,6 +412,7 @@ const humidityText = computed(() => pick(HUMIDITY_TEXT, humidity.value))
 
 // 紫外线取当日峰值，比瞬时值更有防晒指导意义（傍晚瞬时值总是接近 0）
 const uvMax = computed(() => {
+  if (!props.dataReady) return null
   const v = props.daily?.uv_index_max?.[0]
   return typeof v === 'number' ? v : null
 })
@@ -426,6 +441,7 @@ function toMinutes(iso) {
 const hhmm = (iso) => (iso || '').slice(11, 16)
 
 const sun = computed(() => {
+  if (!props.dataReady) return null
   const riseIso = props.daily?.sunrise?.[0]
   const setIso = props.daily?.sunset?.[0]
   const rise = toMinutes(riseIso)
@@ -478,22 +494,34 @@ const dot = computed(() => {
       <!-- 和「未来 16 天」的列表 / 曲线同一套外观：首页直接切，不用进设置面板 -->
       <div class="view-switch" role="tablist" aria-label="详情卡数量">
         <button
+          id="details-six-tab"
           type="button"
           role="tab"
           class="view-btn"
+          data-count="6"
           :class="{ active: !showAll }"
           :aria-selected="!showAll"
+          aria-controls="details-card-panel"
+          :tabindex="!showAll ? 0 : -1"
           @click="setCount(6)"
+          @keydown.left.prevent="moveTab($event, -1)"
+          @keydown.right.prevent="moveTab($event, 1)"
         >
           6 张
         </button>
         <button
+          id="details-nine-tab"
           type="button"
           role="tab"
           class="view-btn"
+          data-count="9"
           :class="{ active: showAll }"
           :aria-selected="showAll"
+          aria-controls="details-card-panel"
+          :tabindex="showAll ? 0 : -1"
           @click="setCount(9)"
+          @keydown.left.prevent="moveTab($event, -1)"
+          @keydown.right.prevent="moveTab($event, 1)"
         >
           9 张
         </button>
@@ -501,12 +529,21 @@ const dot = computed(() => {
     </div>
 
     <!-- 折叠容器：动画期间 overflow 收紧，多出来的三张从下方长出 / 向上收回 -->
-    <div ref="foldEl" class="cards-fold" :class="{ folding: animating }">
+    <div
+      id="details-card-panel"
+      ref="foldEl"
+      class="cards-fold"
+      :class="{ folding: animating }"
+      role="tabpanel"
+      :aria-labelledby="showAll ? 'details-nine-tab' : 'details-six-tab'"
+    >
       <div class="details-grid" :class="gridClass">
     <div class="detail-card split">
       <div class="card-main">
         <div class="label">体感</div>
-        <div class="value"><AnimatedNumber :value="feels" /><span class="unit">°</span></div>
+        <div class="value">
+          <AnimatedNumber :value="feels" /><span v-if="feels != null" class="unit">°</span>
+        </div>
       </div>
       <NeedleDial :value="feels" :caption="feelsText" :label="`体感 ${feelsText}`" />
     </div>
@@ -514,7 +551,9 @@ const dot = computed(() => {
     <div class="detail-card split">
       <div class="card-main">
         <div class="label">风速</div>
-        <div class="value"><AnimatedNumber :value="windMs" :decimals="1" /><span class="unit">m/s</span></div>
+        <div class="value">
+          <AnimatedNumber :value="windMs" :decimals="1" /><span v-if="windMs != null" class="unit">m/s</span>
+        </div>
         <div class="wind-direction">{{ windName }}</div>
       </div>
       <WindCompass
@@ -526,7 +565,9 @@ const dot = computed(() => {
     <div class="detail-card split">
       <div class="card-main">
         <div class="label">湿度</div>
-        <div class="value"><AnimatedNumber :value="humidity" /><span class="unit">%</span></div>
+        <div class="value">
+          <AnimatedNumber :value="humidity" /><span v-if="humidity != null" class="unit">%</span>
+        </div>
       </div>
       <DialGauge :value="humidity" :min="0" :max="100" :caption="humidityText" label="湿度">
         <svg class="d-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -566,7 +607,9 @@ const dot = computed(() => {
     <div v-if="displayAll" class="detail-card split precip-card">
       <div class="card-main">
         <div class="label">降水量</div>
-        <div class="value"><AnimatedNumber :value="precip" :decimals="1" /><span class="unit">mm</span></div>
+        <div class="value">
+          <AnimatedNumber :value="precip" :decimals="1" /><span v-if="precip != null" class="unit">mm</span>
+        </div>
       </div>
       <DialGauge
         class="precip-gauge"
@@ -588,7 +631,9 @@ const dot = computed(() => {
     <div v-if="displayAll" class="detail-card split air-card">
       <div class="card-main">
         <div class="label">空气质量</div>
-        <div class="value"><AnimatedNumber :value="air.aqi" /><span class="unit">AQI</span></div>
+        <div class="value">
+          <AnimatedNumber :value="air.aqi" /><span v-if="air.aqi != null" class="unit">AQI</span>
+        </div>
         <!-- PM 两项各占一行：单格宽只有 236px（手机 112px），
              拼成一行「PM2.5 65.7 · PM10 67.1」必然折行，而且会断在 PM10 和数字之间 -->
         <div v-if="pmRows.length" class="air-pm">
@@ -613,7 +658,9 @@ const dot = computed(() => {
     <div v-if="displayAll" class="detail-card split vis-card">
       <div class="card-main">
         <div class="label">能见度</div>
-        <div class="value"><AnimatedNumber :value="visibilityKm" :decimals="1" /><span class="unit">km</span></div>
+        <div class="value">
+          <AnimatedNumber :value="visibilityKm" :decimals="1" /><span v-if="visibilityKm != null" class="unit">km</span>
+        </div>
       </div>
       <DialGauge
         :value="visibilityDial"

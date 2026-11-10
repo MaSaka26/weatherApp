@@ -10,11 +10,20 @@ const props = defineProps({
   cityName: { type: String, default: '' },
   cityDetail: { type: String, default: '' },
   current: { type: Object, required: true },
-  todayHigh: { type: Number, default: 0 },
-  todayLow: { type: Number, default: 0 },
+  todayHigh: { type: Number, default: null },
+  todayLow: { type: Number, default: null },
+  dataReady: { type: Boolean, default: false },
+  timezone: { type: String, default: '' },
 })
 
-const condition = computed(() => getConditionText(props.current.weather_code))
+const readyNumber = (value) =>
+  props.dataReady && Number.isFinite(value) ? value : null
+const temperature = computed(() => readyNumber(props.current?.temperature_2m))
+const high = computed(() => readyNumber(props.todayHigh))
+const low = computed(() => readyNumber(props.todayLow))
+const condition = computed(() =>
+  props.dataReady ? getConditionText(props.current.weather_code) : '天气加载中',
+)
 </script>
 
 <template>
@@ -32,16 +41,19 @@ const condition = computed(() => getConditionText(props.current.weather_code))
 
     <div class="current-body">
       <div class="current-main">
-        <div class="current-temp"><AnimatedNumber :value="current?.temperature_2m" /><span class="deg-symbol">°</span></div>
+        <div class="current-temp" :class="{ placeholder: temperature == null }">
+          <AnimatedNumber :value="temperature" />
+          <span v-if="temperature != null" class="deg-symbol">°</span>
+        </div>
         <div class="current-condition">{{ condition }}</div>
         <div class="current-highlow">
-          <span class="high">最高 <AnimatedNumber :value="todayHigh" />°</span>
+          <span class="high">最高 <AnimatedNumber :value="high" /><template v-if="high != null">°</template></span>
           <span>|</span>
-          <span class="low">最低 <AnimatedNumber :value="todayLow" />°</span>
+          <span class="low">最低 <AnimatedNumber :value="low" /><template v-if="low != null">°</template></span>
         </div>
       </div>
 
-      <ClockPanel />
+      <ClockPanel :timezone="timezone" />
     </div>
   </div>
 </template>
