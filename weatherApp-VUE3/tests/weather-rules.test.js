@@ -6,13 +6,22 @@ import { buildRainOutlook } from '../src/utils/rainOutlook.js'
 import { buildRadarFrames, radarSlot, radarUrl } from '../src/composables/useRadarFrames.js'
 import { createWeatherLoader } from '../src/utils/weatherRequest.js'
 import { createRadarPlayback } from '../src/composables/radarPlayback.js'
+import { createTweenClock } from '../src/utils/tweenClock.js'
 import { clearWeatherCache, readWeatherCache, WEATHER_CACHE_KEY, WEATHER_CACHE_TTL_MS, writeWeatherCache } from '../src/utils/weatherCache.js'
+import { requestJson } from '../src/api/weather.js'
+import { getSkyClass } from '../src/utils/weatherCodes.js'
 
 test('life indices clearly mark missing weather values', () => {
   const results = buildLifeIndices({})
   assert.equal(results.length, 6)
   assert.match(results[0].verdict, /暂无/)
   assert.match(results[1].verdict, /暂无/)
+})
+
+test('sky background stays neutral until real weather data is ready', () => {
+  assert.equal(getSkyClass(0, true, false), 'weather-unknown')
+  assert.equal(getSkyClass(0, true), 'clear-day')
+  assert.equal(getSkyClass(3, true), 'cloudy')
 })
 
 test('rain outlook reports missing data instead of claiming no rain', () => {
@@ -46,21 +55,48 @@ test('radar frames round down to six minute slots and force original quality for
 
 test('weather loader applies only the newest concurrent response', async () => {
   const pending = []
+  const signals = []
   const applied = []
   const finished = []
   const loader = createWeatherLoader({
-    request: (lat) => new Promise((resolve) => pending.push({ lat, resolve })),
+    request: (lat, lon, { signal }) => new Promise((resolve) => {
+      signals.push(signal)
+      pending.push({ lat, resolve })
+    }),
     onApply: (value) => applied.push(value),
     onFinish: () => finished.push(true),
   })
   const oldRequest = loader.load(1, 1)
   const latestRequest = loader.load(2, 2)
+  assert.equal(signals[0].aborted, true)
   pending[1].resolve('latest')
   assert.equal(await latestRequest, true)
   pending[0].resolve('stale')
   assert.equal(await oldRequest, false)
   assert.deepEqual(applied, ['latest'])
   assert.equal(finished.length, 1)
+})
+
+test('all active gauge tweens sample one shared frame at the same progress', () => {
+  const frames = []
+  const clock = createTweenClock({ requestFrame: (callback) => (frames.push(callback), frames.length) })
+  const values = [0, 0]
+  const startedAt = 100
+  for (let index = 0; index < values.length; index += 1) {
+    clock.add({
+      startedAt,
+      duration: 1000,
+      from: 0,
+      to: 100,
+      update: (value) => { values[index] = value },
+    })
+  }
+
+  assert.equal(frames.length, 1)
+  frames.shift()(600)
+  assert.equal(values[0], values[1])
+  assert.equal(values[0], 87.5)
+  assert.equal(clock.size, 2)
 })
 
 test('quiet weather request failures suppress the error callback and clear busy state', async () => {
@@ -74,6 +110,26 @@ test('quiet weather request failures suppress the error callback and clear busy 
   assert.equal(await loader.load(0, 0, { quiet: true }), false)
   assert.equal(failures, 0)
   assert.equal(finishes, 1)
+})
+
+test('API request timeout aborts the underlying fetch and reports a timeout error', async () => {
+  const originalFetch = globalThis.fetch
+  let wasAborted = false
+  globalThis.fetch = (_url, { signal }) => new Promise((_resolve, reject) => {
+    signal.addEventListener('abort', () => {
+      wasAborted = true
+      reject(new DOMException('Aborted', 'AbortError'))
+    }, { once: true })
+  })
+  try {
+    await assert.rejects(
+      requestJson('/slow', { timeoutMs: 5 }),
+      (error) => error.code === 'REQUEST_TIMEOUT',
+    )
+    assert.equal(wasAborted, true)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })
 
 test('weather cache round trips, rejects expired or malformed entries, and clears', () => {

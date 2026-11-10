@@ -71,6 +71,11 @@ export const useWeatherStore = defineStore('weather', () => {
   }
   // 地名请求令牌：新的定位/搜索会让旧的异步结果失效，避免互相覆盖
   let placeToken = 0
+  let placeController = null
+  function cancelPlaceLookup() {
+    placeController?.abort()
+    placeController = null
+  }
 
   // ─── 数据 ───────────────────────────────────────────────
   const data = ref(cached?.data ?? buildPlaceholderWeather())
@@ -99,7 +104,9 @@ export const useWeatherStore = defineStore('weather', () => {
   const isFetching = ref(false)
 
   // 底部“数据来源”提示中的更新时间
-  const lastUpdated = ref('')
+  const formatUpdatedAt = (value) => new Date(value).toLocaleString('zh-CN')
+  const lastUpdated = ref(cached?.savedAt ? formatUpdatedAt(cached.savedAt) : '')
+  const showingCachedWeather = ref(Boolean(cached?.data?.current))
 
   // 上次成功拉到天气的时刻（毫秒）。定时刷新用它做节流判断。
   // 有缓存时从缓存的 savedAt 起算 —— 刚打开页面、数据是 30 秒前的，
@@ -115,7 +122,8 @@ export const useWeatherStore = defineStore('weather', () => {
     if (!c) return ''
     // 城市当地昼夜：优先用接口按太阳高度算的 is_day，缺失时才退回钟点判断
     const isDay = c.is_day != null ? c.is_day === 1 : nowIsDay()
-    return getSkyClass(c.weather_code, isDay)
+    // 占位天气的 weather_code 固定为 0，只为让卡片能完整渲染；不能据此显示晴天天空。
+    return getSkyClass(c.weather_code, isDay, hasWeatherData.value)
   })
 
   // ─── 状态切换 ───────────────────────────────────────────
@@ -134,6 +142,7 @@ export const useWeatherStore = defineStore('weather', () => {
   function commitWeather() {
     hasWeatherData.value = true
     lastUpdated.value = new Date().toLocaleString('zh-CN')
+    showingCachedWeather.value = false
     lastSuccessAt = Date.now()
     status.value = 'success'
     writeWeatherCache({
@@ -268,10 +277,15 @@ export const useWeatherStore = defineStore('weather', () => {
   async function loadCity(city) {
     placeToken += 1 // 让尚未返回的定位反查结果失效
     const token = placeToken
+    cancelPlaceLookup()
+    weatherLoader.cancel()
+    const controller = new AbortController()
+    placeController = controller
     isFetching.value = true
     try {
-      const geo = await geocodeCity(city)
+      const geo = await geocodeCity(city, { signal: controller.signal })
       if (token !== placeToken) return
+      placeController = null
       // 地名不在这里写，交给 loadMain 和数据一起落地
       lat.value = geo.lat
       lon.value = geo.lon
@@ -296,6 +310,8 @@ export const useWeatherStore = defineStore('weather', () => {
   // place: placeSearch 的候选条目 { name, detail, lat, lon }
   async function loadPlace(place) {
     placeToken += 1
+    cancelPlaceLookup()
+    weatherLoader.cancel()
     lat.value = place.lat
     lon.value = place.lon
     // 地名同样交给 loadMain：切城市时先把标题换掉，会有一瞬间标题是B、数字还是A
@@ -306,6 +322,8 @@ export const useWeatherStore = defineStore('weather', () => {
 
   function loadCommonCity(place) {
     placeToken += 1
+    cancelPlaceLookup()
+    weatherLoader.cancel()
     return loadMain(place.lat, place.lon, {
       place: { name: place.name, detail: place.detail, source: 'common' },
     })
@@ -347,6 +365,8 @@ export const useWeatherStore = defineStore('weather', () => {
   // ─── 浏览器定位加载 ─────────────────────────────────────
   async function loadByGeolocation() {
     const token = ++placeToken
+    cancelPlaceLookup()
+    weatherLoader.cancel()
     isFetching.value = true
     try {
       const pos = await new Promise((resolve, reject) => {
@@ -457,6 +477,7 @@ export const useWeatherStore = defineStore('weather', () => {
     isFetching,
     lastError,
     lastUpdated,
+    showingCachedWeather,
     current,
     hourly,
     daily,

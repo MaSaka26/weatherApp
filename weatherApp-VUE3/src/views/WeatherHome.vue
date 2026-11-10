@@ -146,9 +146,20 @@ onBeforeUnmount(() => {
       <!-- 失败不再抹掉整页：数据更新失败时保留上一份数据，只在这一行说明。
            「占位中」表示屏幕上还是 0 骨架，从没拿到过真数据。 -->
       <div class="location-hint" :class="{ 'hint-warn': store.lastError }">
-        <template v-if="!isOnline">离线模式 · 显示上次缓存的天气（{{ store.lastUpdated || '暂无天气缓存' }}）</template>
-        <template v-else-if="store.lastError">数据更新失败 · {{ store.lastError }}</template>
+        <template v-if="!isOnline">
+          <span role="status" aria-live="polite">
+            离线模式 · {{ store.hasWeatherData ? `显示本机天气数据（更新于 ${store.lastUpdated}）` : '暂无可用的本机天气缓存' }}
+          </span>
+        </template>
+        <template v-else-if="store.lastError">
+          <span role="status" aria-live="polite">
+            数据更新失败 · {{ store.lastError }}<template v-if="store.hasWeatherData"> · 继续显示上次成功数据（{{ store.lastUpdated }}）</template>
+          </span>
+        </template>
         <template v-else-if="!store.lastUpdated">正在获取天气与位置…</template>
+        <template v-else-if="store.showingCachedWeather">
+          <span role="status" aria-live="polite">正在更新 · 当前显示缓存天气 · {{ store.lastUpdated }}</span>
+        </template>
         <template v-else>数据来源: Open-Meteo · {{ store.lastUpdated }}</template>
       </div>
     </div>

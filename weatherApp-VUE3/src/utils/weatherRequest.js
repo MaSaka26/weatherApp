@@ -3,12 +3,16 @@
  */
 export function createWeatherLoader({ request, onStart, onApply, onSuccess, onFailure, onFinish }) {
   let requestId = 0
+  let activeController = null
 
   async function load(latitude, longitude, { quiet = false, place = null } = {}) {
     const id = ++requestId
+    activeController?.abort()
+    const controller = new AbortController()
+    activeController = controller
     onStart?.(place)
     try {
-      const result = await request(latitude, longitude)
+      const result = await request(latitude, longitude, { signal: controller.signal })
       if (id !== requestId) return false
       onApply?.(result, place)
       onSuccess?.(result, place)
@@ -18,9 +22,18 @@ export function createWeatherLoader({ request, onStart, onApply, onSuccess, onFa
       if (!quiet) onFailure?.(error)
       return false
     } finally {
-      if (id === requestId) onFinish?.()
+      if (id === requestId) {
+        activeController = null
+        onFinish?.()
+      }
     }
   }
 
-  return { load }
+  function cancel() {
+    requestId += 1
+    activeController?.abort()
+    activeController = null
+  }
+
+  return { load, cancel }
 }

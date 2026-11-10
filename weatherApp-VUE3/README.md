@@ -9,7 +9,8 @@ npm install
 npm run dev      # http://localhost:5173
 npm run build    # 产物在 dist/
 npm run preview  # 预览构建结果
-npm run lint     # oxlint + eslint，必须 0 错
+npm run lint     # 只检查：oxlint + eslint，必须 0 错
+npm run lint:fix # 显式自动修复 lint 问题
 npm test         # 核心天气规则单元测试
 npm run format   # Prettier 格式化 src/
 ```

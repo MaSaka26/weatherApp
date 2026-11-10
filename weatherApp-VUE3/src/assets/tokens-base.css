@@ -149,6 +149,7 @@ body {
    浅色端统一压深一档：原来的 #a8d8ff 这类粉亮色让白色小字对比度只有 1.4:1，
    压深后配合底部暗角，次级文字可回到 4.5:1 以上（见 .sky-bg::before）。 */
 .sky-bg.clear-day { background: linear-gradient(170deg, #0f1b3a 0%, #1b3563 25%, #2c60a0 55%, #4076b8 80%, #4f88c9 100%); }
+.sky-bg.weather-unknown { background: linear-gradient(170deg, #171a21 0%, #20252e 30%, #2b313c 58%, #343b46 82%, #3b424e 100%); }
 .sky-bg.clear-night { background: linear-gradient(170deg, #050812 0%, #0a1028 30%, #141f45 55%, #1a2a5a 80%, #2a3f6a 100%); }
 .sky-bg.cloudy { background: linear-gradient(170deg, #1a1e2e 0%, #2a3045 30%, #3a4256 55%, #4d5468 80%, #5c6379 100%); }
 .sky-bg.rainy { background: linear-gradient(170deg, #0f121f 0%, #1a1f35 30%, #2a3050 55%, #343a5a 80%, #3f4463 100%); }

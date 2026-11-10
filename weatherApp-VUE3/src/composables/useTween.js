@@ -1,26 +1,11 @@
 import { getCurrentInstance, inject, nextTick, onBeforeUnmount, ref } from 'vue'
+import { createTweenClock } from '@/utils/tweenClock'
 
 export const TWEEN_START_AT = Symbol('weather-tween-start-at')
 
-// 所有仪表盘补间共用一条 rAF 时钟。多张卡同时启动时，逐实例各跑一条 rAF
-// 会在每帧重复调度与刷新响应式组件；集中计算可让 Vue 在同一帧合并更新。
-const activeTweens = new Set()
-let sharedRaf = 0
+// 所有仪表盘补间共用一条 rAF 时钟，同一帧统一采样，避免卡片各自错拍。
+const tweenClock = createTweenClock()
 let sharedFirstStartAt = null
-
-function tickTweens(now) {
-  sharedRaf = 0
-  for (const animation of activeTweens) {
-    const progress = Math.min(1, Math.max(0, (now - animation.startedAt) / animation.duration))
-    animation.update(animation.from + (animation.to - animation.from) * (1 - Math.pow(1 - progress, 3)))
-    if (progress >= 1) activeTweens.delete(animation)
-  }
-  if (activeTweens.size) sharedRaf = requestAnimationFrame(tickTweens)
-}
-
-function scheduleTweens() {
-  if (!sharedRaf && activeTweens.size) sharedRaf = requestAnimationFrame(tickTweens)
-}
 
 /**
  * 仪表盘的首个补间共用起跑时刻，避免每个组件按不同祖先动画各自延迟。
@@ -69,7 +54,7 @@ export function useTween(duration = 1000, initialValue = 0) {
   let queued = null
 
   function cancelCurrent() {
-    if (animation) activeTweens.delete(animation)
+    if (animation) tweenClock.remove(animation)
     animation = null
     if (timer) clearTimeout(timer)
     timer = 0
@@ -89,11 +74,10 @@ export function useTween(duration = 1000, initialValue = 0) {
   }
 
   function run(to, startedAt = performance.now()) {
-    if (animation) activeTweens.delete(animation)
+    if (animation) tweenClock.remove(animation)
     const from = shown.value
     animation = { startedAt, duration, from, to, update: (value) => { shown.value = value } }
-    activeTweens.add(animation)
-    scheduleTweens()
+    tweenClock.add(animation)
   }
 
   function dataEpoch() {
