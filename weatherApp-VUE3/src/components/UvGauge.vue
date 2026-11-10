@@ -1,7 +1,8 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
-import { useTween } from '@/composables/useTween'
+import { useRingProgress } from '@/composables/useWeatherAnimations'
+import AnimatedNumber from '@/components/AnimatedNumber.vue'
 
 const props = defineProps({
   // 紫外线指数（取当日峰值）；null = 还没有数据
@@ -47,12 +48,9 @@ const stops = ref(STOPS.map((s) => ({ pos: s.pos, rgb: hexToRgb(s.fallback) })))
 
 const hasValue = computed(() => Number.isFinite(props.value))
 
-// 展示中的数值：从 0 扫到真实值，1s 缓出。和湿度/气压/体感三颗同一个时长，
-// 数据晚到时四颗表盘一起扫过去，不会一颗已经到位、另一颗还在原地
-const { shown, tween } = useTween(1000)
-
 const range = computed(() => (props.max > 0 ? props.max : 11))
-const ratio = computed(() => Math.min(1, Math.max(0, shown.value / range.value)))
+const { value: ratio } = useRingProgress(() => props.value, 0, () => range.value)
+const animatedValue = computed(() => (hasValue.value ? props.value : null))
 
 function colorAt(p) {
   const list = stops.value
@@ -114,7 +112,6 @@ const dotPos = computed(() => polar(ratio.value))
 // 每实例一个 id：万一以后同页放两个表盘，裁剪也不会互相抢
 const clipId = `uv-clip-${Math.random().toString(36).slice(2, 8)}`
 
-const valueText = computed(() => (hasValue.value ? shown.value.toFixed(1) : '—'))
 const ariaLabel = computed(() =>
   hasValue.value ? `紫外线指数 ${props.value.toFixed(1)}` : '紫外线暂无数据',
 )
@@ -126,13 +123,7 @@ onMounted(() => {
     pos: s.pos,
     rgb: hexToRgb(cs.getPropertyValue(s.token).trim() || s.fallback),
   }))
-  tween(hasValue.value ? props.value : 0)
 })
-
-watch(
-  () => props.value,
-  (v) => tween(Number.isFinite(v) ? v : 0),
-)
 </script>
 
 <template>
@@ -181,7 +172,7 @@ watch(
         :fill="colorAt(ratio)"
       />
     </svg>
-    <span class="g-value">{{ valueText }}</span>
+    <AnimatedNumber class="g-value" :value="animatedValue" :decimals="1" />
     <span v-if="title" class="g-title" aria-hidden="true">{{ title }}</span>
   </div>
 </template>

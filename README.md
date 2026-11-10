@@ -26,6 +26,7 @@ npm run dev        # http://localhost:5173
 | `npm run build` | 生产构建到 `dist/` |
 | `npm run preview` | 预览生产构建 |
 | `npm run lint` | oxlint + eslint，**必须 0 错** |
+| `npm test` | 运行 Node 内置测试，覆盖生活指数、降水展望与雷达帧规则 |
 | `npm run format` | Prettier 格式化 `src/` |
 
 > 环境要求：Node `^22.18.0 || >=24.12.0`。
@@ -217,8 +218,8 @@ weatherApp-VUE3/
 4. **预警只能看到标题，看不到正文**。NMC 详情页没有 CORS 头，浏览器 fetch 读不了「防御指南」全文，只能点开新窗口。另外接口只支持按省筛选，本地判定靠在标题里匹配城市名——如果某条预警的标题写的是上级市台发布、区域串里不含当前城市名，就会被漏掉（保守地少报，不会多报）。
 5. **空气质量只有 AQI / PM2.5 / PM10**，没有 O₃、NO₂、SO₂、CO 的细分展示，也没有分时段预报；中国区无花粉数据（接口返回空），所以也没接。
 6. **降水条目不区分降水类型**。只判断「有没有雨」，没有雨/雪/冻雨的分别文案；强度已用 12 小时柱条展示（`intensities`），但柱条只有粗细高低的档位，没有标出每格对应的具体时刻。
-7. **无 PWA / 离线壳**。没有 Service Worker，断网时首次访问（或缓存已过期）整页不可用：能看到 0 占位骨架，但拉不到数据。24 小时内的缓存能让页面至少画出上一次的天气。
-8. **无自动化测试**。`ui-review/` 里的验证脚本是开发期一次性工具，没有进 CI，也没有单测覆盖 `lifeIndex.js` / `rainOutlook.js` 这些纯函数规则——它们其实是最好测的部分。
+7. **离线能力有限**。Service Worker 会缓存应用外壳和构建资源，天气可显示 24 小时内的本地缓存；首次打开前必须先联网，天气 API、预警和实时雷达仍需网络。
+8. **测试覆盖仍有限**。自动化测试覆盖生活指数、降水展望、雷达播放控制、天气请求竞态与缓存；完整浏览器端交互仍建议后续补充端到端测试。
 
 ### 工程债
 
@@ -235,6 +236,14 @@ weatherApp-VUE3/
 - [雷达 demo 技术规格](weatherApp-VUE3/docs/radar-demo-spec.md) —— 15 行技术契约、5 条 ADR、15 条审查清单。**记录的是早期 RainViewer + Leaflet 版 demo**，正式组件已改为 NMC 整图，仅作历史参考
 - [生活指数结果对照表](weatherApp-VUE3/docs/life-index-catalog.html) —— 54 种可能结果 × 对应图标，单文件可开
 - [雷达回放 demo](weatherApp-VUE3/docs/radar-demo.html) —— 独立单文件、双击即开的开发期验证页（含 RainViewer 地图版与 NMC 整图版切换），**不是正式组件用的实现**
+
+## 工程增强
+
+- 收藏城市保存在本机，可从顶部常用城市菜单快速切换。
+- 生产环境注册 Service Worker，预缓存应用 HTML 与构建资源；离线时可打开已缓存应用，并显示天气缓存时间。天气 API 与实时雷达仍需联网。
+- 核心规则测试通过 `npm test` 运行；GitHub Actions 会在推送与 PR 时运行测试、lint 和生产构建。
+- 全局样式入口保留在 `weatherApp-VUE3/src/assets/weather.css`，按基础令牌/页面区块/预报/响应式规则拆分到相邻文件。
+- 雷达帧时间取整、URL 与时间轴组装抽到 `weatherApp-VUE3/src/composables/useRadarFrames.js`，播放器与 UI 仍由 `RainRadarPreview.vue` 管理。
 
 ---
 

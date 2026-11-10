@@ -7,6 +7,7 @@ import { lookupPlace } from '@/utils/placeLookup'
 import { getSkyClass, nowIsDay } from '@/utils/weatherCodes'
 import { readWeatherCache, writeWeatherCache } from '@/utils/weatherCache'
 import { buildPlaceholderWeather } from '@/utils/weatherPlaceholder'
+import { createWeatherLoader } from '@/utils/weatherRequest'
 
 export const useWeatherStore = defineStore('weather', () => {
   // 上一次成功的主天气 + 位置。有就直接拿来当首屏，没有就是 0 占位骨架 ——
@@ -19,13 +20,62 @@ export const useWeatherStore = defineStore('weather', () => {
   const cityName = ref(cached?.place?.cityName ?? '')
   // 城市名下方的行政归属（省 · 市），让“松滋”这类县级地名有坐标感
   const cityDetail = ref(cached?.place?.cityDetail ?? '')
-  // 地名来源：county（区县）| city（地级市）| near（就近估算）| search（用户搜索）| reverse（境外反查）| coord（坐标）
+  // 地名来源：county（区县）| city（地级市）| near（就近估算）| search（用户搜索）| common（常用城市）| reverse（境外反查）| coord（坐标）
   const locationSource = ref(cached?.place?.locationSource ?? '')
+  const COMMON_CITIES_KEY = 'weather:common-cities:v1'
+  const LEGACY_FAVORITES_KEY = 'weather:favorites:v1'
+  const MAX_COMMON_CITIES = 12
+  const commonCities = ref(readCommonCities())
+  function readCommonCities() {
+    try {
+      const saved = localStorage.getItem(COMMON_CITIES_KEY)
+      const legacy = saved == null ? localStorage.getItem(LEGACY_FAVORITES_KEY) : null
+      const list = JSON.parse(saved ?? legacy ?? '[]')
+      const valid = Array.isArray(list)
+        ? list.filter((item) => item && Number.isFinite(item.lat) && Number.isFinite(item.lon))
+        : []
+      if (saved == null && legacy != null) {
+        localStorage.setItem(COMMON_CITIES_KEY, JSON.stringify(valid.slice(0, MAX_COMMON_CITIES)))
+      }
+      return valid.slice(0, MAX_COMMON_CITIES)
+    } catch { return [] }
+  }
+  function persistCommonCities() {
+    try { localStorage.setItem(COMMON_CITIES_KEY, JSON.stringify(commonCities.value)) } catch { /* Storage may be disabled. */ }
+  }
+  function rememberCommonCity(place = {
+    name: cityName.value,
+    detail: cityDetail.value,
+    lat: lat.value,
+    lon: lon.value,
+  }) {
+    if (!place || !Number.isFinite(place.lat) || !Number.isFinite(place.lon)) return
+    const key = `${place.lat},${place.lon}`
+    const item = {
+      name: place.name || '未知城市',
+      detail: place.detail || '',
+      lat: place.lat,
+      lon: place.lon,
+    }
+    commonCities.value = [
+      item,
+      ...commonCities.value.filter((city) => `${city.lat},${city.lon}` !== key),
+    ].slice(0, MAX_COMMON_CITIES)
+    persistCommonCities()
+  }
+  function removeCommonCity(place) {
+    if (!place) return
+    const key = `${place.lat},${place.lon}`
+    commonCities.value = commonCities.value.filter((city) => `${city.lat},${city.lon}` !== key)
+    persistCommonCities()
+  }
   // 地名请求令牌：新的定位/搜索会让旧的异步结果失效，避免互相覆盖
   let placeToken = 0
 
   // ─── 数据 ───────────────────────────────────────────────
   const data = ref(cached?.data ?? buildPlaceholderWeather())
+  const hasWeatherData = ref(Boolean(cached?.data?.current))
+  const animationEpoch = ref(null)
   // 空气质量是独立接口，可能拿不到，单独存放、不阻塞主流程
   const air = ref(null)
   // 本地天气预警：{ list, top, total }。没有预警时 list 为空，界面整块隐藏
@@ -82,6 +132,7 @@ export const useWeatherStore = defineStore('weather', () => {
   // 也不动 DOM：数据只通过 current/hourly/daily 这些 computed 传下去，
   // 由各组件用 useTween 平滑扫到新值。
   function commitWeather() {
+    hasWeatherData.value = true
     lastUpdated.value = new Date().toLocaleString('zh-CN')
     lastSuccessAt = Date.now()
     status.value = 'success'
@@ -111,9 +162,9 @@ export const useWeatherStore = defineStore('weather', () => {
   // 放一起等，等于让首屏白等两秒多；放超时短一点，又会整块数据丢失（曾因此一直显示「暂无」）。
   // 现在先渲染天气，AQI 到了再由响应式补上，用户感知是「卡片稍后填数」，不是「页面卡住」。
   let airToken = 0
-  async function loadAir(latitude, longitude) {
+  async function loadAir(latitude, longitude, { clear = true } = {}) {
     const token = ++airToken
-    air.value = null // 换城市时先清空，避免上一座城市的 AQI 挂在新城市名下
+    if (clear) air.value = null // 切城市时清空；同城刷新保留旧值，避免表盘先退回 0
     const next = await fetchAirSafe(latitude, longitude)
     if (token !== airToken) return // 期间又切了城市，这次结果作废
     air.value = next
@@ -164,7 +215,6 @@ export const useWeatherStore = defineStore('weather', () => {
   // 失败绝不切整页错误态：仪表盘已经在屏幕上（缓存或占位骨架），
   // 把它抹掉换成一张错误卡，比保留上一份数据更糟。错误只记进 lastError，
   // 由底部那行小字提示「数据更新失败」。
-  let fetchToken = 0
   const lastError = ref('')
 
   // 地名统一落地：只在 loadMain 拿到数据之后调用一次。
@@ -185,36 +235,34 @@ export const useWeatherStore = defineStore('weather', () => {
   // 否则用户会一直看到缓存里的旧城市名，而地图/数字已经是新位置的了。
   let pendingPlace = null
 
-  async function loadMain(latitude, longitude, { quiet = false, place = null } = {}) {
-    const token = ++fetchToken
-    isFetching.value = true
-    if (place) pendingPlace = place
-    try {
-      const next = await fetchWeather(latitude, longitude)
-      if (token !== fetchToken) return false // 期间又发起了新的请求，这次结果作废
+  const weatherLoader = createWeatherLoader({
+    request: fetchWeather,
+    onStart: (place) => {
+      isFetching.value = true
+      if (place) pendingPlace = place
+    },
+    onApply: (next) => {
+      animationEpoch.value = performance.now()
       data.value = next
-      // 地名与数据必须在同一拍落地：先写数据再写地名会让屏幕短暂显示
-      // 「新数字 + 旧城市名」；而地名在数据没回来时抢先覆盖缓存城市名，
-      // 又会变成「新城市名 + 旧城市的数字」。所以只有成功这一刻才写入。
       if (pendingPlace) {
         applyPlace(pendingPlace)
         pendingPlace = null
       }
+    },
+    onSuccess: (_result, place) => {
       lastError.value = ''
+      if (place?.source === 'search') rememberCommonCity()
       commitWeather()
-      loadAir(latitude, longitude)
+      // 主天气刷新时保留当前 AQI；换地点才先清空，避免旧城市空气质量短暂挂在新城市下。
+      loadAir(lat.value, lon.value, { clear: place != null })
       refreshAlerts()
-      return true
-    } catch (err) {
-      if (token !== fetchToken) return false
-      // 静默刷新（定时那一轮）失败不留任何痕迹：屏幕上还有上一份好数据，
-      // 悄悄等下一次重试即可；手动刷新/切城市才把原因落到最后一行小字
-      if (!quiet) lastError.value = err?.message || '网络请求失败'
-      return false
-    } finally {
-      if (token === fetchToken) isFetching.value = false
-    }
-  }
+    },
+    onFailure: (error) => {
+      lastError.value = error?.message || '网络请求失败'
+    },
+    onFinish: () => { isFetching.value = false },
+  })
+  const loadMain = (latitude, longitude, options) => weatherLoader.load(latitude, longitude, options)
 
   // ─── 按城市名加载（本地候选之外的兜底，走地理编码） ─────
   async function loadCity(city) {
@@ -253,6 +301,13 @@ export const useWeatherStore = defineStore('weather', () => {
     // 地名同样交给 loadMain：切城市时先把标题换掉，会有一瞬间标题是B、数字还是A
     await loadMain(place.lat, place.lon, {
       place: { name: place.name, detail: place.detail, source: 'search' },
+    })
+  }
+
+  function loadCommonCity(place) {
+    placeToken += 1
+    return loadMain(place.lat, place.lon, {
+      place: { name: place.name, detail: place.detail, source: 'common' },
     })
   }
 
@@ -384,9 +439,14 @@ export const useWeatherStore = defineStore('weather', () => {
     lat,
     lon,
     cityName,
+    commonCities,
+    removeCommonCity,
+    loadCommonCity,
     cityDetail,
     locationSource,
     data,
+    hasWeatherData,
+    animationEpoch,
     air,
     alerts,
     alertStatus,

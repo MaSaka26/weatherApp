@@ -1,9 +1,11 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed } from 'vue'
+
+import { usePointerRotation } from '@/composables/useWeatherAnimations'
 
 const props = defineProps({
   // 风向角（气象惯例：0 = 正北，90 = 正东，即「风从哪个方位吹来」）
-  direction: { type: Number, default: 0 },
+  direction: { type: Number, default: null },
   label: { type: String, default: '' },
 })
 
@@ -43,44 +45,11 @@ const ticks = computed(() => {
   return out
 })
 
-// 指针照参考图做成「一整根穿过圆心」：箭头指向风吹去的方向（风向 + 180），
-// 尾端的小圆点落在来风那侧（所以「南风」时箭头朝北、圆点在 5 点钟方向）
-//
-// 角度用累加值而不是直接取 0–360：数据每 6 分钟刷新一次，风向常在小范围内来回，
-// 但「350° → 10°」直接换值会让指针倒着甩 340°。这里把差值折到 ±180° 再累加，
-// 指针永远走最短的一边，数值连续，CSS transition 才有平滑可言。
-const targetAngle = computed(() => ((Number(props.direction) || 0) + 180) % 360)
-const shownAngle = ref(0)
-// 还没拨过针：第一次是从正北（0°）顺时针走到目标刻度
-let firstMove = true
-
-// 每次转向都把差值折到 ±180° 再累加，指针永远走最短的一边。
-// 只有第一次例外：从 0° 直接加到目标值，方向必然是顺时针 ——
-// 用户要的是「先朝北，然后顺时针转过去」，走最短路径会出现逆时针倒甩。
-function stepTo(next) {
-  const prev = shownAngle.value
-  if (firstMove) {
-    firstMove = false
-    shownAngle.value = prev + next
-    return
-  }
-  let delta = ((next - prev + 540) % 360) - 180
-  if (delta === -180) delta = 180
-  shownAngle.value = prev + delta
-}
-
-watch(targetAngle, stepTo)
-
-// 打开页面时指针从 0° 扫到真实角度，和温度、四颗表盘、日出日落同一套规则：
-// 要么一起生长，要么一起瞬跳。缓存命中时也要扫，不能「啪」地定格。
-// 挂载后要分两拍：先把 .smooth 类落到 DOM 上、让浏览器把 0° 记成起点，
-// 下一拍再改角度，transition 才会真的跑起来（同一次 tick 里改会被合并成一次样式计算）
-const ready = ref(false)
-onMounted(async () => {
-  await nextTick()
-  ready.value = true
-  await nextTick()
-  stepTo(targetAngle.value)
+// 指针初始朝北；API 返回的是来风方位，首次按接口角度顺时针转过去。
+// 后续刷新走最短路径，和数字、圆环、日照进度共用 useTween 动画时钟。
+const { angle: shownAngle } = usePointerRotation(() => props.direction, {
+  initialAngle: 0,
+  firstDirection: 'clockwise',
 })
 </script>
 
@@ -100,12 +69,9 @@ onMounted(async () => {
       <!-- 指针整组绕圆心旋转：0° 时箭头朝正北。白针穿过小轴心，一眼能看出是根指针。
            箭头尖 r=30、尾点 r=24，都收在方位字（半径 37，字号 11 → 内侧约 31.5）以内，
            针不会顶到「北 / 南」这些字上 -->
-      <!-- 用 style 里的 CSS transform 而不是 transform 属性：
-           属性变化不会被 CSS transition 补间，只有 CSS 属性才会。
-           transform-box: view-box 让 50% 50% 正好是 viewBox 的中心 -->
+      <!-- transform-box 让 transform-origin 的 50% 50% 落在 viewBox 中心 -->
       <g
         class="wc-needle-group"
-        :class="{ smooth: ready }"
         :style="{ transform: `rotate(${shownAngle}deg)` }"
       >
         <line class="wc-needle" x1="50" y1="26" x2="50" y2="74" />

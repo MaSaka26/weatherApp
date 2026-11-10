@@ -165,7 +165,7 @@ function open(link) {
 }
 
 .alert-type {
-  font-size: 15px;
+  font-size: 0.9375rem;
   line-height: 1.3;
   font-weight: 600;
   color: var(--text-1);
@@ -173,14 +173,14 @@ function open(link) {
 }
 
 .alert-level {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   color: rgb(var(--alert-rgb));
   white-space: nowrap;
 }
 
 .alert-meta {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--text-5);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -203,7 +203,7 @@ function open(link) {
 }
 
 .alert-fail-text {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--text-6);
 }
 
@@ -213,7 +213,7 @@ function open(link) {
   align-items: center;
   gap: 6px;
   padding: 4px 12px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 500;
   color: var(--text-5);
   background: var(--surface-3);
@@ -244,7 +244,7 @@ function open(link) {
 
 .alert-retry-icon {
   display: inline-block;
-  font-size: 14px;
+  font-size: 0.875rem;
   line-height: 1;
 }
 
@@ -270,7 +270,7 @@ function open(link) {
     height: 22px;
   }
   .alert-type {
-    font-size: 14px;
+    font-size: 0.875rem;
   }
   .alert-item {
     padding: 9px 12px;

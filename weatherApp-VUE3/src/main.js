@@ -12,6 +12,12 @@ import { initSettings } from '@/composables/useSettings'
 
 initSettings()
 
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch((error) => {
+    console.warn('Service worker registration failed', error)
+  }))
+}
+
 const app = createApp(App)
 
 app.use(createPinia())

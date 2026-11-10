@@ -1,7 +1,7 @@
 <script setup>
-import { computed, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
-import { useTween } from '@/composables/useTween'
+import { usePointerRotation } from '@/composables/useWeatherAnimations'
 
 const props = defineProps({
   value: { type: Number, default: null },
@@ -12,8 +12,6 @@ const props = defineProps({
   label: { type: String, default: '' },
 })
 
-const { shown, tween } = useTween(1000)
-
 const START = 225
 const SWEEP = 270
 const RADIUS = 45
@@ -21,35 +19,82 @@ const CIRC = 2 * Math.PI * RADIUS
 // 指针只在环内走，不压到环上，所以比半径短一截
 const HAND = 27
 
-// 冷 → 舒适 → 热 的三段色带：蓝色正中间（0.5）收住，
-// 之后绿、橙各占剩下的一半，指针落在哪一段和下方文案（偏凉 / 舒适 / 偏热）对得上
-const BANDS = [
-  { from: 0, to: 0.5, color: 'var(--accent)' },
-  { from: 0.5, to: 0.75, color: 'var(--uv-1)' },
-  { from: 0.75, to: 1, color: 'var(--temp-high)' },
+// 色带比例沿用原来的 50% 蓝、25% 绿、25% 橙。
+// 用 90 段插色绘制，分界仍落在 50% 和 75%，视觉效果与自定义 UV 表盘一致。
+const COLOR_STOPS = [
+  { pos: 0, token: '--accent', fallback: '#6db3f2' },
+  { pos: 0.5, token: '--accent', fallback: '#6db3f2' },
+  { pos: 0.75, token: '--uv-1', fallback: '#22c55e' },
+  { pos: 1, token: '--temp-high', fallback: '#fb923c' },
 ]
 
 const arcTotal = (CIRC * SWEEP) / 360
+const SEGMENTS = 90
 
-const bands = BANDS.map((b) => ({
-  color: b.color,
-  dash: `${(b.to - b.from) * arcTotal} ${CIRC}`,
-  // 负偏移把这一段推到它在整条弧上的位置
-  offset: -b.from * arcTotal,
-}))
+function hexToRgb(hex) {
+  const match = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex.trim())
+  return match
+    ? [parseInt(match[1], 16), parseInt(match[2], 16), parseInt(match[3], 16)]
+    : [255, 255, 255]
+}
 
-const ratio = computed(() => {
+const rgbCss = ([r, g, b]) => `rgb(${r}, ${g}, ${b})`
+const colorStops = ref(COLOR_STOPS.map((stop) => ({
+  pos: stop.pos,
+  rgb: hexToRgb(stop.fallback),
+})))
+
+function colorAt(position) {
+  const ratio = Math.min(1, Math.max(0, position))
+  for (let index = 0; index < colorStops.value.length - 1; index++) {
+    const from = colorStops.value[index]
+    const to = colorStops.value[index + 1]
+    if (ratio >= from.pos && ratio <= to.pos) {
+      const weight = (ratio - from.pos) / (to.pos - from.pos)
+      return rgbCss(from.rgb.map((channel, i) =>
+        Math.round(channel + (to.rgb[i] - channel) * weight),
+      ))
+    }
+  }
+  return rgbCss(colorStops.value[colorStops.value.length - 1].rgb)
+}
+
+const bands = computed(() =>
+  Array.from({ length: SEGMENTS }, (_, index) => {
+    const from = index / SEGMENTS
+    const to = (index + 1) / SEGMENTS
+    return {
+      color: colorAt((from + to) / 2),
+      dash: `${(to - from) * arcTotal} ${CIRC}`,
+      offset: -from * arcTotal,
+    }
+  }),
+)
+
+onMounted(() => {
+  const styles = getComputedStyle(document.documentElement)
+  colorStops.value = COLOR_STOPS.map((stop) => ({
+    pos: stop.pos,
+    rgb: hexToRgb(styles.getPropertyValue(stop.token).trim() || stop.fallback),
+  }))
+})
+
+const targetAngle = computed(() => {
   const span = props.max - props.min
-  if (!(span > 0)) return 0
-  return Math.min(1, Math.max(0, (shown.value - props.min) / span))
+  if (!Number.isFinite(props.value) || !(span > 0)) return null
+  const ratio = Math.min(1, Math.max(0, (props.value - props.min) / span))
+  return START + ratio * SWEEP
+})
+
+const { angle: shownAngle } = usePointerRotation(() => targetAngle.value, {
+  initialAngle: START,
+  firstDirection: 'clockwise',
 })
 
 const hand = computed(() => {
-  const rad = ((START + ratio.value * SWEEP - 90) * Math.PI) / 180
+  const rad = ((shownAngle.value - 90) * Math.PI) / 180
   return { x: 50 + HAND * Math.cos(rad), y: 50 + HAND * Math.sin(rad) }
 })
-
-watch(() => [props.value, props.min, props.max], () => tween(props.value), { immediate: true })
 </script>
 
 <template>

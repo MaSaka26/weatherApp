@@ -245,7 +245,7 @@ function buildOptions() {
         useHTML: true,
         formatter() {
           const color = tempColor(this.value, yMin, yMax)
-          return `<span style="color:${color};font-size:11px">${this.value}°</span>`
+          return `<span style="color:${color};font-size:0.6875rem">${this.value}°</span>`
         },
       },
     },
@@ -262,7 +262,7 @@ function buildOptions() {
         const it = items[this.x]
         if (!it) return false
         return (
-          `<div style="font-size:11px;color:${T.text5}">` +
+          `<div style="font-size:0.6875rem;color:${T.text5}">` +
           `${it.name} ${it.dateLabel} · ${getConditionText(it.code)}</div>` +
           `<div style="margin-top:4px">最高 <b style="color:${T.tempHigh}">${it.high}°</b>` +
           `　最低 <b style="color:${T.tempLow}">${it.low}°</b></div>`

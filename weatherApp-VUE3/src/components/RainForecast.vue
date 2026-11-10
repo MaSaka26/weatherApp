@@ -332,7 +332,7 @@ const uid = useId()
 }
 
 .rain-title {
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.3;
   letter-spacing: 0.02em;
   color: var(--text-6);
@@ -340,14 +340,14 @@ const uid = useId()
 
 /* 主句是这条卡片真正的信息，字号比标题大一档半，和 16 天预报的行高保持同节奏 */
 .rain-main {
-  font-size: 17px;
+  font-size: 1.0625rem;
   line-height: 1.32;
   font-weight: 600;
   color: var(--text-1);
 }
 
 .rain-sub {
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.3;
   color: var(--text-5);
   /* 长城市名 + 长句子时不撑破卡片，超出一行才省略 */
@@ -418,15 +418,15 @@ const uid = useId()
   }
 
   .rain-title {
-    font-size: 11px;
+    font-size: 0.6875rem;
   }
 
   .rain-main {
-    font-size: 15px;
+    font-size: 0.9375rem;
   }
 
   .rain-sub {
-    font-size: 11px;
+    font-size: 0.6875rem;
   }
 
   /* 窄屏柱子缩一档：12 格 × 2px 间距在 390 视口里仍能守住文案区宽度 */

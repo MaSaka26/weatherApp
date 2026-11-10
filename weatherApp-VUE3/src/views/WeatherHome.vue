@@ -1,12 +1,15 @@
 <script setup>
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, provide, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 
 import { useWeatherStore } from '@/stores/weather'
+import { TWEEN_START_AT } from '@/composables/useTween'
 
 import SkyBackground from '@/components/SkyBackground.vue'
 import RefreshButton from '@/components/RefreshButton.vue'
 import SettingsButton from '@/components/SettingsButton.vue'
 import SearchBar from '@/components/SearchBar.vue'
+import CommonCities from '@/components/CommonCities.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import CurrentWeather from '@/components/CurrentWeather.vue'
 import DetailCards from '@/components/DetailCards.vue'
@@ -21,6 +24,10 @@ import DailyForecast from '@/components/DailyForecast.vue'
 import LifeIndex from '@/components/LifeIndex.vue'
 
 const store = useWeatherStore()
+const { animationEpoch } = storeToRefs(store)
+provide(TWEEN_START_AT, animationEpoch)
+const isOnline = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
+const setOnline = () => { isOnline.value = navigator.onLine }
 
 const todayHigh = computed(() => store.daily?.temperature_2m_max?.[0] ?? 0)
 const todayLow = computed(() => store.daily?.temperature_2m_min?.[0] ?? 0)
@@ -52,6 +59,8 @@ function openRadar() {
 }
 
 onMounted(() => {
+  window.addEventListener('online', setOnline)
+  window.addEventListener('offline', setOnline)
   // 进页面先尝试浏览器定位，失败则提示手动搜索。
   // 注意这里不等数据：模板已经用缓存（或 0 占位骨架）画好了完整仪表盘，
   // 数据回来只是把数字替换掉。
@@ -62,6 +71,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   store.stopAutoRefresh()
+  window.removeEventListener('online', setOnline)
+  window.removeEventListener('offline', setOnline)
 })
 </script>
 
@@ -71,6 +82,7 @@ onBeforeUnmount(() => {
   <div class="app-container">
     <div class="top-bar">
       <SearchBar @search="store.loadCity" @select="store.loadPlace" />
+      <CommonCities :cities="store.commonCities" @select="store.loadCommonCity" @remove="store.removeCommonCity" />
       <RefreshButton />
       <SettingsButton />
     </div>
@@ -105,6 +117,7 @@ onBeforeUnmount(() => {
         :current="store.current"
         :daily="store.daily"
         :air="store.air"
+        :data-ready="store.hasWeatherData"
       />
 
       <!-- 天气预警：夹在 6/9 张详情卡与逐小时之间。无本地预警整块隐藏，接口失败显示一行轻提示 + 刷新 -->
@@ -133,7 +146,8 @@ onBeforeUnmount(() => {
       <!-- 失败不再抹掉整页：数据更新失败时保留上一份数据，只在这一行说明。
            「占位中」表示屏幕上还是 0 骨架，从没拿到过真数据。 -->
       <div class="location-hint" :class="{ 'hint-warn': store.lastError }">
-        <template v-if="store.lastError">数据更新失败 · {{ store.lastError }}</template>
+        <template v-if="!isOnline">离线模式 · 显示上次缓存的天气（{{ store.lastUpdated || '暂无天气缓存' }}）</template>
+        <template v-else-if="store.lastError">数据更新失败 · {{ store.lastError }}</template>
         <template v-else-if="!store.lastUpdated">正在获取天气与位置…</template>
         <template v-else>数据来源: Open-Meteo · {{ store.lastUpdated }}</template>
       </div>
