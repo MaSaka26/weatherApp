@@ -1,0 +1,640 @@
+/* ===== Current Weather ===== */
+/* 两层结构：地名单独一行居中；温度块与时间块在其下方并排、作为整体水平居中 */
+.current-weather {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 20px 0 10px;
+}
+.current-head {
+  width: min(100%, 520px);
+  min-height: 52px;
+  margin-bottom: 6px;
+  animation: fadeUp 0.6s ease both;
+}
+/* 等宽两栏：温度与时间各占一半，分隔线正好落在中线，左右留白对称。
+   间距不用 column-gap（那会让分隔线偏右半格），改成两栏各让出 --clock-split 的内边距 */
+.current-body {
+  --clock-split: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  column-gap: 0;
+  max-width: 100%;
+}
+.current-main {
+  min-width: 0;
+  padding-right: var(--clock-split);
+}
+.current-city {
+  height: 34px;
+  line-height: 34px;
+  font-size: 1.75rem;
+  font-weight: 300;
+  letter-spacing: 1px;
+  color: var(--text-1);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.current-region {
+  height: 16px;
+  line-height: 16px;
+  font-size: 0.75rem;
+  font-weight: 400;
+  letter-spacing: 0.6px;
+  color: var(--text-4);
+  margin: -2px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: fadeUp 0.6s 0.05s ease both;
+}
+.current-city.placeholder,
+.current-region.placeholder { color: var(--text-6); }
+.current-temp {
+  font-size: 5.125rem;
+  font-weight: 200;
+  line-height: 1;
+  letter-spacing: -2px;
+  animation: fadeUp 0.6s 0.1s ease both;
+}
+.current-temp.placeholder { color: var(--text-6); letter-spacing: 0; }
+.current-temp .deg-symbol {
+  font-size: 2.25rem;
+  font-weight: 200;
+  vertical-align: super;
+}
+.current-condition {
+  font-size: 1.125rem;
+  font-weight: 400;
+  color: var(--text-4);
+  margin-top: 6px;
+  animation: fadeUp 0.6s 0.2s ease both;
+}
+.current-highlow {
+  font-size: 1.0625rem;
+  font-weight: 300;
+  color: var(--text-6);
+  margin-top: 4px;
+  animation: fadeUp 0.6s 0.25s ease both;
+}
+.current-highlow > span { margin: 0 6px; }
+.current-highlow .high { color: var(--text-2); }
+.current-highlow .low { color: var(--text-4); }
+
+/* ===== Clock Panel ===== */
+.clock-panel {
+  min-width: 0;
+  align-self: center;
+  padding-left: var(--clock-split);
+  border-left: 1px solid var(--line-2);
+  text-align: center;
+  animation: fadeUp 0.6s 0.3s ease both;
+}
+.clock-time {
+  font-size: 2.25rem;
+  font-weight: 200;
+  line-height: 1.05;
+  letter-spacing: 0.5px;
+  color: var(--text-1);
+  /* 等宽数字：秒数跳动时整块不会左右抖 */
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+.clock-time .clock-sec {
+  color: var(--text-5);
+  font-size: 0.72em;
+  letter-spacing: 0.5px;
+}
+.clock-date {
+  margin-top: 6px;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  letter-spacing: 0.6px;
+  color: var(--text-3);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.clock-doy {
+  margin-top: 3px;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  letter-spacing: 0.4px;
+  color: var(--text-5);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.clock-doy .clock-doy-num {
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+/* ===== Details Grid ===== */
+/* 三列 × 两行（手机/平板）；1024 起一行六张。
+   item 骨架有两套，由 .details-grid 上的布局类切换（设置 → 卡片布局），
+   手机、平板、桌面三档都听同一个设置：
+   - layout-row   左文右图（默认）
+   - layout-stack 文字在上、图形在下 */
+
+/* 详情卡区块：标题行 + 折叠容器。首页就能切 6 / 9 张，外观沿用 16 天预报那套切换钮 */
+.cards-section { margin: 20px 0 24px; }
+/* 标题已经在 section-head 里给了下边距，网格自己不再重复留白 */
+.cards-section .details-grid { margin: 0; }
+/* 展开 / 收起动画期间才收紧溢出，平时放开，表盘和卡片描边都不被裁 */
+.cards-fold.folding { overflow: hidden; }
+
+/* 收起分两段，这里对应第一段：三张多出来的卡留在原排布里（还是五列、238 宽），
+   只把不透明度降到 0。这一段列数与卡片宽度都不动，眼睛只看到「那三张淡了」，
+   而宽度那次 238 → 197 的跳变被推到第二段、落在它们刚消失的时候。
+   200ms 必须与 DetailCards.vue 里的 FADE_MS 一致，否则第二段会提前开始 */
+.details-grid.fading > .precip-card,
+.details-grid.fading > .air-card,
+.details-grid.fading > .vis-card {
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+/* 第二段：网格已经退回六列，多出来的三张仍留在 DOM 里（要等高度收完才卸载），
+   靠 order 把它们压到最后一排，免得占了第一排的位置把留在场上的六张挤开。
+   这时它们已经是全透明的，order 生效不会再被看见 */
+.details-grid.collapsing > .precip-card,
+.details-grid.collapsing > .air-card,
+.details-grid.collapsing > .vis-card {
+  order: 99;
+  pointer-events: none;
+}
+
+.details-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
+  gap: 12px;
+  margin: 20px 0 24px;
+  animation: fadeUp 0.6s 0.3s ease both;
+}
+/* 九张卡是 9 = 3+3+3，手机/平板三列正好填满，不需要通条补齐。
+   新增的空气质量 / 能见度 / 降水量都按普通单格排，卡片骨架与另外六张一致 */
+.detail-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: var(--surface-2);
+  backdrop-filter: blur(var(--glass-card));
+  border-radius: var(--radius-md);
+  padding: 12px 8px;
+  text-align: center;
+  border: 1px solid var(--line-0);
+  transition: background 0.3s;
+}
+.detail-card:hover { background-color: var(--surface-3); }
+.detail-card .label {
+  font-size: var(--font-detail-label);
+  font-weight: 400;
+  color: var(--text-4);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 6px;
+}
+.detail-card .value {
+  font-size: 1.375rem;
+  font-weight: 300;
+  color: var(--text-2);
+}
+.detail-card .value .unit {
+  font-size: 0.875rem;
+  color: var(--text-5);
+  font-weight: 300;
+}
+/* 空气质量卡：主值下面挂 PM2.5 / PM10。
+   拆成两行而不是拼一行「PM2.5 46 · PM10 60」：9 张时它是普通单格，
+   桌面只有 236px、手机 112px，拼一行必然折在「PM10」和数字之间 */
+.air-card .air-pm {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 2px;
+  font-size: 0.625rem;
+  line-height: 1.25;
+  color: var(--text-6);
+  letter-spacing: 0.2px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* item 骨架两套，由 .details-grid 上的布局类切换（设置 → 卡片布局）：
+   - 默认这套是「上下」：标签 + 主值居中在上，表盘/图形居中在下。
+     它同时就是「上下」选项的备份本体，规则不需要另写一份
+   - 「左右」（左文右图）由 .details-grid.layout-row 覆盖，见下方媒体查询 */
+.detail-card.split {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 6px;
+  min-height: 0;
+  padding: 12px 8px;
+}
+.split .card-main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 0;
+}
+.split .card-main .label {
+  margin-bottom: 0;
+  font-size: var(--font-detail-label);
+  letter-spacing: 0.3px;
+}
+.wind-direction {
+  min-height: 1.25em;
+  color: var(--text-4);
+  font-size: 0.6875rem;
+  line-height: 1.25;
+}
+
+/* ===== item 左右布局（layout-row）：左标签+数值，右图形 =====
+   只在 <1024 生效：桌面一行六张卡宽只有 144，上下排才放得开，固定不受设置影响。
+   三档尺寸按「图形给文字栏让多少地方」推：文字栏要站住一行「2.7 m/s」和「日出 · 日落」 */
+@media (max-width: 1023px) {
+  .details-grid.layout-row .detail-card.split {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    text-align: left;
+    padding: 10px 10px 10px 12px;
+  }
+  .details-grid.layout-row .split .card-main {
+    align-items: flex-start;
+  }
+  .details-grid.layout-row .split .card-main .label {
+    font-size: var(--font-detail-label);
+    letter-spacing: 0.2px;
+    line-height: 1.3;
+  }
+  .details-grid.layout-row .wind-direction { font-size: 0.5rem; }
+  .details-grid.layout-row .dial { --dial-size: 60px; }
+  .details-grid.layout-row .uv-gauge { --gauge-size: 60px; }
+  .details-grid.layout-row .detail-card .value { font-size: 1.0625rem; }
+  .details-grid.layout-row .detail-card .value .unit { font-size: 0.625rem; }
+  .details-grid.layout-row .uv-card .uv-level { font-size: 1.0625rem; }
+  .details-grid.layout-row .sun-panel { width: 60px; }
+  .details-grid.layout-row .sun-times { font-size: 0.625rem; }
+}
+
+/* 平板 768–1023：每卡约 190，图形和字号放开一档 */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .details-grid.layout-row .detail-card.split {
+    gap: 10px;
+    padding: 12px 14px 12px 16px;
+  }
+  .details-grid.layout-row .split .card-main .label {
+    font-size: var(--font-detail-label);
+    letter-spacing: 0.3px;
+  }
+  .details-grid.layout-row .wind-direction { font-size: 0.625rem; }
+  .details-grid.layout-row .dial { --dial-size: 80px; }
+  .details-grid.layout-row .uv-gauge { --gauge-size: 80px; }
+  .details-grid.layout-row .detail-card .value { font-size: 1.25rem; }
+  .details-grid.layout-row .detail-card .value .unit { font-size: 0.6875rem; }
+  .details-grid.layout-row .uv-card .uv-level { font-size: 1.25rem; }
+  .details-grid.layout-row .sun-panel { width: 80px; }
+  .details-grid.layout-row .sun-times { font-size: 0.6875rem; }
+}
+
+/* 手机 ≤480：三列后每卡约 104–114，图形 40 + 间隙 4，文字栏 48 才放得下一行数值。
+   日出面板要 48：8px 的「06:10」「17:04」各占 22，两个并排需要 44 */
+@media (max-width: 480px) {
+  .details-grid.layout-row .detail-card.split {
+    gap: 4px;
+    padding: 6px;
+  }
+  .details-grid.layout-row .split .card-main .label {
+    font-size: var(--font-detail-label);
+    letter-spacing: 0;
+  }
+  .details-grid.layout-row .wind-direction { font-size: 0.4375rem; }
+  .details-grid.layout-row .dial { --dial-size: 40px; }
+  .details-grid.layout-row .uv-gauge { --gauge-size: 40px; }
+  .details-grid.layout-row .detail-card .value { font-size: 0.9375rem; }
+  .details-grid.layout-row .detail-card .value .unit { font-size: 0.5625rem; }
+  .details-grid.layout-row .uv-card .uv-level { font-size: 0.9375rem; }
+  .details-grid.layout-row .sun-panel { width: 48px; gap: 1px; }
+  .details-grid.layout-row .sun-times { font-size: 0.5rem; }
+}
+
+/* 320 级窄屏：每卡只剩 90，图形再缩，数值收到 12 */
+@media (max-width: 344px) {
+  .details-grid.layout-row .detail-card.split {
+    gap: 3px;
+    padding: 5px;
+  }
+  .details-grid.layout-row .split .card-main .label {
+    font-size: var(--font-detail-label);
+  }
+  .details-grid.layout-row .wind-direction { font-size: 0.375rem; }
+  .details-grid.layout-row .dial { --dial-size: 32px; }
+  .details-grid.layout-row .uv-gauge { --gauge-size: 32px; }
+  .details-grid.layout-row .detail-card .value { font-size: 0.75rem; }
+  .details-grid.layout-row .detail-card .value .unit { font-size: 0.5rem; }
+  .details-grid.layout-row .uv-card .uv-level { font-size: 0.75rem; }
+  .details-grid.layout-row .sun-panel { width: 38px; }
+  .details-grid.layout-row .sun-times { font-size: 0.40625rem; }
+}
+
+/* 紫外线：270° 渐变表盘（缺口朝下），环心只有数值，缺口里写着 UV。
+   同样是 SVG 描边画环，几何与湿度/气压/体感的表盘完全一致（环宽 10、半径 45、圆头），
+   所以几颗环并排时粗细、端点形状都对得上；尺寸只由 --gauge-size 控制 */
+.uv-gauge {
+  --gauge-size: 76px;
+  position: relative;
+  width: var(--gauge-size);
+  height: var(--gauge-size);
+  flex: none;
+}
+.uv-gauge .g-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.uv-gauge .g-track,
+.uv-gauge .g-seg {
+  fill: none;
+  stroke-width: 10;
+  stroke-linecap: round;
+}
+.uv-gauge .g-track { stroke: var(--line-1); }
+/* 两头各一枚圆点：起点帽和当前值点，正好把扇形裁剪的直口盖成圆头 */
+.uv-gauge .g-cap,
+.uv-gauge .g-dot { stroke: none; }
+.uv-gauge .g-value {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  font-size: calc(var(--gauge-size) * 0.24);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+  pointer-events: none;
+}
+/* 缺口高度只有 16% 的外框，字号跟着表盘走，缩到手机尺寸也不会糊 */
+.uv-gauge .g-title {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  z-index: 3;
+  text-align: center;
+  font-size: calc(var(--gauge-size) * 0.16);
+  line-height: 1;
+  letter-spacing: 0.5px;
+  color: var(--text-6);
+  pointer-events: none;
+}
+
+/* 紫外线卡的等级字与其它卡的主值同级：参考图里「弱」和数值一样大，
+   只是它在环外、数值在环内 */
+.uv-card .uv-level {
+  font-size: 1.375rem;
+  font-weight: 300;
+  line-height: 1.1;
+  color: var(--text-2);
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+/* 环形表盘：湿度/气压是进度弧，体感是色带 + 指针，风是罗盘。
+   尺寸只由 --dial-size 控制；SVG 固定 viewBox 0 0 100 100，外径 100 = 边长 */
+.dial {
+  --dial-size: 76px;
+  --dial-icon-size: 40%;
+  position: relative;
+  width: var(--dial-size);
+  height: var(--dial-size);
+  flex: none;
+}
+.dial .d-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.dial circle { fill: none; }
+/* 环宽 10 / 外径 100，和 UV 表盘的 80% 内孔完全对齐 */
+.dial .d-track,
+.dial .d-fill,
+.dial .nd-band {
+  stroke-width: 10;
+  stroke-linecap: round;
+}
+.dial .d-track { stroke: var(--line-1); }
+.dial .d-fill { stroke: var(--accent); }
+.dial .d-center {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.dial .d-icon {
+  display: block;
+  width: var(--dial-icon-size);
+  height: var(--dial-icon-size);
+  fill: var(--accent);
+}
+.precip-gauge .d-icon { fill: var(--text-0); }
+.dial .visibility-fog-svg {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* 气压的方向箭头只要描边，圆头才不会显得像根棍子 */
+.dial .d-icon-arrow {
+  width: var(--dial-icon-size);
+  height: var(--dial-icon-size);
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* 缺口小字（潮湿 / 舒适 / hPa）落在正下方，三张环都朝下开缺口，位置完全一致 */
+.dial .d-caption {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  text-align: center;
+  font-size: calc(var(--dial-size) * 0.16);
+  line-height: 1;
+  color: var(--text-5);
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+/* 体感指针：白针 + 中心轴，压在色带上才看得清 */
+.needle-dial .nd-hand {
+  stroke: var(--text-0);
+  stroke-width: 4.5;
+  stroke-linecap: round;
+  filter: drop-shadow(0 1px 2px var(--shadow-color));
+}
+.needle-dial .nd-pin {
+  fill: var(--text-0);
+  filter: drop-shadow(0 1px 2px var(--shadow-color));
+}
+/* 风向罗盘：一圈刻度 + 四个方位字 + 中心实心圆 + 指向来风的短针
+   （62px 的表盘塞不下轨道 + 刻度，细轨省掉，反而更清爽） */
+.wind-compass .wc-tick {
+  stroke: var(--text-6);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+.wind-compass .wc-dir {
+  fill: var(--text-5);
+  font-size: 0.6875rem;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+.wind-compass .wc-hub {
+  fill: var(--accent);
+  opacity: 0.95;
+}
+/* 指针：一整根穿过小轴心的白针（箭头指 API 返回的来风方位，尾端圆点在反侧）。
+   之前针和轴心同色、轴心又大，整根针被圆吞掉只剩两截小头；
+   现在学体感那根指针的做法——白针 + 投影，压在深色卡上才一眼看得清 */
+.wind-compass .wc-needle {
+  stroke: var(--text-0);
+  stroke-width: 4;
+  stroke-linecap: round;
+  filter: drop-shadow(0 1px 2px var(--shadow-color));
+}
+.wind-compass .wc-head,
+.wind-compass .wc-tail {
+  fill: var(--text-0);
+  stroke: none;
+  filter: drop-shadow(0 1px 2px var(--shadow-color));
+}
+/* 指针绕 viewBox 中心旋转；transform-origin 配合 transform-box: view-box，
+   50% 50% 才是圆心；少了 transform-box，百分比会相对元素自身包围盒算，
+   指针会绕错点甩出去 */
+.wind-compass .wc-needle-group {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+}
+
+/* 横线轨道版日出日落：只在「桌面 + 九卡」出现（见下方 @media (min-width:1024px)
+   的 .cards-9 段）。九卡时这张卡通两格，宽度富裕，一条横轨 + 光点比抛物线更舒展，
+   日出/日落时间也能直接压在轨道两端，不用挤到弧下面 */
+.sun-line-wrap {
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+.sun-line-wrap.night { opacity: 0.6; }
+/* 三列：时间 | 轨道 | 时间。必须给两个 .sun-time 显式写 grid-row/column ——
+   只让轨道跨行的话，第三个元素会被自动排到第 3 行，时间就散架了 */
+.sun-line {
+  display: grid;
+  grid-template-columns: auto minmax(24px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.sun-time {
+  font-size: 0.6875rem;
+  color: var(--text-4);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+.sun-time:first-child { grid-row: 1; grid-column: 1 / 2; }
+.sun-time:last-child { grid-row: 1; grid-column: 3 / 4; text-align: right; }
+.sun-track {
+  position: relative;
+  grid-row: 1;
+  grid-column: 2 / 3;
+  height: 2.5px;
+  border-radius: 999px;
+  background: var(--line-1);
+}
+/* 已走过的那段轨道用日出→白昼的暖色渐变，和抛物线的描边同一套 token */
+.sun-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--sun-from), var(--sun-mid));
+}
+/* 光点：和轨道同高时会被 2.5px 的线吞掉，所以抬到轨道垂直中线并放大 */
+.sun-dot {
+  position: absolute;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin-left: -3.5px;
+  border-radius: 50%;
+  background: var(--text-0);
+  transform: translateY(-50%);
+  filter: drop-shadow(0 0 3px var(--sun-mid));
+}
+/* 日出日落：和其它卡同一套骨架——左边是标签 + 白昼时长，右边是一条收紧的抛物线，
+   日出/日落时间落在弧的两端下方，弧的形状本身就说明「升起到落下」 */
+.sun-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 72px;
+  flex: none;
+}
+.sun-panel.night { opacity: 0.6; }
+.sun-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.arc-track {
+  fill: none;
+  stroke: var(--line-1);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.arc-fill {
+  fill: none;
+  stroke: url(#sunArcGrad);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: var(--dash, 0 100);
+}
+.stop-a { stop-color: var(--sun-from); }
+.stop-b { stop-color: var(--sun-mid); }
+/* 光点的暖色外发光 */
+.arc-dot {
+  fill: var(--text-0);
+  filter: drop-shadow(0 0 2.5px var(--sun-mid));
+}
+/* 时间压在弧的两端：左端日出、右端日落，靠弧的走向就能分清，不用再加字 */
+.sun-times {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  font-size: 0.6875rem;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+}
+
+/* ===== Hourly Forecast ===== */

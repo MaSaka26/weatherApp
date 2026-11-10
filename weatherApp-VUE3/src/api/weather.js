@@ -11,11 +11,38 @@ const WEATHER_API = 'https://api.open-meteo.com/v1/forecast'
 const AIR_QUALITY_API = 'https://air-quality-api.open-meteo.com/v1/air-quality'
 const REVERSE_GEO_API = 'https://api.bigdatacloud.net/data/reverse-geocode-client'
 
-export async function geocodeCity(city) {
+export async function requestJson(url, { signal, timeoutMs = 10000, errorMessage = '请求失败' } = {}) {
+  const controller = new AbortController()
+  let timedOut = false
+  const relayAbort = () => controller.abort(signal?.reason)
+  if (signal?.aborted) relayAbort()
+  else signal?.addEventListener('abort', relayAbort, { once: true })
+
+  const timer = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
+
+  try {
+    const response = await fetch(url, { signal: controller.signal })
+    if (!response.ok) throw new Error(errorMessage)
+    return await response.json()
+  } catch (error) {
+    if (timedOut) {
+      const timeoutError = new Error('请求超时，请检查网络后重试')
+      timeoutError.code = 'REQUEST_TIMEOUT'
+      throw timeoutError
+    }
+    throw error
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', relayAbort)
+  }
+}
+
+export async function geocodeCity(city, { signal } = {}) {
   const url = `${GEO_API}?name=${encodeURIComponent(city)}&count=5&language=zh&format=json`
-  const res = await fetch(url)
-  if (!res.ok) throw new Error('Geocoding API 请求失败')
-  const data = await res.json()
+  const data = await requestJson(url, { signal, timeoutMs: 10000, errorMessage: '城市搜索请求失败' })
   if (!data.results || data.results.length === 0) throw new Error('CITY_NOT_FOUND')
   const r = data.results[0]
   return {
@@ -112,16 +139,14 @@ async function requestReverseGeocode(lat, lon) {
   return result
 }
 
-export async function fetchWeather(lat, lon) {
+export async function fetchWeather(lat, lon, { signal } = {}) {
   const url =
     `${WEATHER_API}?latitude=${lat}&longitude=${lon}` +
     `&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,pressure_msl,precipitation,visibility,uv_index,is_day` +
     `&hourly=temperature_2m,weather_code,precipitation_probability,is_day` +
     `&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max,precipitation_sum,sunrise,sunset,uv_index_max` +
     `&timezone=auto&forecast_days=16`
-  const res = await fetch(url)
-  if (!res.ok) throw new Error('Forecast API 请求失败')
-  return res.json()
+  return requestJson(url, { signal, timeoutMs: 12000, errorMessage: '天气请求失败' })
 }
 
 /**
@@ -133,20 +158,16 @@ export async function fetchWeather(lat, lon) {
  * 2.5 秒卡在同一量级上，网络稍抖就整块数据丢失（曾一直显示「暂无」）。
  * 它已经不在首屏链路上，等久一点不会拖慢页面，只是卡片晚一点填数。
  */
-export async function fetchAirQuality(lat, lon, timeoutMs = 8000) {
+export async function fetchAirQuality(lat, lon, { signal, timeoutMs = 8000 } = {}) {
   const url =
     `${AIR_QUALITY_API}?latitude=${lat}&longitude=${lon}` +
     `&current=us_aqi,pm2_5,pm10&timezone=auto`
-  const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
-  try {
-    const res = await fetch(url, { signal: ctrl.signal })
-    if (!res.ok) throw new Error('Air Quality API 请求失败')
-    const data = await res.json()
-    return data.current ?? null
-  } finally {
-    clearTimeout(timer)
-  }
+  const data = await requestJson(url, {
+    signal,
+    timeoutMs,
+    errorMessage: 'Air Quality API 请求失败',
+  })
+  return data.current ?? null
 }
 
 /**
@@ -160,21 +181,17 @@ export async function fetchAirQuality(lat, lon, timeoutMs = 8000) {
  */
 const ALARM_API = 'https://www.nmc.cn/rest/findAlarm'
 
-export async function fetchAlerts(province, timeoutMs = 5000) {
+export async function fetchAlerts(province, { signal, timeoutMs = 5000 } = {}) {
   const url =
     // pageSize 给 200：陕西这类预警大省实测有 160 条，60 会被截断、漏掉本地那条
     `${ALARM_API}?pageNo=1&pageSize=200&signaltype=&signallevel=` +
     `&province=${encodeURIComponent(province || '')}`
-  const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
-  try {
-    const res = await fetch(url, { signal: ctrl.signal })
-    if (!res.ok) throw new Error('Alert API 请求失败')
-    const data = await res.json()
-    return data?.data?.page?.list ?? []
-  } finally {
-    clearTimeout(timer)
-  }
+  const data = await requestJson(url, {
+    signal,
+    timeoutMs,
+    errorMessage: 'Alert API 请求失败',
+  })
+  return data?.data?.page?.list ?? []
 }
 
 /**

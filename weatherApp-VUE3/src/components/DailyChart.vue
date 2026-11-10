@@ -26,8 +26,6 @@ const coarsePointer = ref(
 // 桌面端：滚轮纵向滚动时横向翻看曲线
 useWheelScroll(scrollHost, { enabled: () => state.value === 'ready' })
 
-const HC_BASE = 'https://code.highcharts.com'
-
 // 温度色阶：低温青蓝 -> 浅蓝 -> 琥珀 -> 高温橙（与曲线渐变同一组色标，避免 RGB 直插发灰）
 const RAMP = [
   [0, [56, 189, 248]], // 青蓝
@@ -47,38 +45,17 @@ function tempColor(t, min, max) {
   return `rgb(${r},${g},${b})`
 }
 
-function loadScript(src) {
-  return new Promise((resolve, reject) => {
-    const el = document.createElement('script')
-    el.src = src
-    el.async = false
-    el.onload = () => resolve()
-    el.onerror = () => reject(new Error('SCRIPT_LOAD_FAILED'))
-    document.head.appendChild(el)
-  })
-}
-
 let hcPromise = null
-/** 按需加载 Highcharts（首次切到曲线视图才拉取，不拖慢首屏）
- *  优先用官方 CDN；CDN 偶发被网络拦截 / 要求 Referer，失败则回退到随包依赖 */
+/** 按需加载项目依赖里的 Highcharts，首次切到曲线视图才会下载对应 chunk。
+ *  不再优先请求第三方 CDN：版本固定、可离线预缓存，也不会因为 CDN 挂起而卡死。 */
 function loadHighcharts() {
-  if (window.Highcharts) return Promise.resolve(window.Highcharts)
   if (!hcPromise) {
-    hcPromise = (async () => {
-      try {
-        await loadScript(`${HC_BASE}/highcharts.js`)
-        await loadScript(`${HC_BASE}/modules/data.js`)
-        if (window.Highcharts) return window.Highcharts
-        throw new Error('NO_GLOBAL')
-      } catch {
-        const mod = await import('highcharts')
-        await import('highcharts/modules/data')
-        return mod.default || mod
-      }
-    })().catch((err) => {
-      hcPromise = null // 允许重试
-      throw err
-    })
+    hcPromise = import('highcharts')
+      .then((mod) => mod.default || mod)
+      .catch((err) => {
+        hcPromise = null // 允许重试
+        throw err
+      })
   }
   return hcPromise
 }
@@ -245,7 +222,7 @@ function buildOptions() {
         useHTML: true,
         formatter() {
           const color = tempColor(this.value, yMin, yMax)
-          return `<span style="color:${color};font-size:11px">${this.value}°</span>`
+          return `<span style="color:${color};font-size:0.6875rem">${this.value}°</span>`
         },
       },
     },
@@ -262,7 +239,7 @@ function buildOptions() {
         const it = items[this.x]
         if (!it) return false
         return (
-          `<div style="font-size:11px;color:${T.text5}">` +
+          `<div style="font-size:0.6875rem;color:${T.text5}">` +
           `${it.name} ${it.dateLabel} · ${getConditionText(it.code)}</div>` +
           `<div style="margin-top:4px">最高 <b style="color:${T.tempHigh}">${it.high}°</b>` +
           `　最低 <b style="color:${T.tempLow}">${it.low}°</b></div>`
@@ -402,7 +379,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="dc-wrap">
     <div v-if="state === 'failed'" class="dc-failed">
-      图表组件加载失败（Highcharts CDN 不可达），可切换到列表视图查看
+      图表组件加载失败，可切换到列表视图查看
     </div>
     <div ref="scrollHost" class="dc-scroll" :class="{ 'is-loading': state !== 'ready' }">
       <div

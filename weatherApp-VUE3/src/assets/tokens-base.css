@@ -1,0 +1,306 @@
+/* ==========================================================================
+   设计变量（Design Tokens）
+   - 颜色按「语义 + 档位」组织；数值与原稿一致，个别就近归并偏差 ≤0.06，
+     且只向更亮/更清晰方向偏移，不会击穿已校准的 WCAG AA 对比度
+   - 设置面板改 --radius-scale / --glass-scale / --accent 即可，无需改任何选择器
+   - 天空背景的 6 套天气渐变属于「内容」而非「主题」，保持硬编码
+   ========================================================================== */
+:root {
+  /* 文字：0 最亮 → 8 最弱 */
+  --text-0: #ffffff;
+  --text-1: rgba(255, 255, 255, 0.96);
+  --text-2: rgba(255, 255, 255, 0.9);
+  --text-3: rgba(255, 255, 255, 0.78);
+  --text-4: rgba(255, 255, 255, 0.72);
+  --text-5: rgba(255, 255, 255, 0.62);
+  --text-6: rgba(255, 255, 255, 0.52);
+  --text-7: rgba(255, 255, 255, 0.45);
+  --text-8: rgba(255, 255, 255, 0.5);
+
+  /* 玻璃表面：0 最淡 → 7 最实 */
+  --surface-0: rgba(255, 255, 255, 0.03);
+  --surface-1: rgba(255, 255, 255, 0.04);
+  --surface-2: rgba(255, 255, 255, 0.06);
+  --surface-3: rgba(255, 255, 255, 0.09);
+  --surface-4: rgba(255, 255, 255, 0.13);
+  --surface-5: rgba(255, 255, 255, 0.17);
+  --surface-6: rgba(255, 255, 255, 0.21);
+  --surface-7: rgba(255, 255, 255, 0.26);
+
+  /* 描边与分隔线 */
+  --line-0: rgba(255, 255, 255, 0.04);
+  --line-1: rgba(255, 255, 255, 0.09);
+  --line-2: rgba(255, 255, 255, 0.16);
+
+  /* 强调色：换主题色只改这四个 */
+  --accent: #6db3f2;
+  --accent-bright: #7fd4f5;
+  --accent-warm: #ffc98a;
+  --accent-contrast: #0d1b2a;
+
+  /* 其他语义色 */
+  --danger-soft: rgba(255, 100, 100, 0.15);
+  --shadow-color: rgba(0, 0, 0, 0.18);
+  --bar-from: rgba(100, 180, 255, 0.6);
+  --bar-to: rgba(255, 200, 100, 0.6);
+  /* 高低温：橙 = 暖，蓝 = 冷。曲线标签与 16 天列表共用同一对值，
+     避免两处各写一份色号后改一处忘一处 */
+  --temp-high: #fb923c;
+  --temp-low: #60a5fa;
+  --scroll-thumb: rgba(255, 255, 255, 0.2);
+  --scroll-thumb-hover: rgba(255, 255, 255, 0.34);
+
+  /* 全站标题字号：rem 做基准，clamp 随视口渐进放大，窄屏也不低于 11px。 */
+  --font-detail-label: clamp(0.6875rem, calc(0.65rem + 0.22vw), 0.875rem);
+
+  /* 空气质量六级：沿用国标配色，但在深蓝底上提亮以保证可读性 */
+  --aqi-1: #7ed6a0;
+  --aqi-2: #f0d16b;
+  --aqi-3: #f7a45e;
+  --aqi-4: #f07676;
+  --aqi-5: #c08ae8;
+  --aqi-6: #c2667d;
+
+  /* 日出日落线 */
+  --sun-from: #f3a45c;
+  --sun-mid: #ffd08a;
+
+  /* 紫外线五档（WHO 分段）：沿用原稿饱和色，保证五档色相一眼可辨 */
+  --uv-1: #22c55e;
+  --uv-2: #eab308;
+  --uv-3: #f97316;
+  --uv-4: #ef4444;
+  --uv-5: #a855f7;
+
+  /* 圆角：--radius-scale 0.5 = 硬朗，1.5 = 圆润 */
+  --radius-scale: 1;
+  --radius-2xs: calc(4px * var(--radius-scale));
+  --radius-xs: calc(8px * var(--radius-scale));
+  --radius-sm: calc(12px * var(--radius-scale));
+  --radius-btn: calc(14px * var(--radius-scale));
+  --radius-md: calc(16px * var(--radius-scale));
+  --radius-lg: calc(20px * var(--radius-scale));
+
+  /* 玻璃模糊：--glass-scale 0 = 关闭毛玻璃
+     注意：backdrop-filter 只模糊「卡片背后」的东西，而这里背后是平滑的天空渐变，
+     模糊一块纯渐变 = 看不出任何变化。所以档位同时驱动 --glass-frost 这层白雾，
+     关掉时卡片更实、更强时更透亮，肉眼才分得出来 */
+  --glass-scale: 1;
+  --glass-soft: calc(10px * var(--glass-scale));
+  --glass-btn: calc(12px * var(--glass-scale));
+  --glass-card: calc(16px * var(--glass-scale));
+  --glass-strong: calc(20px * var(--glass-scale));
+  --glass-frost: rgba(255, 255, 255, max(0, calc((1 - var(--glass-scale)) * 0.12)));
+  /* 反方向：档位高于标准时卡片更「通透」——背景是深色，透出来的自然更暗 */
+  --glass-shade: rgba(6, 14, 26, max(0, calc((var(--glass-scale) - 1) * 0.2)));
+}
+
+/* ===== Reset & Base ===== */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html {
+  font-size: clamp(1rem, calc(0.975rem + 0.125vw), 1.0625rem);
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  font-family: -apple-system, 'SF Pro Text', 'SF Pro Display', 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: #0b0e1a;
+  color: #f0f4ff;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ===== Animated Background ===== */
+.sky-bg {
+  position: fixed; inset: 0;
+  z-index: 0;
+  background: linear-gradient(170deg, #0b0e1a 0%, #141b33 30%, #1a2a4a 55%, #2a3f5e 80%, #3d5a7a 100%);
+  transition: background 1.2s ease;
+}
+.sky-bg::before {
+  content: ''; position: absolute; inset: 0;
+  /* 顶部两团光晕 + 视口底部压暗：固定背景不会随内容滚动，
+     浅色端始终落在屏幕下方，白色文字在那里会掉到 1.4:1，必须压一层暗角 */
+  background:
+    linear-gradient(180deg, rgba(6,12,28,0) 38%, rgba(6,12,28,.30) 74%, rgba(6,12,28,.44) 100%),
+    radial-gradient(ellipse at 30% 20%, rgba(100, 160, 255, 0.08) 0%, transparent 60%),
+    radial-gradient(ellipse at 70% 80%, rgba(180, 120, 255, 0.06) 0%, transparent 50%);
+}
+.sky-bg::after {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(2px 2px at 20% 30%, rgba(255,255,255,0.3), transparent),
+              radial-gradient(2px 2px at 40% 70%, rgba(255,255,255,0.2), transparent),
+              radial-gradient(1px 1px at 60% 20%, rgba(255,255,255,0.3), transparent),
+              radial-gradient(1px 1px at 80% 50%, rgba(255,255,255,0.2), transparent),
+              radial-gradient(2px 2px at 10% 80%, rgba(255,255,255,0.15), transparent),
+              radial-gradient(1px 1px at 50% 40%, rgba(255,255,255,0.25), transparent),
+              radial-gradient(1px 1px at 70% 90%, rgba(255,255,255,0.15), transparent),
+              radial-gradient(2px 2px at 90% 10%, rgba(255,255,255,0.2), transparent);
+  background-size: 200px 200px;
+  animation: twinkle 4s ease-in-out infinite alternate;
+}
+@keyframes twinkle {
+  0% { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+
+/* ===== Weather-adaptive backgrounds =====
+   浅色端统一压深一档：原来的 #a8d8ff 这类粉亮色让白色小字对比度只有 1.4:1，
+   压深后配合底部暗角，次级文字可回到 4.5:1 以上（见 .sky-bg::before）。 */
+.sky-bg.clear-day { background: linear-gradient(170deg, #0f1b3a 0%, #1b3563 25%, #2c60a0 55%, #4076b8 80%, #4f88c9 100%); }
+.sky-bg.weather-unknown { background: linear-gradient(170deg, #171a21 0%, #20252e 30%, #2b313c 58%, #343b46 82%, #3b424e 100%); }
+.sky-bg.clear-night { background: linear-gradient(170deg, #050812 0%, #0a1028 30%, #141f45 55%, #1a2a5a 80%, #2a3f6a 100%); }
+.sky-bg.cloudy { background: linear-gradient(170deg, #1a1e2e 0%, #2a3045 30%, #3a4256 55%, #4d5468 80%, #5c6379 100%); }
+.sky-bg.rainy { background: linear-gradient(170deg, #0f121f 0%, #1a1f35 30%, #2a3050 55%, #343a5a 80%, #3f4463 100%); }
+.sky-bg.snowy { background: linear-gradient(170deg, #1a1e30 0%, #2a3048 30%, #414765 55%, #565c78 80%, #666c86 100%); }
+.sky-bg.thunderstorm { background: linear-gradient(170deg, #050510 0%, #0f0f20 30%, #1a1a35 55%, #252045 80%, #2e2649 100%); }
+
+
+/* ===== Layout ===== */
+.app-container {
+  position: relative; z-index: 1;
+  max-width: 500px; margin: 0 auto;
+  padding: 0 20px 40px;
+  min-height: 100vh; min-height: 100dvh;
+}
+
+/* 搜索框与刷新按钮同一行：刷新按钮不再 fixed 悬浮，
+   避免移动端压住 16 天列表的温度数值，也避免桌面上飘在内容列外的空白处 */
+.top-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.top-bar .search-section { flex: 1; min-width: 0; }
+
+/* ===== Search Bar ===== */
+.search-section {
+  padding: 20px 0 10px;
+  position: relative;
+}
+.search-wrapper {
+  position: relative;
+  display: flex; align-items: center;
+}
+.search-wrapper .search-icon {
+  position: absolute; left: 16px;
+  padding: 0; border: none; background: none;
+  font-size: 1.125rem; opacity: 0.5;
+  cursor: pointer; line-height: 1;
+  transition: opacity 0.3s;
+}
+.search-wrapper:focus-within .search-icon,
+.search-wrapper .search-icon:hover { opacity: 0.8; }
+.search-input {
+  width: 100%;
+  padding: 14px 40px 14px 46px;
+  border: none; border-radius: 14px;
+  background: var(--surface-3);
+  backdrop-filter: blur(var(--glass-strong));
+  color: var(--text-0);
+  font-size: 1.0625rem;
+  font-weight: 400;
+  letter-spacing: 0.3px;
+  outline: none;
+  transition: background 0.3s, box-shadow 0.3s;
+}
+.search-input::placeholder { color: var(--text-6); font-weight: 300; }
+.search-input:focus {
+  background-color: var(--surface-4);
+  box-shadow: 0 0 0 1px var(--line-1);
+}
+.search-clear {
+  position: absolute; right: 14px;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: var(--surface-5);
+  color: var(--text-0);
+  font-size: 0.875rem;
+  cursor: pointer;
+  display: none;
+  align-items: center; justify-content: center;
+  transition: background 0.2s;
+}
+.search-clear:hover { background: var(--surface-7); }
+.search-clear.visible { display: flex; }
+
+/* ===== 搜索候选下拉（本地行政区查表，输入即显） ===== */
+.search-suggest {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0; right: 0;
+  z-index: 30;
+  margin: 0; padding: 6px;
+  list-style: none;
+  border-radius: 14px;
+  /* 浮层压在天气卡片上，白玻璃会透出下层文字；用主题深色底保证可读 */
+  background: rgba(13, 27, 42, 0.82);
+  backdrop-filter: blur(var(--glass-strong));
+  border: 1px solid var(--line-1);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.28);
+  max-height: 320px;
+  overflow-y: auto;
+}
+.suggest-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--text-5);
+  font-size: 0.875rem;
+  line-height: 1.35;
+}
+.suggest-item.active { background: var(--surface-5); }
+.suggest-text {
+  flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.suggest-leaf { color: var(--text-0); font-weight: 500; }
+.suggest-level {
+  flex-shrink: 0;
+  font-size: 0.6875rem;
+  color: var(--text-6);
+  letter-spacing: 1px;
+}
+
+/* ===== Error State ===== */
+.error-message {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 60px 20px;
+  text-align: center;
+}
+.error-message.active { display: flex; }
+.error-message .error-icon {
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  background: var(--danger-soft);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.75rem;
+}
+.error-message .error-title { font-size: 1.125rem; font-weight: 600; color: var(--text-3); }
+.error-message .error-desc { font-size: 0.875rem; color: var(--text-7); font-weight: 300; line-height: 1.5; }
+.error-message .error-retry {
+  margin-top: 8px;
+  padding: 10px 28px;
+  border: none; border-radius: var(--radius-lg);
+  background: var(--surface-4);
+  color: var(--text-0);
+  font-size: 0.9375rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.error-message .error-retry:hover { background: var(--surface-6); }
+
+/* ===== Weather Content ===== */
+.weather-content { display: none; animation: fadeUp 0.7s ease; }
+.weather-content.active { display: block; }
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+

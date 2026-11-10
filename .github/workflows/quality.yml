@@ -1,0 +1,25 @@
+name: Quality
+
+on:
+  push:
+    branches: [master, main, 'feat/**']
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18'
+          cache: npm
+          cache-dependency-path: weatherApp-VUE3/package-lock.json
+      - run: npm ci
+        working-directory: weatherApp-VUE3
+      - run: npm test
+        working-directory: weatherApp-VUE3
+      - run: npm run lint
+        working-directory: weatherApp-VUE3
+      - run: npm run build
+        working-directory: weatherApp-VUE3

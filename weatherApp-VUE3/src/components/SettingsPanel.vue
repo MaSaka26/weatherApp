@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { DEFAULTS, SETTING_OPTIONS, resetSettings, setSetting, settings } from '@/composables/useSettings'
 
@@ -7,6 +7,9 @@ const props = defineProps({
   open: { type: Boolean, default: false },
 })
 const emit = defineEmits(['close'])
+const panel = ref(null)
+let previousFocus = null
+let previousOverflow = ''
 
 /* 面板结构用数据描述：以后加设置项只改这里，模板不用动 */
 const groups = [
@@ -45,22 +48,63 @@ function close() {
   emit('close')
 }
 
+function getFocusableElements() {
+  return [...(panel.value?.querySelectorAll(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+  ) ?? [])].filter((element) => element.getClientRects().length > 0)
+}
+
 function onKeydown(event) {
-  if (event.key === 'Escape' && props.open) close()
+  if (!props.open) return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    close()
+    return
+  }
+  if (event.key !== 'Tab') return
+
+  const focusable = getFocusableElements()
+  if (!focusable.length) {
+    event.preventDefault()
+    panel.value?.focus()
+    return
+  }
+
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (event.shiftKey && (document.activeElement === first || !panel.value?.contains(document.activeElement))) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && (document.activeElement === last || !panel.value?.contains(document.activeElement))) {
+    event.preventDefault()
+    first.focus()
+  }
 }
 
 // 面板打开时锁住背后的页面滚动，否则 iOS 上手指一滑背景跟着动
 watch(
   () => props.open,
-  (open) => {
-    document.body.style.overflow = open ? 'hidden' : ''
+  async (open) => {
+    if (typeof document === 'undefined') return
+    if (open) {
+      previousFocus = document.activeElement
+      previousOverflow = document.body.style.overflow
+      document.body.style.overflow = 'hidden'
+      await nextTick()
+      ;(getFocusableElements()[0] ?? panel.value)?.focus()
+    } else {
+      document.body.style.overflow = previousOverflow
+      if (previousFocus?.isConnected) previousFocus.focus()
+      previousFocus = null
+    }
   },
 )
 
 onMounted(() => window.addEventListener('keydown', onKeydown))
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
-  document.body.style.overflow = ''
+  document.body.style.overflow = previousOverflow
+  if (previousFocus?.isConnected) previousFocus.focus()
 })
 </script>
 
@@ -68,7 +112,7 @@ onBeforeUnmount(() => {
   <div class="settings-layer" :class="{ open }" :aria-hidden="!open">
     <div class="settings-mask" @click="close"></div>
 
-    <section class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <section ref="panel" class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title" tabindex="-1">
       <header class="settings-head">
         <h2 id="settings-title" class="settings-title">设置</h2>
         <button class="settings-close" aria-label="关闭" @click="close">✕</button>

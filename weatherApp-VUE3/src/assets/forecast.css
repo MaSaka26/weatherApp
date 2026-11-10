@@ -1,0 +1,370 @@
+.hourly-section {
+  margin: 20px 0 24px;
+  animation: fadeUp 0.6s 0.35s ease both;
+}
+.section-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  margin-bottom: 14px;
+  padding-left: 4px;
+}
+.hourly-scroll {
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding: 4px 0;
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  backdrop-filter: blur(var(--glass-soft));
+}
+.hourly-scroll::-webkit-scrollbar { display: none; }
+.hourly-item {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  min-width: 72px;
+  transition: background 0.2s;
+  border-radius: var(--radius-sm);
+}
+.hourly-item:hover { background: var(--surface-2); }
+.hourly-item .hour-time {
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--text-4);
+}
+.hourly-item .hour-icon { font-size: 1.375rem; line-height: 1; }
+.hourly-item .hour-temp {
+  font-size: 1.125rem;
+  font-weight: 400;
+  color: var(--text-2);
+}
+.hourly-item.now .hour-time { color: var(--accent); font-weight: 600; }
+.hourly-item.now .hour-temp { color: var(--accent); font-weight: 500; }
+
+/* 无数据时保留明确提示，不用 0° / 无雨的假结论填满界面 */
+.forecast-placeholder {
+  display: grid;
+  min-height: 88px;
+  margin: 0;
+  place-items: center;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius-lg);
+  color: var(--text-6);
+  background: var(--surface-1);
+  font-size: 0.8125rem;
+  text-align: center;
+}
+.daily-view-chart.forecast-placeholder { min-height: var(--daily-view-h); }
+.view-btn:disabled { opacity: 0.38; cursor: not-allowed; }
+
+/* ===== Daily Forecast ===== */
+/* 列表与曲线共用同一高度：切换视图时卡片不会跳高跳矮，超出部分滚动查看 */
+.daily-section {
+  --daily-view-h: 376px;
+  margin: 20px 0 30px;
+  animation: fadeUp 0.6s 0.4s ease both;
+}
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.section-head .section-title { margin-bottom: 0; }
+.view-switch {
+  display: flex;
+  gap: 1px;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--line-1);
+  backdrop-filter: blur(var(--glass-soft));
+}
+.view-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 1.65px 10px;
+  border-radius: var(--radius-xs);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  line-height: 1.4;
+  color: var(--text-6);
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+  font-family: inherit;
+}
+.view-btn:hover { color: var(--text-3); }
+.view-btn.active {
+  color: var(--accent-contrast);
+  background: linear-gradient(120deg, var(--accent-bright), var(--accent-warm));
+  box-shadow: 0 2px 10px var(--shadow-color);
+}
+
+/* 列表 / 曲线切换：两屏叠在同一个固定高的框里左右推，高度不变不会跳
+   （图表按需加载，切过去时才挂载，所以用 v-if + Transition 而不是并排轨道） */
+.daily-views {
+  position: relative;
+  height: var(--daily-view-h);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.daily-view {
+  position: absolute;
+  inset: 0;
+  transition:
+    transform 0.42s cubic-bezier(0.22, 0.61, 0.36, 1),
+    opacity 0.32s ease;
+  will-change: transform;
+}
+/* 列表 → 曲线：新屏从右推进，旧屏向左退出 */
+.view-next-enter-from { transform: translateX(100%); opacity: 0.4; }
+.view-next-leave-to { transform: translateX(-100%); opacity: 0.4; }
+/* 曲线 → 列表：反向推回 */
+.view-prev-enter-from { transform: translateX(-100%); opacity: 0.4; }
+.view-prev-leave-to { transform: translateX(100%); opacity: 0.4; }
+
+@media (prefers-reduced-motion: reduce) {
+  .daily-view { transition: none; }
+}
+.daily-list {
+  height: 100%;
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  backdrop-filter: blur(var(--glass-soft));
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+.daily-list::-webkit-scrollbar { width: 6px; }
+.daily-list::-webkit-scrollbar-track { background: transparent; }
+.daily-list::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 3px;
+}
+.daily-list::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
+.daily-item {
+  display: flex;
+  align-items: center;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line-0);
+  transition: background 0.2s;
+}
+.daily-item:last-child { border-bottom: none; }
+.daily-item:hover { background: var(--surface-0); }
+.daily-item .day-name {
+  flex: 0 0 72px;
+  font-size: 1rem;
+  font-weight: 400;
+  color: var(--text-3);
+}
+.daily-item .day-name.today { font-weight: 600; color: var(--accent); }
+.daily-item .day-icon { flex: 0 0 32px; text-align: center; font-size: 1.25rem; }
+.daily-item .day-precip {
+  flex: 0 0 40px;
+  font-size: 0.8125rem;
+  color: var(--text-4);
+  text-align: center;
+}
+.daily-item .day-temps {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 1rem;
+  font-weight: 400;
+}
+.daily-item .day-temps .high { color: var(--text-2); min-width: 36px; text-align: right; }
+.daily-item .day-temps .low { color: var(--text-4); min-width: 36px; text-align: right; }
+.daily-item .temp-bar-wrap {
+  width: 60px; height: 4px;
+  background: var(--surface-2);
+  border-radius: var(--radius-2xs);
+  position: relative;
+  overflow: hidden;
+}
+.daily-item .temp-bar-fill {
+  position: absolute; top: 0; left: 0; height: 100%;
+  border-radius: var(--radius-2xs);
+  background: linear-gradient(90deg, var(--bar-from), var(--bar-to));
+  transition: width 0.6s ease;
+}
+
+/* ===== 16 天温度曲线 ===== */
+.dc-wrap {
+  height: var(--daily-view-h);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  backdrop-filter: blur(var(--glass-soft));
+  overflow: hidden;
+  padding: 6px 0 4px;
+}
+.dc-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+  position: relative;
+}
+.dc-scroll::-webkit-scrollbar { display: none; }
+/* 宽度由组件按天数计算，横向滚动由 .dc-scroll 承担 */
+.dc-host { flex: 0 0 auto; }
+.dc-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8125rem;
+  color: var(--text-7);
+}
+.dc-failed {
+  padding: 28px 18px;
+  text-align: center;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: var(--text-6);
+}
+.dc-hint {
+  text-align: center;
+  font-size: 0.75rem;
+  letter-spacing: 0.3px;
+  color: var(--text-8);
+  padding: 0 0 6px;
+}
+/* X 轴四行标签：今天 / 10-30 / 图标 / 天气 */
+.dc-x {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+  line-height: 1.2;
+  padding-top: 6px;
+}
+.dc-x-day {
+  font-size: 0.6875rem;
+  color: var(--text-5);
+}
+.dc-x-day.dc-x-today {
+  color: var(--accent-bright);
+  font-weight: 600;
+}
+.dc-x-date {
+  font-size: 0.75rem;
+  color: var(--text-8);
+  letter-spacing: 0.2px;
+}
+.dc-x-icon {
+  font-size: 0.9375rem;
+  margin: 1px 0;
+}
+.dc-x-cond {
+  font-size: 0.75rem;
+  color: var(--text-7);
+  transform: scale(0.95);
+}
+
+/* ===== Life Index ===== */
+/* 六张独立毛玻璃卡：手机 / 平板三列 × 两行，桌面一行六列。
+   结论居中放大，判断依据缩成小字压在右下角，不抢主句 */
+.life-section {
+  margin: 20px 0 30px;
+  animation: fadeUp 0.6s 0.45s ease both;
+}
+.life-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.life-card {
+  position: relative;
+  display: flex;
+  /* 结论在上、图标下放：卡片文本可用宽在手机只有约 79px，
+     图标若与文字同行会把 7 字结论挤成三行，所以竖向排列。
+     图标靠 margin-top:auto 压到内容区底部，这样同一行里折成两行的
+     卡片和单行卡片的图标也落在同一条水平线上 */
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  min-height: 62px;
+  /* 底部留出小字的高度，主句不会被右下角依据顶到上面去；
+     左右只留 10：手机三列每卡 112.7px，扣掉 2×10+2 边框还有 90.7，
+     刚好容下 6 个 14px 字（「不宜久待户外」=84px）不折行 */
+  padding: 12px 10px 21px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  backdrop-filter: blur(var(--glass-card));
+  border: 1px solid var(--line-0);
+  transition: background 0.3s;
+}
+.life-card:hover { background-color: var(--surface-3); }
+/* 图标纯装饰（结论文字已表达语义），尺寸固定不参与压缩，
+   颜色跟随所在卡片的文字色，换主题不用改任何 SVG */
+.life-icon {
+  flex: 0 0 auto;
+  display: block;
+  /* 顶到内容区底部：图标成了这一格的落脚点，一行里六张卡图标齐平 */
+  margin-top: auto;
+  /* 比结论文字淡一档：图标负责提示类别，读的是那句话 */
+  color: var(--text-4);
+}
+.life-verdict {
+  /* 中文断行：auto-phrase 按词组切，不会「适合户 / 外运动」；
+     balance 再把两行字数拉平，7 字断成 4+3（「适宜卫衣 / 或外套」）
+     而不是贪心断成 5+2 让末行只剩「外套」。
+     两者都是渐进增强，不支持的浏览器按普通断行处理，不会更差 */
+  word-break: auto-phrase;
+  text-wrap: balance;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: var(--text-1);
+  text-align: center;
+}
+/* 判断依据：右下角小字，弱化到只做注解 */
+.life-basis {
+  position: absolute;
+  right: 10px;
+  bottom: 6px;
+  font-size: 0.625rem;
+  line-height: 1.2;
+  letter-spacing: 0.2px;
+  color: var(--text-6);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* ===== Location Hint ===== */
+.location-hint {
+  text-align: center;
+  padding: 10px 0;
+  font-size: 0.75rem;
+  color: var(--text-5);
+  letter-spacing: 0.5px;
+}
+
+/* 数据更新失败：仪表盘留在屏幕上，只在最后一行说明。
+   用暖色而不是纯红 —— 页面仍然是可用的，只是这一轮没更新上 */
+.location-hint.hint-warn { color: var(--accent-warm); }
+
+/* ===== Responsive ===== */

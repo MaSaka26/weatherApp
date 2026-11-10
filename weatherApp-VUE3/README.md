@@ -9,7 +9,9 @@ npm install
 npm run dev      # http://localhost:5173
 npm run build    # 产物在 dist/
 npm run preview  # 预览构建结果
-npm run lint     # oxlint + eslint，必须 0 错
+npm run lint     # 只检查：oxlint + eslint，必须 0 错
+npm run lint:fix # 显式自动修复 lint 问题
+npm test         # 天气规则、竞态、定位意图、过期与时区测试
 npm run format   # Prettier 格式化 src/
 ```
 
@@ -29,11 +31,13 @@ npm run format   # Prettier 格式化 src/
 src/
 ├── api/weather.js          # Open-Meteo 三个接口
 ├── assets/weather.css      # 全局样式与设计令牌
-├── components/             # 21 个组件
-├── composables/            # useSettings / useTween / useWheelScroll
+├── components/             # 23 个组件
+├── composables/
+│   ├── weather/            # 定位偏好/会话、AQI、预警、刷新控制
+│   └── useSettings / useTween / useWheelScroll
 ├── data/china-places.json  # 本地地名表
-├── stores/weather.js       # 请求编排（placeToken 防竞态）
-├── utils/                  # lifeIndex / rainOutlook / weatherCodes / placeLookup
+├── stores/weather.js       # 天气状态门面与坐标/数据原子提交
+├── utils/                  # 天气规则、缓存、定位意图、时区与地名查询
 └── views/WeatherHome.vue
 ```
 

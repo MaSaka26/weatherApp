@@ -1,12 +1,15 @@
 <script setup>
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, provide, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 
 import { useWeatherStore } from '@/stores/weather'
+import { TWEEN_START_AT } from '@/composables/useTween'
 
 import SkyBackground from '@/components/SkyBackground.vue'
 import RefreshButton from '@/components/RefreshButton.vue'
 import SettingsButton from '@/components/SettingsButton.vue'
 import SearchBar from '@/components/SearchBar.vue'
+import CommonCities from '@/components/CommonCities.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import CurrentWeather from '@/components/CurrentWeather.vue'
 import DetailCards from '@/components/DetailCards.vue'
@@ -21,9 +24,20 @@ import DailyForecast from '@/components/DailyForecast.vue'
 import LifeIndex from '@/components/LifeIndex.vue'
 
 const store = useWeatherStore()
+const { animationEpoch } = storeToRefs(store)
+provide(TWEEN_START_AT, animationEpoch)
+const isOnline = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
+const setOnline = () => {
+  isOnline.value = navigator.onLine
+  if (isOnline.value && store.isStale) store.refresh({ quiet: true })
+}
 
-const todayHigh = computed(() => store.daily?.temperature_2m_max?.[0] ?? 0)
-const todayLow = computed(() => store.daily?.temperature_2m_min?.[0] ?? 0)
+const todayHigh = computed(() =>
+  store.hasWeatherData ? (store.daily?.temperature_2m_max?.[0] ?? null) : null,
+)
+const todayLow = computed(() =>
+  store.hasWeatherData ? (store.daily?.temperature_2m_min?.[0] ?? null) : null,
+)
 
 // 雷达预览是重资源（要探测最新帧 + 并发预载 12 张整图），用开关控制挂载与销毁：
 // 常驻会让首屏多一个 Teleport 容器，且用户不点就白白占内存
@@ -52,16 +66,20 @@ function openRadar() {
 }
 
 onMounted(() => {
+  window.addEventListener('online', setOnline)
+  window.addEventListener('offline', setOnline)
   // 进页面先尝试浏览器定位，失败则提示手动搜索。
-  // 注意这里不等数据：模板已经用缓存（或 0 占位骨架）画好了完整仪表盘，
+  // 注意这里不等数据：模板已经用缓存（或数值占位骨架）画好了完整仪表盘，
   // 数据回来只是把数字替换掉。
-  store.loadByGeolocation()
+  store.loadInitialLocation()
   // 每分钟检查一次「距上次成功是否已满 6 分钟」，满足才真正请求 —— 节流在这里
   store.startAutoRefresh()
 })
 
 onBeforeUnmount(() => {
   store.stopAutoRefresh()
+  window.removeEventListener('online', setOnline)
+  window.removeEventListener('offline', setOnline)
 })
 </script>
 
@@ -71,6 +89,12 @@ onBeforeUnmount(() => {
   <div class="app-container">
     <div class="top-bar">
       <SearchBar @search="store.loadCity" @select="store.loadPlace" />
+      <CommonCities
+        :cities="store.commonCities"
+        @select="store.loadCommonCity"
+        @remove="store.removeCommonCity"
+        @locate="store.loadByGeolocation"
+      />
       <RefreshButton />
       <SettingsButton />
     </div>
@@ -98,6 +122,8 @@ onBeforeUnmount(() => {
         :current="store.current"
         :today-high="todayHigh"
         :today-low="todayLow"
+        :data-ready="store.hasWeatherData"
+        :timezone="store.data?.timezone || ''"
       />
 
       <DetailCards
@@ -105,6 +131,7 @@ onBeforeUnmount(() => {
         :current="store.current"
         :daily="store.daily"
         :air="store.air"
+        :data-ready="store.hasWeatherData"
       />
 
       <!-- 天气预警：夹在 6/9 张详情卡与逐小时之间。无本地预警整块隐藏，接口失败显示一行轻提示 + 刷新 -->
@@ -115,26 +142,55 @@ onBeforeUnmount(() => {
         @refresh="store.retryAlerts()"
       />
 
-      <HourlyForecast :hourly="store.hourly" :current="store.current" />
+      <HourlyForecast
+        :hourly="store.hourly"
+        :current="store.current"
+        :data-ready="store.hasWeatherData"
+      />
 
       <!-- 降水预报：夹在逐小时与 16 天之间，是本次需求指定的位置 -->
       <RainForecast
-        v-if="store.current && store.hourly"
+        v-if="store.hasWeatherData && store.current && store.hourly"
         :current="store.current"
         :hourly="store.hourly"
         @open="openRadar"
         @prefetch="prefetchRadar"
       />
 
-      <DailyForecast :daily="store.daily" />
+      <DailyForecast :daily="store.daily" :data-ready="store.hasWeatherData" />
 
-      <LifeIndex v-if="store.current" :current="store.current" :daily="store.daily" :air="store.air" />
+      <LifeIndex
+        v-if="store.hasWeatherData && store.current"
+        :current="store.current"
+        :daily="store.daily"
+        :air="store.air"
+      />
 
       <!-- 失败不再抹掉整页：数据更新失败时保留上一份数据，只在这一行说明。
-           「占位中」表示屏幕上还是 0 骨架，从没拿到过真数据。 -->
-      <div class="location-hint" :class="{ 'hint-warn': store.lastError }">
-        <template v-if="store.lastError">数据更新失败 · {{ store.lastError }}</template>
+           「占位中」表示屏幕上还是 — 骨架，从没拿到过真数据。 -->
+      <div
+        class="location-hint"
+        :class="{ 'hint-warn': store.lastError || store.isStale || store.autoRefreshFailed }"
+      >
+        <template v-if="!isOnline">
+          <span role="status" aria-live="polite">
+            离线模式 · {{ store.hasWeatherData ? `显示本机天气数据（更新于 ${store.lastUpdated}）` : '暂无可用的本机天气缓存' }}
+          </span>
+        </template>
+        <template v-else-if="store.lastError">
+          <span role="status" aria-live="polite">
+            数据更新失败 · {{ store.lastError }}<template v-if="store.hasWeatherData"> · 继续显示上次成功数据（{{ store.lastUpdated }}）</template>
+          </span>
+        </template>
+        <template v-else-if="store.isStale || store.autoRefreshFailed">
+          <span role="status" aria-live="polite">
+            {{ store.isStale ? '数据可能已过期' : '自动更新失败' }} · 最后成功更新于 {{ store.lastUpdated }}
+          </span>
+        </template>
         <template v-else-if="!store.lastUpdated">正在获取天气与位置…</template>
+        <template v-else-if="store.showingCachedWeather">
+          <span role="status" aria-live="polite">正在更新 · 当前显示缓存天气 · {{ store.lastUpdated }}</span>
+        </template>
         <template v-else>数据来源: Open-Meteo · {{ store.lastUpdated }}</template>
       </div>
     </div>

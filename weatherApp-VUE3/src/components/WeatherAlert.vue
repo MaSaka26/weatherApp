@@ -3,7 +3,7 @@
  * 本地天气预警：夹在 6/9 张详情卡与逐小时预报之间
  *
  * 数据是中央气象台的省级预警列表，本地与否靠标题里的区域名匹配（见 utils/alertParse）。
- * 没有本地预警时整块不渲染 —— 空态是常态，留一条「无预警」的空卡只会占地方。
+ * 请求成功但没有本地预警时显示一行轻提示，避免用户误以为预警模块没有加载。
  *
  * 详情页没有 CORS 头，fetch 读不了正文，所以整条卡片点击直接新窗口打开 nmc.cn。
  *
@@ -12,7 +12,8 @@
  *
  * status（由 store 提供）用来区分「确实没有预警」和「接口失败」：
  *   - ok + total>0 → 预警卡片
- *   - ok + total=0 / idle → 整块隐藏（正常空态，不打扰用户）
+ *   - ok + total=0 → 一行「当前暂无预警信息」
+ *   - idle → 等待请求，不提前判断为无预警
  *   - error → 一行中性灰提示 + 刷新按钮，点击只重试预警这一路（不重拉整个天气）
  * 提示条刻意用中性灰而不是红色：接口失败不是灾害级别，红色会和蓝/黄/橙/红预警色语义打架。
  */
@@ -31,6 +32,7 @@ const LEVEL_CLASS = { 1: 'lv-blue', 2: 'lv-yellow', 3: 'lv-orange', 4: 'lv-red' 
 
 const visible = computed(() => props.alerts.list.slice(0, 3))
 const showList = computed(() => props.alerts.total > 0)
+const showEmpty = computed(() => props.status === 'ok' && !showList.value)
 const showError = computed(() => props.status === 'error' && !showList.value)
 
 function open(link) {
@@ -40,7 +42,7 @@ function open(link) {
 </script>
 
 <template>
-  <section v-if="showList || showError" class="alert-section">
+  <section v-if="showList || showEmpty || showError" class="alert-section">
     <div v-if="showList" class="alert-list">
       <button
         v-for="item in visible"
@@ -61,6 +63,12 @@ function open(link) {
         </span>
       </button>
     </div>
+
+    <p v-else-if="showEmpty" class="alert-empty" role="status" aria-live="polite">
+      未匹配到当前城市预警，请以
+      <a href="https://www.nmc.cn/publish/alarm.html" target="_blank" rel="noopener">中央气象台</a>
+      发布为准
+    </p>
 
     <!-- 接口失败：一行轻提示 + 只重试预警的刷新按钮。中性灰玻璃，不占用灾害级别配色 -->
     <div v-else class="alert-fail" role="status">
@@ -87,6 +95,15 @@ function open(link) {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.alert-empty {
+  margin: 0;
+  padding: 2px 2px 4px;
+  color: var(--text-6);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  text-align: center;
 }
 
 .alert-item {
@@ -165,7 +182,7 @@ function open(link) {
 }
 
 .alert-type {
-  font-size: 15px;
+  font-size: 0.9375rem;
   line-height: 1.3;
   font-weight: 600;
   color: var(--text-1);
@@ -173,14 +190,14 @@ function open(link) {
 }
 
 .alert-level {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   color: rgb(var(--alert-rgb));
   white-space: nowrap;
 }
 
 .alert-meta {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--text-5);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -203,7 +220,7 @@ function open(link) {
 }
 
 .alert-fail-text {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--text-6);
 }
 
@@ -213,7 +230,7 @@ function open(link) {
   align-items: center;
   gap: 6px;
   padding: 4px 12px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 500;
   color: var(--text-5);
   background: var(--surface-3);
@@ -244,7 +261,7 @@ function open(link) {
 
 .alert-retry-icon {
   display: inline-block;
-  font-size: 14px;
+  font-size: 0.875rem;
   line-height: 1;
 }
 
@@ -270,7 +287,7 @@ function open(link) {
     height: 22px;
   }
   .alert-type {
-    font-size: 14px;
+    font-size: 0.875rem;
   }
   .alert-item {
     padding: 9px 12px;

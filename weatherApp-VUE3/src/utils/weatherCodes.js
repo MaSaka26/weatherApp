@@ -55,7 +55,8 @@ export function getConditionText(code) {
   return CONDITION_TEXT[code] || '未知'
 }
 
-export function getSkyClass(code, isDay) {
+export function getSkyClass(code, isDay, dataReady = true) {
+  if (!dataReady) return 'weather-unknown'
   if (code === 0) return isDay ? 'clear-day' : 'clear-night'
   if (code <= 2) return isDay ? 'clear-day' : 'clear-night'
   if (code === 3 || (code >= 45 && code <= 48)) return 'cloudy'

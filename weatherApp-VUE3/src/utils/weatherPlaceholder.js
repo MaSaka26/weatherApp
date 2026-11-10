@@ -1,15 +1,14 @@
 /**
- * 首屏占位骨架：结构完整的「全 0」天气对象。
+ * 首屏占位骨架：结构完整、数值为 0 的天气对象。
  *
  * 为什么需要它：页面一进来就要把仪表盘画出来，而此时网络还没回来。
  * 直接把 data 留空不行 —— CurrentWeather 与 DetailCards 的 props.current 是
  * required，缺了就不渲染，用户会看到一块空白；给部分字段又会到处出现 NaN。
  *
  * 所以这里造一份字段齐全、数值全为 0、日期数组合法的替身，
- * 让所有组件都能正常跑完自己的渲染逻辑，数字显示 0°，等真数据到了再整体替换。
+ * 让所有组件都能正常跑完自己的渲染逻辑；展示层通过 dataReady 把 0 渲染成 —，等真数据到了再整体替换。
  *
- * 唯一不设 0 的是 is_day：它不参与数字显示，只决定天空色与图标是太阳还是月亮。
- * 一律给 1 会让半夜打开的人也看到白天配色，所以按此刻钟点粗判。
+ * is_day 按此刻钟点粗判，避免夜间占位天气显示太阳图标；占位 weather_code 不用于决定天空背景。
  */
 
 const HOURLY_STEPS = 24
@@ -54,7 +53,7 @@ export function buildPlaceholderWeather(now = new Date()) {
       temperature_2m: 0,
       relative_humidity_2m: 0,
       apparent_temperature: 0,
-      // 0 是「晴朗」，占位期间天空与文案都是最中性的一种
+      // 数值 0 只用于维持结构；hasWeatherData=false 时展示层不会把它渲染成“晴”
       weather_code: 0,
       wind_speed_10m: 0,
       wind_direction_10m: 0,

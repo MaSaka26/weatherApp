@@ -1,0 +1,489 @@
+@media (max-width: 480px) {
+  .app-container { padding: 0 16px 30px; }
+  .current-temp { font-size: 4.25rem; }
+  .current-temp .deg-symbol { font-size: 1.875rem; }
+  .current-city { font-size: 1.5rem; }
+  .current-body { --clock-split: 6px; }
+  .clock-time { font-size: 1.9375rem; }
+  .clock-date, .clock-doy { font-size: 0.8125rem; letter-spacing: 0.3px; }
+  /* 时钟变宽后窄屏上「最高/最低」会换行，收窄分隔符外边距换回余量 */
+  .current-highlow span { margin: 0 4px; }
+  .details-grid { gap: 8px; }
+  .detail-card { padding: 10px 6px; }
+  /* 三列后每卡约 114px，表盘收到 60，文字与表盘上下排才放得下 */
+  .detail-card.split { gap: 5px; padding: 10px 6px; }
+  .dial { --dial-size: 60px; }
+  .uv-gauge { --gauge-size: 60px; }
+  .detail-card .value { font-size: 1.25rem; }
+  /* 「1020 hPa」在窄卡里放不下，单位收一档 */
+  .detail-card .value .unit { font-size: 0.75rem; }
+  /* 抛物线收到 68，两端时间才有地方站 */
+  .sun-panel { width: 68px; gap: 2px; }
+  .sun-times { font-size: 0.625rem; }
+  .hourly-item { padding: 12px 12px; min-width: 64px; }
+  .daily-item { padding: 12px 14px; }
+  .daily-item .temp-bar-wrap { width: 44px; }
+}
+
+/* 320px 级窄屏：等宽两栏各约 138px，17px 的「最高/最低」放不进半栏，收到 14px 保住单行 */
+@media (max-width: 344px) {
+  .current-highlow { font-size: 0.875rem; }
+  .current-highlow span { margin: 0 3px; }
+}
+
+@media (min-width: 768px) {
+  .app-container { padding: 20px 20px 50px; }
+  .current-temp { font-size: 6rem; }
+  .current-body { --clock-split: 12px; }
+  .clock-time { font-size: 2.375rem; }
+  .clock-date, .clock-doy { font-size: 0.875rem; }
+  .details-grid { gap: 14px; }
+  /* 平板三列后每卡约 233px，表盘比手机放大一档，但还不到桌面的 84 */
+  .dial { --dial-size: 88px; }
+  .uv-gauge { --gauge-size: 88px; }
+  .detail-card .value { font-size: 1.5rem; }
+  .uv-card .uv-level { font-size: 1.5rem; }
+  .sun-panel { width: 88px; }
+  .sun-times { font-size: 0.75rem; }
+  .hourly-item { padding: 16px 20px; min-width: 80px; }
+  .daily-item .temp-bar-wrap { width: 80px; }
+  /* 平板起每格 291px 以上，结论放到 15px 更有分量 */
+  .life-verdict { font-size: 1rem; }
+}
+
+/* ===== Refresh / Settings Buttons ===== */
+/* 与搜索框同行，尺寸对齐输入框高度（48px），触摸目标达标 */
+.refresh-btn,
+.settings-btn,
+.common-cities-btn {
+  flex: 0 0 auto;
+  margin-top: 20px;
+  width: 48px; height: 48px;
+  border-radius: var(--radius-btn);
+  border: none;
+  background: var(--surface-3);
+  backdrop-filter: blur(var(--glass-btn));
+  color: var(--text-0);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.2s, transform 0.2s;
+  box-shadow: 0 4px 20px var(--shadow-color);
+}
+.refresh-btn:hover,
+.settings-btn:hover,
+.common-cities-btn:hover { background-color: var(--surface-5); transform: scale(1.05); }
+.refresh-btn:active,
+.settings-btn:active,
+.common-cities-btn:active { transform: scale(0.92); }
+.refresh-icon { display: inline-block; transform-origin: center; }
+.refresh-icon.spinning { animation: iconSpin 0.8s linear infinite; }
+@keyframes iconSpin { to { transform: rotate(360deg); } }
+.settings-btn svg { display: block; }
+
+/* ===== Settings Panel ===== */
+/* 移动端从底部升起，桌面居中成卡片；面板本身不再跟 --glass-scale 联动，
+   否则把毛玻璃关掉时面板会变成一块实心色板，看不出层级 */
+.settings-layer {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: flex-end; justify-content: center;
+  visibility: hidden; opacity: 0;
+  transition: opacity 0.24s ease, visibility 0.24s;
+}
+.settings-layer.open { visibility: visible; opacity: 1; }
+
+.settings-mask {
+  position: absolute; inset: 0;
+  background: rgba(4, 9, 20, 0.58);
+  backdrop-filter: blur(5px);
+}
+
+.settings-panel {
+  position: relative;
+  display: flex; flex-direction: column;
+  width: 100%; max-width: 460px;
+  max-height: 84vh; max-height: 84dvh;
+  padding: 0 20px calc(16px + env(safe-area-inset-bottom));
+  background: rgba(18, 26, 46, 0.95);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow: 0 -18px 48px rgba(0, 0, 0, 0.5);
+  transform: translateY(28px);
+  transition: transform 0.3s cubic-bezier(0.22, 0.68, 0, 1);
+}
+.settings-layer.open .settings-panel { transform: translateY(0); }
+
+.settings-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 0 6px;
+  flex: 0 0 auto;
+}
+.settings-title { font-size: 1.0625rem; font-weight: 600; color: var(--text-1); letter-spacing: 0.4px; }
+.settings-close {
+  width: 32px; height: 32px;
+  border: none; border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--text-4);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.2s, color 0.2s;
+}
+.settings-close:hover { background: var(--surface-5); color: var(--text-0); }
+
+.settings-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.settings-group-title {
+  padding: 14px 0 2px;
+  font-size: 0.75rem; letter-spacing: 1.2px;
+  color: var(--text-7);
+}
+
+.set-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line-0);
+}
+.set-row:last-child { border-bottom: none; }
+.set-label { font-size: 0.9375rem; color: var(--text-1); }
+.set-hint { margin-top: 3px; font-size: 0.75rem; line-height: 1.45; color: var(--text-7); }
+
+/* 分段控件：选中态用实心表面，不引入新的强调色，换主题也不会花 */
+.seg-ctrl {
+  flex: 0 0 auto;
+  display: flex; gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.seg-ctrl button {
+  min-height: 32px;
+  padding: 0 11px;
+  border: none;
+  border-radius: calc(var(--radius-sm) - 3px);
+  background: transparent;
+  color: var(--text-6);
+  font-family: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s, color 0.2s;
+}
+.seg-ctrl button:hover { color: var(--text-2); }
+.seg-ctrl button.on { background: var(--surface-6); color: var(--text-0); font-weight: 500; }
+
+.settings-foot {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px; padding-top: 14px;
+  border-top: 1px solid var(--line-1);
+}
+.settings-reset {
+  padding: 8px 16px;
+  border: none; border-radius: var(--radius-btn);
+  background: var(--surface-3);
+  color: var(--text-3);
+  font-family: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.settings-reset:hover:not(:disabled) { background: var(--surface-5); color: var(--text-0); }
+.settings-reset:disabled { opacity: 0.45; cursor: default; }
+.settings-note { font-size: 0.6875rem; color: var(--text-7); }
+
+/* 手机：标签与分段控件上下排，否则四档「毛玻璃」会把文字挤成两行 */
+@media (max-width: 400px) {
+  .set-row { flex-direction: column; align-items: stretch; gap: 9px; }
+  .seg-ctrl { width: 100%; }
+  .seg-ctrl button { flex: 1 1 0; padding: 0 6px; min-height: 36px; }
+  /* 360 级窄屏每卡只有 102.7px：左右各留 10 还剩 80.7，
+     6 个 14px 字要 84px 放不下，收到 8 刚好够，6 字结论保住单行 */
+  .life-card { padding-left: 8px; padding-right: 8px; }
+}
+
+@media (min-width: 768px) {
+  .settings-layer { align-items: center; }
+  .settings-panel {
+    border-radius: var(--radius-lg);
+    max-width: 500px;
+    max-height: 76vh; max-height: 76dvh;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+    transform: translateY(16px) scale(0.98);
+  }
+  .settings-layer.open .settings-panel { transform: none; }
+}
+
+/* 320px 级窄屏：搜索框 + 两个 48px 方按钮在 288px 里挤不下，
+   按钮收到 44px（仍是合格触摸目标），间距也收一档。
+   必须写在这两条基础规则之后，否则会被 .refresh-btn 的 width 覆盖 */
+@media (max-width: 344px) {
+  .top-bar { gap: 6px; }
+  .refresh-btn,
+  .settings-btn,
+  .common-cities-btn { width: 44px; height: 44px; margin-top: 22px; font-size: 1.125rem; }
+}
+
+/* ==========================================================================
+   双端适配补充
+   - 桌面：滚动条可见可拖、双栏布局、触摸目标与文案区分
+   - 移动：触摸目标放大
+   ========================================================================== */
+
+/* ===== 滚动条（仅精确指针设备：鼠标 / 触摸板） ===== */
+@media (pointer: fine) {
+  html { scrollbar-color: var(--scroll-thumb) transparent; scrollbar-width: thin; }
+
+  body::-webkit-scrollbar { width: 10px; }
+  body::-webkit-scrollbar-track { background: transparent; }
+  body::-webkit-scrollbar-thumb {
+    background: var(--scroll-thumb);
+    border-radius: var(--radius-xs);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  body::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); background-clip: padding-box; }
+
+  /* 横向列表：桌面恢复细滚动条，否则完全看不出还能往右翻
+     卡片已排满容器，不再需要横向滚动条 */
+  .hourly-scroll,
+  .dc-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scroll-thumb) transparent;
+    padding-bottom: 6px;
+  }
+  .hourly-scroll::-webkit-scrollbar,
+  .dc-scroll::-webkit-scrollbar { display: block; height: 6px; }
+  .hourly-scroll::-webkit-scrollbar-track,
+  .dc-scroll::-webkit-scrollbar-track { background: transparent; }
+  .hourly-scroll::-webkit-scrollbar-thumb,
+  .dc-scroll::-webkit-scrollbar-thumb {
+    background: var(--scroll-thumb);
+    border-radius: var(--radius-xs);
+  }
+  .hourly-scroll::-webkit-scrollbar-thumb:hover,
+  .dc-scroll::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
+}
+
+/* ===== 触摸目标（手指操作设备） ===== */
+@media (pointer: coarse) {
+  /* 按钮高度缩小 20%，触屏仍保留约 27px 的可点区域 */
+  .view-btn {
+    min-height: 27.2px;
+    padding: 5.2px 14px;
+    font-size: 0.75rem;
+  }
+  .search-clear {
+    width: 40px; height: 40px;
+    right: 6px;
+    font-size: 1rem;
+  }
+  /* 清除按钮在触摸设备上放大到 40px，输入框右侧留出等宽，长地名才不会压在 ✕ 上 */
+  .search-input { padding-right: 48px; }
+}
+
+/* ===== 平板：内容列放宽，字号降一档，避免与桌面完全同尺寸 ===== */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .app-container { max-width: 640px; padding: 12px 24px 44px; }
+  .current-temp { font-size: 5.25rem; }
+  .current-temp .deg-symbol { font-size: 2rem; }
+}
+
+/* ===== 桌面宽屏：三块纵向堆叠、同宽居中 =====
+   1) 地点·温度·时钟（保持 360px 原比例）
+   2) 六张卡一行排完，整块是一条横向卡片带
+   3) 逐小时预报（与卡片同一宽度基准）
+   16 天占满整行放在最后；不再有左右分栏造成的悬空空白 */
+@media (min-width: 1024px) {
+  /* 内容列放到 1280：六张卡一行时每张约 197–206，
+     横向排（左文右图）放得下 84 的表盘；再宽 16 天双列会被拉得发空 */
+  .app-container { max-width: 1280px; padding: 16px 24px 48px; }
+  .refresh-btn { margin-top: 20px; }
+
+  .weather-content.active {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 26px;
+    /* 「上下」排：文字 + 表盘 + 上下留白 */
+    --cards-row-h: 176px;
+  }
+  .weather-content .current-weather { width: 360px; padding-top: 4px; }
+  .weather-content .current-body { --clock-split: 9px; }
+  .weather-content .clock-time { font-size: 2rem; }
+  .weather-content .clock-date, .weather-content .clock-doy { font-size: 0.8125rem; }
+
+  /* 六张卡：一行 × 六列，卡片内部排布跟随设置里的「卡片布局」 */
+  /* 外层区块撑满内容列；纵向间距交给 .weather-content 的 gap，这里归零免得叠加 */
+  .weather-content .cards-section {
+    width: 100%;
+    margin: 0;
+  }
+  .weather-content .details-grid {
+    width: 100%;
+    height: auto;
+    margin: 0;
+    padding-bottom: 0;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-auto-rows: var(--cards-row-h);
+    gap: 10px;
+  }
+  /* 九张卡（设置里切到 9 张时）：改成五列，排成 5 + 4。
+     第一行：体感 / 风速 / 湿度 / 气压 / 紫外线，各占 1 格 = 5 格；
+     第二行：降水量 / 空气质量 / 能见度 各占 1 格，末张日出日落占 2 格 = 5 格。
+     两行各填满 5 格，右边缘对齐，不留空位。
+     日出日落通两格是有理由的：那张卡主体是横向的抛物线弧，
+     单格宽里弧压得又扁又小，通两格才看得出升落轨迹。 */
+  .weather-content .details-grid.cards-9 {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .weather-content .details-grid.cards-9 > .sun-card {
+    grid-column: span 2;
+  }
+  /* 九卡时这张卡通两格、横向空间富裕，把日出日落换成横线轨道版（原本是抛物线）。
+     两套 DOM 都渲染，这里只负责显隐：横线出、抛物线收。
+     为什么不按屏宽写断点、而是挂在 .cards-9 上：六卡时这张卡只占一格，
+     横线挤在 150px 里光点和时间会打架；只有九卡的通两格才撑得开 */
+  .weather-content .details-grid.cards-9 .sun-line-wrap { display: flex; }
+  .weather-content .details-grid.cards-9 .sun-panel { display: none; }
+  /* 左边「日出 · 日落 / 12h56」，右边横轨；轨道吃掉剩下的宽度但别顶到卡片右边缘 */
+  .weather-content .details-grid.cards-9 .sun-line-wrap {
+    flex: 1 1 auto;
+    width: auto;
+    max-width: 320px;
+    gap: 5px;
+  }
+  /* 主值已经是 12h56，底下那行「白昼 12 小时 56 分」会把同一件事说两遍，
+     所以模板里没有 .sun-note 这个元素，这里也不需要隐藏规则 */
+  .weather-content .details-grid.cards-9 .sun-time { font-size: clamp(0.625rem, 0.8vw, 0.75rem); }
+  /* 末张通两格，左右留白比单格宽，间距按整行重算，别让文字贴边 */
+  .weather-content .details-grid.cards-9.layout-row .sun-card.split {
+    padding-left: clamp(14px, 1.4vw, 22px);
+    padding-right: clamp(14px, 1.4vw, 22px);
+  }
+  /* 横向排时卡片比竖排矮：表盘按 clamp 缩到 56–84，行高也跟着缩 */
+  .weather-content .details-grid.layout-row {
+    grid-auto-rows: clamp(128px, 12.5vw, 152px);
+  }
+  .weather-content .detail-card {
+    grid-column: auto;
+    padding: 12px 10px;
+  }
+  .weather-content .detail-card .label {
+    font-size: var(--font-detail-label);
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+  .weather-content .detail-card .value { font-size: 1.625rem; }
+  .weather-content .detail-card .value .unit { font-size: 0.875rem; }
+  /* 纵向骨架（layout-stack）：文字块居中在上、表盘居中在下，六张卡共用同一节奏 */
+  .weather-content .detail-card.split {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 8px;
+    min-height: 0;
+    padding: 14px 10px;
+  }
+  .weather-content .split .card-main { align-items: center; }
+  .weather-content .uv-gauge { --gauge-size: 84px; }
+  .weather-content .dial { --dial-size: 84px; }
+  .weather-content .uv-level { font-size: 1.625rem; }
+  .weather-content .sun-panel { width: 92px; gap: 3px; }
+  .weather-content .sun-times { font-size: 0.6875rem; }
+
+  /* 横向骨架（layout-row）：左标签+数值，右图形，与手机同一套逻辑。
+     容器在 1024–1360 之间浮动，六列后每张卡 152–210，表盘不能用固定值：
+     1024 屏固定 84 会把文字栏挤到 28px，「日出 · 日落」直接折行。
+     所以尺寸全部 clamp 跟视口连续变化，中间任何宽度都不会挤压变形 */
+  .weather-content .details-grid.layout-row .detail-card.split {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    text-align: left;
+    gap: clamp(6px, 0.7vw, 10px);
+    padding: clamp(9px, 0.85vw, 12px) clamp(9px, 0.95vw, 14px)
+      clamp(9px, 0.85vw, 12px) clamp(10px, 1.1vw, 16px);
+  }
+  .weather-content .details-grid.layout-row .split .card-main { align-items: flex-start; }
+  .weather-content .details-grid.layout-row .split .card-main .label {
+    font-size: var(--font-detail-label);
+    letter-spacing: 0.3px;
+  }
+  .weather-content .details-grid.layout-row .dial { --dial-size: clamp(56px, 5.85vw, 84px); }
+  .weather-content .details-grid.layout-row .uv-gauge { --gauge-size: clamp(56px, 5.85vw, 84px); }
+  .weather-content .details-grid.layout-row .detail-card .value {
+    font-size: clamp(1.125rem, 1.75vw, 1.5rem);
+  }
+  .weather-content .details-grid.layout-row .detail-card .value .unit {
+    font-size: clamp(0.6875rem, 0.95vw, 0.8125rem);
+  }
+  .weather-content .details-grid.layout-row .uv-card .uv-level {
+    font-size: clamp(1.125rem, 1.75vw, 1.5rem);
+  }
+  .weather-content .details-grid.layout-row .sun-panel { width: clamp(54px, 5.6vw, 80px); }
+  .weather-content .details-grid.layout-row .sun-times { font-size: clamp(0.5625rem, 0.75vw, 0.625rem); }
+
+  .weather-content .hourly-section { width: 100%; margin: 0; }
+  .weather-content .daily-section { width: 100%; margin: 0; --daily-view-h: 448px; }
+  .weather-content .location-hint { width: 100%; }
+
+  /* 生活指数：桌面一行六列（穿衣/防晒/户外/洗车/带伞/疾病） */
+  .weather-content .life-section { width: 100%; margin: 0; }
+  .weather-content .life-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .weather-content .life-card { padding: 15px 18px 23px; }
+  /* 双列填写：先读满左列 8 天，再读右列，符合「列表」的阅读顺序 */
+  .daily-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(8, auto);
+    grid-auto-flow: column;
+    gap: 0 28px;
+  }
+  .daily-item .day-temps { gap: 14px; }
+  .daily-item .temp-bar-wrap { width: 96px; }
+}
+
+/* 1024–1279 不再单独分档：横向排的尺寸已用 clamp 跟视口连续变化，
+   1024 处每卡 152、表盘约 60，1440 处每卡 210、表盘 84，中间不会跳变 */
+
+/* 九卡数值放大 20%，只缩放文本绘制，不改变表盘和网格的布局尺寸。 */
+.weather-content .details-grid.cards-9 .detail-card .value,
+.weather-content .details-grid.cards-9 .uv-card .uv-level {
+  transform: scale(1.2);
+  transform-origin: left center;
+}
+.weather-content .details-grid.cards-9.layout-stack .detail-card .value,
+.weather-content .details-grid.cards-9.layout-stack .uv-card .uv-level {
+  transform-origin: center;
+}
+.weather-content .details-grid.cards-9 .uv-gauge .g-value {
+  font-size: calc(var(--gauge-size) * 0.288);
+  transform: none;
+}
+
+/* ===== 毛玻璃的「雾度」层 =====
+   backdrop-filter 在这套平滑渐变背景上几乎看不出变化（实测 0% 像素差异），
+   所以在同一个平面再叠一层随 --glass-scale 变白的背景图：
+   scale=0 时白雾 12%，卡片明显更实；scale=1 时 0%，与原来完全一致。
+   必须放在所有 background 简写之后，否则会被简写重置为 none */
+.detail-card,
+.hourly-scroll,
+.daily-list,
+.dc-wrap,
+.life-card,
+.view-switch,
+.search-input,
+.refresh-btn,
+.settings-btn,
+.common-cities-btn {
+  background-image:
+    linear-gradient(var(--glass-frost), var(--glass-frost)),
+    linear-gradient(var(--glass-shade), var(--glass-shade));
+}

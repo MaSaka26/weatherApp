@@ -8,6 +8,7 @@ const props = defineProps({
   hourly: { type: Object, default: null },
   // current.time 是城市当地时间（timezone=auto），用来定「现在」是哪一格
   current: { type: Object, default: null },
+  dataReady: { type: Boolean, default: false },
 })
 
 const scrollEl = ref(null)
@@ -22,6 +23,7 @@ const isDayByClock = (iso) => {
 useWheelScroll(scrollEl)
 
 const items = computed(() => {
+  if (!props.dataReady) return []
   const h = props.hourly
   if (!h?.time?.length) return []
 
@@ -87,12 +89,13 @@ watch(
 <template>
   <div class="hourly-section">
     <div class="section-title">逐小时预报</div>
-    <div ref="scrollEl" class="hourly-scroll">
+    <div v-if="dataReady && items.length" ref="scrollEl" class="hourly-scroll">
       <div v-for="item in items" :key="item.key" class="hourly-item" :class="{ now: item.isNow }">
         <span class="hour-time">{{ item.label }}</span>
         <span class="hour-icon">{{ item.icon }}</span>
         <span class="hour-temp">{{ item.temp }}°</span>
       </div>
     </div>
+    <p v-else class="forecast-placeholder" role="status">正在获取逐小时预报…</p>
   </div>
 </template>
