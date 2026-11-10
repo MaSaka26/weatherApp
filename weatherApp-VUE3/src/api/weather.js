@@ -158,20 +158,16 @@ export async function fetchWeather(lat, lon, { signal } = {}) {
  * 2.5 秒卡在同一量级上，网络稍抖就整块数据丢失（曾一直显示「暂无」）。
  * 它已经不在首屏链路上，等久一点不会拖慢页面，只是卡片晚一点填数。
  */
-export async function fetchAirQuality(lat, lon, timeoutMs = 8000) {
+export async function fetchAirQuality(lat, lon, { signal, timeoutMs = 8000 } = {}) {
   const url =
     `${AIR_QUALITY_API}?latitude=${lat}&longitude=${lon}` +
     `&current=us_aqi,pm2_5,pm10&timezone=auto`
-  const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
-  try {
-    const res = await fetch(url, { signal: ctrl.signal })
-    if (!res.ok) throw new Error('Air Quality API 请求失败')
-    const data = await res.json()
-    return data.current ?? null
-  } finally {
-    clearTimeout(timer)
-  }
+  const data = await requestJson(url, {
+    signal,
+    timeoutMs,
+    errorMessage: 'Air Quality API 请求失败',
+  })
+  return data.current ?? null
 }
 
 /**
@@ -185,21 +181,17 @@ export async function fetchAirQuality(lat, lon, timeoutMs = 8000) {
  */
 const ALARM_API = 'https://www.nmc.cn/rest/findAlarm'
 
-export async function fetchAlerts(province, timeoutMs = 5000) {
+export async function fetchAlerts(province, { signal, timeoutMs = 5000 } = {}) {
   const url =
     // pageSize 给 200：陕西这类预警大省实测有 160 条，60 会被截断、漏掉本地那条
     `${ALARM_API}?pageNo=1&pageSize=200&signaltype=&signallevel=` +
     `&province=${encodeURIComponent(province || '')}`
-  const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
-  try {
-    const res = await fetch(url, { signal: ctrl.signal })
-    if (!res.ok) throw new Error('Alert API 请求失败')
-    const data = await res.json()
-    return data?.data?.page?.list ?? []
-  } finally {
-    clearTimeout(timer)
-  }
+  const data = await requestJson(url, {
+    signal,
+    timeoutMs,
+    errorMessage: 'Alert API 请求失败',
+  })
+  return data?.data?.page?.list ?? []
 }
 
 /**

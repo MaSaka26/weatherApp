@@ -167,9 +167,11 @@ weatherApp-VUE3/
 │   │   ├── LifeIndex.vue       # 生活指数
 │   │   ├── TablerIcon.vue      # 通用图标组件
 │   │   └── SettingsPanel / SearchBar / SkyBackground …
-│   ├── composables/            # useSettings（设置）、useTween（补间）、useWheelScroll
+│   ├── composables/
+│   │   ├── weather/            # 定位会话、偏好、AQI、预警、刷新控制器
+│   │   └── useSettings / useTween / useWheelScroll
 │   ├── data/china-places.json  # 本地地名表（111 KB）
-│   ├── stores/weather.js       # Pinia：请求编排 + placeToken 防竞态 + 缓存/节流/占位
+│   ├── stores/weather.js       # Pinia 门面：坐标、天气和地名的原子提交与对外状态
 │   ├── utils/
 │   │   ├── lifeIndex.js        # 六大生活指数规则
 │   │   ├── aqi.js              # AQI 六级分档 + PM2.5/PM10 读数
@@ -179,6 +181,8 @@ weatherApp-VUE3/
 │   │   ├── weatherPlaceholder.js # 首屏结构占位数据（展示层不渲染成真实数字）
 │   │   ├── locationIntent.js   # 自动定位 / 手动选城意图
 │   │   ├── weatherFreshness.js # 数据过期判断
+│   │   ├── placeCandidate.js   # 统一地点候选结构
+│   │   ├── placeResolver.js    # 坐标 -> 地名解析
 │   │   ├── timezone.js         # 目标城市时区换算
 │   │   ├── weatherCodes.js     # WMO 天气码 → 中文 + 昼夜
 │   │   └── placeLookup / placeSearch
@@ -223,11 +227,11 @@ weatherApp-VUE3/
 5. **空气质量只有 AQI / PM2.5 / PM10**，没有 O₃、NO₂、SO₂、CO 的细分展示，也没有分时段预报；中国区无花粉数据（接口返回空），所以也没接。
 6. **降水条目不区分降水类型**。只判断「有没有雨」，没有雨/雪/冻雨的分别文案；强度已用 12 小时柱条展示（`intensities`），但柱条只有粗细高低的档位，没有标出每格对应的具体时刻。
 7. **离线能力有限**。已提供 Web App Manifest、安装图标和按构建指纹自动更新的 Service Worker；天气可显示 24 小时内的本地缓存。首次打开前必须先联网，天气 API、预警和实时雷达仍需网络。
-8. **测试覆盖仍有限**。14 个自动化测试覆盖生活指数、降水展望、雷达播放、请求竞态、缓存、定位意图、数据过期与城市时区；完整浏览器端交互仍建议后续补充端到端测试。
+8. **测试覆盖仍有限**。19 个自动化测试覆盖生活指数、降水展望、雷达播放、请求竞态、缓存、定位会话、AQI 竞态、刷新控制、数据过期与城市时区；完整浏览器端交互仍建议后续补充端到端测试。
 
 ### 工程债
 
-- `stores/weather.js` 已超过 500 行，仍同时负责定位意图、主天气、空气质量、预警、缓存和定时刷新，后续可拆成独立服务层。
+- `stores/weather.js` 已缩减到约 250 行，定位、偏好、AQI、预警和刷新已独立；后续重点是补浏览器端端到端测试。
 - `ui-review/` 被 `.gitignore` 忽略，验证脚本不进版本库，换机器就丢失。若这些脚本要长期用，应单独放行或移到独立仓库。
 
 ---

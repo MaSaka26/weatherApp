@@ -32,9 +32,11 @@ src/
 ├── api/weather.js          # Open-Meteo 三个接口
 ├── assets/weather.css      # 全局样式与设计令牌
 ├── components/             # 23 个组件
-├── composables/            # useSettings / useTween / useWheelScroll
+├── composables/
+│   ├── weather/            # 定位偏好/会话、AQI、预警、刷新控制
+│   └── useSettings / useTween / useWheelScroll
 ├── data/china-places.json  # 本地地名表
-├── stores/weather.js       # 请求编排（placeToken 防竞态）
+├── stores/weather.js       # 天气状态门面与坐标/数据原子提交
 ├── utils/                  # 天气规则、缓存、定位意图、时区与地名查询
 └── views/WeatherHome.vue
 ```

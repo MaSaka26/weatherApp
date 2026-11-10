@@ -13,6 +13,13 @@ import { getSkyClass } from '../src/utils/weatherCodes.js'
 import { inferLocationMode, shouldAutoLocate } from '../src/utils/locationIntent.js'
 import { isWeatherStale } from '../src/utils/weatherFreshness.js'
 import { getZonedParts } from '../src/utils/timezone.js'
+import { ref } from 'vue'
+import { createManualCandidate, createSearchCandidate } from '../src/utils/placeCandidate.js'
+import { useLocationSession } from '../src/composables/weather/useLocationSession.js'
+import { useAirQuality } from '../src/composables/weather/useAirQuality.js'
+import { useWeatherRefresh } from '../src/composables/weather/useWeatherRefresh.js'
+import { useLocationPreferences } from '../src/composables/weather/useLocationPreferences.js'
+
 
 
 test('life indices clearly mark missing weather values', () => {
@@ -229,4 +236,133 @@ test('clock uses the selected city timezone instead of the device timezone', () 
     minute: 0,
     second: 0,
   })
+})
+
+test('place candidates keep coordinates, source, and intent together', () => {
+  assert.deepEqual(createSearchCandidate({
+    lat: 30.2,
+    lon: 120.1,
+    name: '杭州',
+    admin1: '浙江省',
+    country: '中国',
+  }), {
+    lat: 30.2,
+    lon: 120.1,
+    name: '杭州',
+    detail: '浙江省',
+    source: 'search',
+    mode: 'manual',
+  })
+  assert.equal(createManualCandidate({ name: '杭州' }, 'common'), null)
+})
+
+test('location session discards stale searches and aborts the previous request', async () => {
+  const pending = []
+  const geocode = (city, { signal }) => new Promise((resolve) => {
+    pending.push({ city, signal, resolve })
+  })
+  const session = useLocationSession({ geocode })
+
+  const first = session.searchCity('A')
+  const second = session.searchCity('B')
+  assert.equal(pending[0].signal.aborted, true)
+
+  pending[1].resolve({ lat: 2, lon: 2, name: 'B', admin1: 'B省', country: '中国' })
+  const candidate = await second
+  assert.equal(candidate.name, 'B')
+
+  pending[0].resolve({ lat: 1, lon: 1, name: 'A', admin1: 'A省', country: '中国' })
+  await assert.rejects(first, (error) => error.code === 'LOCATION_STALE')
+})
+
+test('air quality keeps only the newest request result', async () => {
+  const pending = []
+  const fetcher = (_lat, _lon, { signal }) => new Promise((resolve) => {
+    pending.push({ signal, resolve })
+  })
+  const { air, load } = useAirQuality({ fetcher })
+
+  const first = load(1, 1)
+  const second = load(2, 2)
+  assert.equal(pending[0].signal.aborted, true)
+
+  pending[1].resolve({ us_aqi: 25 })
+  await second
+  assert.equal(air.value.us_aqi, 25)
+
+  pending[0].resolve({ us_aqi: 80 })
+  await first
+  assert.equal(air.value.us_aqi, 25)
+})
+
+test('refresh controller marks failures stale and resets after success', async () => {
+  let now = 20 * 60 * 1000
+  let refreshCalls = 0
+  const listeners = new Map()
+  const documentRef = {
+    hidden: false,
+    addEventListener: (name, handler) => listeners.set(name, handler),
+    removeEventListener: (name) => listeners.delete(name),
+  }
+  const lastSuccessAt = ref(1)
+  const hasWeatherData = ref(true)
+  const isFetching = ref(false)
+  const controller = useWeatherRefresh({
+    isFetching,
+    lastSuccessAt,
+    hasWeatherData,
+    canRefresh: () => true,
+    refresh: async () => {
+      refreshCalls += 1
+      return false
+    },
+    now: () => now,
+    documentRef,
+    setTimer: () => 1,
+    clearTimer: () => {},
+  })
+
+  assert.equal(await controller.maybeAutoRefresh(), false)
+  assert.equal(refreshCalls, 1)
+  assert.equal(controller.autoRefreshFailed.value, true)
+  assert.equal(controller.isStale.value, true)
+
+  controller.markSuccess(now)
+  assert.equal(controller.autoRefreshFailed.value, false)
+  assert.equal(controller.isStale.value, false)
+
+  controller.start()
+  assert.equal(listeners.has('visibilitychange'), true)
+  controller.stop()
+  assert.equal(listeners.has('visibilitychange'), false)
+  now += 1
+})
+
+test('location preferences persist manual mode and common cities', () => {
+  const original = globalThis.localStorage
+  const values = new Map()
+  globalThis.localStorage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+    removeItem: (key) => values.delete(key),
+  }
+  try {
+    const preferences = useLocationPreferences({
+      cachedPlace: { locationSource: 'county' },
+    })
+    assert.equal(preferences.locationMode.value, 'auto')
+    preferences.setLocationMode('manual')
+    assert.equal(values.get('weather:location-mode:v1'), 'manual')
+
+    const city = { name: '杭州', detail: '浙江省', lat: 30.2, lon: 120.1 }
+    preferences.rememberCommonCity(city)
+    preferences.rememberCommonCity(city)
+    assert.equal(preferences.commonCities.value.length, 1)
+
+    preferences.removeCommonCity(city)
+    assert.equal(preferences.commonCities.value.length, 0)
+  } finally {
+    if (original === undefined) delete globalThis.localStorage
+    else globalThis.localStorage = original
+  }
 })
