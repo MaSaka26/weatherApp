@@ -89,15 +89,16 @@
   position: fixed; inset: 0; z-index: 60;
   display: flex; align-items: flex-end; justify-content: center;
   visibility: hidden; opacity: 0; pointer-events: none;
-  /* 关闭方向：opacity 淡出 0.24s，visibility 的离散过渡让层在淡出期间保持 visible、
-     结束才 hidden（否则淡出会被提前掐断，看起来像「啪地消失」）。
-     pointer-events 负责关闭态不拦截点击。打开方向由 .open 的 transition:none 覆盖。 */
-  transition: opacity 0.24s ease, visibility 0.24s;
+  /* 关闭方向：opacity 淡出与面板「收回设置按钮」同为 0.32s，visibility 的离散过渡
+     让层在收回期间保持 visible、结束才 hidden（否则收回动画会被提前掐断）。
+     pointer-events 负责关闭态不拦截点击。打开方向由 .open 的 transition:none 覆盖，
+     模糊立刻满强度、不延迟。 */
+  transition: opacity 0.32s ease, visibility 0.32s;
 }
 /* 打开时整层不做过渡：visibility/opacity 立即到位，遮罩的 backdrop-filter 模糊
-   立刻满强度，不再随 opacity 在 0.24s 内渐渐浮现（就是用户说的「模糊有延迟」）。
-   关闭时移除 .open、回到基础规则的过渡，保留可见的淡出退场。
-   面板自己的 transform 滑入动画在 .settings-panel 上，不受影响。 */
+   立刻满强度，不再随 opacity 渐渐浮现（就是用户说的「模糊有延迟」）。
+   关闭时移除 .open、回到基础规则的 0.32s 过渡，与面板收回动画同步、可见。
+   面板的展开/收回位移由 JS 的 WAAPI 动画负责，不受这条影响。 */
 .settings-layer.open { visibility: visible; opacity: 1; pointer-events: auto; transition: none; }
 
 .settings-mask {
@@ -116,10 +117,13 @@
   border: 1px solid var(--line-2);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   box-shadow: 0 -18px 48px rgba(0, 0, 0, 0.5);
-  transform: translateY(28px);
-  transition: transform 0.3s cubic-bezier(0.22, 0.68, 0, 1);
+  /* 位移/缩放由 JS 的 WAAPI 动画负责（从设置按钮展开、收回按钮）。
+     这里只负责稳定态：默认隐藏，动画结束后加 .is-open 保持显示。
+     [data-origin] 把变换原点设为左上角，方便用 offset 几何精确算起点。 */
+  opacity: 0;
 }
-.settings-layer.open .settings-panel { transform: translateY(0); }
+.settings-panel[data-origin] { transform-origin: 0 0; }
+.settings-panel.is-open { opacity: 1; }
 
 .settings-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -239,9 +243,14 @@
     max-width: 500px;
     max-height: 76vh; max-height: 76dvh;
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
-    transform: translateY(16px) scale(0.98);
   }
-  .settings-layer.open .settings-panel { transform: none; }
+}
+
+/* 尊重系统「减少动态效果」：不做展开/收回位移，直接显隐。 */
+@media (prefers-reduced-motion: reduce) {
+  .settings-layer { transition: none; }
+  .settings-panel { transform: none; opacity: 0; }
+  .settings-panel.is-open { opacity: 1; }
 }
 
 /* 320px 级窄屏：搜索框 + 两个 48px 方按钮在 288px 里挤不下，

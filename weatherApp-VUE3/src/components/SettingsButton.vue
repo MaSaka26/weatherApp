@@ -4,10 +4,22 @@ import { ref } from 'vue'
 import SettingsPanel from '@/components/SettingsPanel.vue'
 
 const open = ref(false)
+const buttonEl = ref(null)
+const origin = ref(null)
+
+function openSettings() {
+  // 测量按钮中心（视口坐标）。用 getBoundingClientRect 只取按钮自身，
+  // 它不受面板 transform 影响，动画中重复打开也稳定。
+  const rect = buttonEl.value?.getBoundingClientRect()
+  origin.value = rect
+    ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+    : null
+  open.value = true
+}
 </script>
 
 <template>
-  <button class="settings-btn" title="设置" aria-label="打开设置" @click="open = true">
+  <button ref="buttonEl" class="settings-btn" title="设置" aria-label="打开设置" @click="openSettings">
     <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
       <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
         <path
@@ -18,5 +30,5 @@ const open = ref(false)
     </svg>
   </button>
 
-  <SettingsPanel :open="open" @close="open = false" />
+  <SettingsPanel :open="open" :origin="origin" @close="open = false" />
 </template>
