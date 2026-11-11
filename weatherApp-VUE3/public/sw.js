@@ -33,7 +33,13 @@ async function precache() {
 }
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(precache().then(() => self.skipWaiting()))
+  // 不自动 skipWaiting：由用户点「立即更新」后发 SKIP_WAITING，
+  // 否则旧页面正在引用的动态 chunk 会被新 SW 的 activate 删缓存后 404。
+  event.waitUntil(precache())
+})
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting()
 })
 
 self.addEventListener('activate', (event) => {
@@ -52,6 +58,8 @@ self.addEventListener('fetch', (event) => {
   const request = event.request
   const url = new URL(request.url)
   if (request.method !== 'GET' || url.origin !== self.location.origin) return
+  // 版本清单必须实时，绝不缓存
+  if (url.pathname.endsWith('/deploy.json')) return
 
   if (request.mode === 'navigate') {
     event.respondWith((async () => {

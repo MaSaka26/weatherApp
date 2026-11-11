@@ -15,7 +15,19 @@ initSettings()
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     const serviceWorkerUrl = new URL('sw.js', document.baseURI).href
-    navigator.serviceWorker.register(serviceWorkerUrl).catch((error) => {
+    navigator.serviceWorker.register(serviceWorkerUrl).then((reg) => {
+      // waiting 模式：新 SW 装好但等待用户确认；有 waiting 就说明远端版本已变。
+      if (reg.waiting) window.dispatchEvent(new Event('app-update-available'))
+      reg.addEventListener('updatefound', () => {
+        const installing = reg.installing
+        if (!installing) return
+        installing.addEventListener('statechange', () => {
+          if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+            window.dispatchEvent(new Event('app-update-available'))
+          }
+        })
+      })
+    }).catch((error) => {
       console.warn('Service worker registration failed', error)
     })
   })

@@ -194,6 +194,27 @@
 .settings-reset:disabled { opacity: 0.45; cursor: default; }
 .settings-note { font-size: 0.6875rem; color: var(--text-7); }
 
+.settings-check-update {
+  flex: 0 0 auto;
+  padding: 7px 14px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-btn);
+  color: var(--text-2);
+  background: var(--surface-3);
+  font-family: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: background .2s, color .2s;
+}
+.settings-check-update:hover:not(:disabled) { color: var(--text-0); background: var(--surface-5); }
+.settings-check-update:disabled { opacity: .5; cursor: default; }
+.settings-update-state {
+  padding: 8px 0 2px;
+  font-size: 0.75rem;
+  color: var(--accent-bright, #7fd4f5);
+}
+.settings-update-state:empty { display: none; }
+
 /* 手机：标签与分段控件上下排，否则四档「毛玻璃」会把文字挤成两行 */
 @media (max-width: 400px) {
   .set-row { flex-direction: column; align-items: stretch; gap: 9px; }

@@ -22,6 +22,11 @@ function gitValue(args, fallback = '') {
   }
 }
 
+// 版本身份在顶层算一次：config().define 给运行时，closeBundle 给 deploy.json。
+// app 级 buildId 用 commit hash（本地与线上同源）；SW 缓存名另用 manifest 内容哈希。
+const buildVersion = gitValue(['describe', '--tags', '--exact-match', 'HEAD']) || gitValue(['describe', '--tags', '--abbrev=0']) || gitValue(['rev-parse', '--short', 'HEAD']) || 'dev'
+const buildCommit = gitValue(['rev-parse', 'HEAD']) || 'unknown'
+
 function injectServiceWorkerBuildId() {
   return {
     name: 'inject-service-worker-build-id',
@@ -49,6 +54,8 @@ function injectServiceWorkerBuildId() {
       // 来源指纹：线上访问 /deploy.json 即可知道这份产物来自哪个源码版本。
       const exactTag = gitValue(['describe', '--tags', '--exact-match', 'HEAD'])
       const deployInfo = {
+        appVersion: buildVersion,
+        appBuildId: buildCommit,
         sourceCommit: gitValue(['rev-parse', 'HEAD'], 'unknown'),
         sourceShort: gitValue(['rev-parse', '--short', 'HEAD'], 'unknown'),
         sourceTag: exactTag || null,
@@ -70,6 +77,10 @@ function injectServiceWorkerBuildId() {
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
   base: loadEnv(mode, process.cwd(), 'VITE_').VITE_SITE_BASE || './',
+  define: {
+    __APP_VERSION__: JSON.stringify(buildVersion),
+    __APP_BUILD_ID__: JSON.stringify(buildCommit),
+  },
   build: { manifest: true },
   plugins: [
     vue(),

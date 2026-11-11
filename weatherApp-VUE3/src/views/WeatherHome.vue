@@ -22,7 +22,11 @@ import RainForecast from '@/components/RainForecast.vue'
 const RainRadarPreview = defineAsyncComponent(() => import('@/components/RainRadarPreview.vue'))
 import DailyForecast from '@/components/DailyForecast.vue'
 import LifeIndex from '@/components/LifeIndex.vue'
+import UpdateToast from '@/components/UpdateToast.vue'
+import { useAppUpdate } from '@/composables/useAppUpdate'
 
+// 启动版本检查 / 回前台检查（单例，设置面板与 toast 共享状态）
+useAppUpdate()
 const store = useWeatherStore()
 const { animationEpoch } = storeToRefs(store)
 provide(TWEEN_START_AT, animationEpoch)
@@ -209,6 +213,8 @@ onBeforeUnmount(() => {
 
   <!-- 雷达回放层放在 app-container 之外：它是全屏覆盖层，
        留在内容列里会被容器的 max-width 与 padding 裁住 -->
+  <UpdateToast />
+
   <RainRadarPreview
     v-if="radarMounted"
     :open="radarOpen"

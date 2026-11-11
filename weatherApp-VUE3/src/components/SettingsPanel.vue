@@ -2,6 +2,27 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { DEFAULTS, SETTING_OPTIONS, resetSettings, setSetting, settings } from '@/composables/useSettings'
+import { useAppUpdate } from '@/composables/useAppUpdate'
+
+const {
+  appVersion,
+  status: updateStatus,
+  remoteLabel,
+  errorMessage: updateError,
+  isChecking: updateChecking,
+  isDev: updateIsDev,
+  check: checkUpdate,
+} = useAppUpdate()
+
+const updateText = computed(() => {
+  if (updateIsDev) return '开发环境不检查线上版本'
+  if (updateStatus.value === 'checking') return '正在检查…'
+  if (updateStatus.value === 'available') return `发现新版本 ${remoteLabel.value}`
+  if (updateStatus.value === 'updating') return '正在更新…'
+  if (updateStatus.value === 'error') return updateError.value
+  if (updateStatus.value === 'up-to-date') return '已是最新版本'
+  return ''
+})
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -138,6 +159,27 @@ onBeforeUnmount(() => {
                 {{ opt.label }}
               </button>
             </div>
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <div class="settings-group-title">关于</div>
+          <div class="set-row">
+            <div class="set-text">
+              <div class="set-label">应用版本</div>
+              <div class="set-hint">当前 {{ appVersion }}</div>
+            </div>
+            <button
+              class="settings-check-update"
+              type="button"
+              :disabled="updateChecking || updateIsDev"
+              @click="checkUpdate(true)"
+            >
+              {{ updateIsDev ? '开发环境' : updateChecking ? '检查中…' : '检查更新' }}
+            </button>
+          </div>
+          <div v-if="updateText" class="settings-update-state" role="status" aria-live="polite">
+            {{ updateText }}
           </div>
         </div>
       </div>
