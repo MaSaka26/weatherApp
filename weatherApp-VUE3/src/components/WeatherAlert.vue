@@ -102,12 +102,17 @@ function open(link) {
 <style scoped>
 .alert-section {
   width: 100%;
+  /* 所有预警状态共用的基准高度，避免 loading / 无预警 / 有预警 / 失败切换时布局跳动 */
+  --alert-slot-h: 56px;
 }
 
-/* 预警接口未返回：等高占位 + 连续波浪，无文字、整体居中 */
+/* 预警接口未返回：等高占位 + 连续波浪，无文字、整体居中。
+   与 .alert-empty / .alert-fail / 单条 .alert-item 共用同一套尺寸，
+   box-sizing 统一为 border-box，避免 min-height 语义不一致导致高度差。 */
 .alert-loading {
+  box-sizing: border-box;
   display: flex;
-  min-height: 52px;
+  min-height: var(--alert-slot-h);
   align-items: center;
   justify-content: center;
   padding: 10px 14px;
@@ -123,8 +128,17 @@ function open(link) {
 }
 
 .alert-empty {
+  box-sizing: border-box;
+  display: flex;
+  min-height: var(--alert-slot-h);
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
   margin: 0;
-  padding: 2px 2px 4px;
+  padding: 10px 14px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
   color: var(--text-6);
   font-size: 0.75rem;
   line-height: 1.5;
@@ -157,6 +171,8 @@ function open(link) {
   box-sizing: border-box;
   width: 100%;
   display: flex;
+  /* 单条预警与 loading / 空态 / 失败态等高；多条预警时列表自然增高（内容驱动） */
+  min-height: var(--alert-slot-h);
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
@@ -257,7 +273,8 @@ function open(link) {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px 14px;
+  min-height: var(--alert-slot-h);
+  padding: 10px 14px;
   background: var(--surface-2);
   border: 1px solid var(--line-1);
   border-radius: var(--radius-md);
@@ -339,7 +356,7 @@ function open(link) {
     gap: 10px;
   }
   .alert-fail {
-    padding: 8px 12px;
+    padding: 10px 12px;
   }
 }
 </style>
