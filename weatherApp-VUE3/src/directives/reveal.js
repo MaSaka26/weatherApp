@@ -33,7 +33,7 @@ export const reveal = {
     el.style.setProperty('--enter-index', String(index))
 
     if (prefersReducedMotion() || typeof IntersectionObserver === 'undefined') {
-      el.classList.add('is-visible')
+      el.classList.add('is-instant')
       return
     }
 
@@ -42,7 +42,7 @@ export const reveal = {
     const alreadyPassed = rect.bottom <= 0
 
     if (alreadyPassed) {
-      el.classList.add('is-visible', 'is-deferred')
+      el.classList.add('is-instant')
       return
     }
 

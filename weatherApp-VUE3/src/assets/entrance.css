@@ -1,6 +1,7 @@
-/* ===== 首屏入场：统一节奏契约 =====
-   所有入场区块由 v-reveal 分配 --enter-index；
-   动画时机由「组件已挂载 ∩ 进入视口」决定，不再写死绝对 delay。 */
+/* ===== 首屏入场：统一时间线 =====
+   用 animation 而非 transition：fill-mode both 锁住初始隐藏态，
+   play-state 由 v-reveal 的 .is-visible 放开，避免「加 class 时值已相等 → 0 时长过渡」
+   以及 IO 未命中时把 1→0 当成反向过渡播一次。 */
 :root {
   --enter-duration: 600ms;
   --enter-step: 50ms;
@@ -9,29 +10,36 @@
 }
 
 [data-reveal] {
-  opacity: 0;
-  transform: translateY(var(--enter-y));
-  transition:
-    opacity var(--enter-duration) var(--enter-ease),
-    transform var(--enter-duration) var(--enter-ease);
-  transition-delay: calc(var(--enter-index, 0) * var(--enter-step));
-  will-change: opacity, transform;
+  animation: revealUp var(--enter-duration) var(--enter-ease) both;
+  animation-delay: calc(var(--enter-index, 0) * var(--enter-step));
+  animation-play-state: paused;
 }
 
 [data-reveal].is-visible {
+  animation-play-state: running;
+}
+
+/* 首屏外区块滚动进入时不补长 stagger，立即起跑 */
+[data-reveal].is-deferred {
+  animation-delay: 0ms;
+}
+
+/* 无 IO / 已滚过视口 / reduced-motion：完全跳过动画，直接显示 */
+[data-reveal].is-instant {
+  animation: none;
   opacity: 1;
   transform: none;
 }
 
-/* 首屏外区块滚动进入时不再补长 stagger，只走单段淡入 */
-[data-reveal].is-deferred {
-  transition-delay: 0ms;
+@keyframes revealUp {
+  from { opacity: 0; transform: translateY(var(--enter-y)); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @media (prefers-reduced-motion: reduce) {
   [data-reveal] {
+    animation: none;
     opacity: 1;
     transform: none;
-    transition: none;
   }
 }

@@ -24,6 +24,8 @@ export function entranceDelay(el, cap = 1600) {
       // 只认统一编排的入场动画；忽略交互内 / 视口外 / 无限循环动画
       if (node.hasAttribute?.('data-reveal')) {
         for (const a of node.getAnimations()) {
+          // 只认真正在跑的入场动画；paused 的排队动画会误算剩余时间
+          if (a.playState !== 'running') continue
           const timing = a.effect?.getComputedTiming?.()
           if (!timing || !Number.isFinite(timing.endTime)) continue
           const left = timing.endTime - (Number(a.currentTime) || 0)
