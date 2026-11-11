@@ -110,7 +110,7 @@ onBeforeUnmount(() => {
 
     <!-- 不绑 :key —— 数据到达时只让子组件收到新的 prop，Vue 原地打补丁即可。
          早先这里绑了 store.renderKey，每次取数成功就 +1，等于把整棵内容树销毁重建，
-         于是页面整体闪一下、fadeUp 重播；数值本该平滑扫到新值，却变成了整页刷新。 -->
+         于是页面整体闪一下、入场动画重播；数值本该平滑扫到新值，却变成了整页刷新。 -->
     <div
       v-else
       class="weather-content active"
@@ -129,8 +129,8 @@ onBeforeUnmount(() => {
       />
 
       <!-- 城市预警：放在天气详情 6/9 卡上方。
-           WeatherAlert 根元素始终存在（idle 时显示等高 loading 骨架），
-           指令挂真实 DOM，晚到内容不会抢档、不会挤压下方组件。 -->
+           指令挂在包装层真实 DOM 上：WeatherAlert 内部 idle 时显示等高 loading 骨架，
+           晚到内容不会抢档、不会挤压下方组件。 -->
       <div v-reveal class="weather-alert-slot">
         <WeatherAlert
           :alerts="store.alerts"
