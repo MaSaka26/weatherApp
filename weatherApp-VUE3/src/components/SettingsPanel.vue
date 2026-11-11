@@ -10,10 +10,12 @@ const {
   remoteLabel,
   errorMessage: updateError,
   isChecking: updateChecking,
+  isDev: updateIsDev,
   check: checkUpdate,
 } = useAppUpdate()
 
 const updateText = computed(() => {
+  if (updateIsDev) return '开发环境不检查线上版本'
   if (updateStatus.value === 'checking') return '正在检查…'
   if (updateStatus.value === 'available') return `发现新版本 ${remoteLabel.value}`
   if (updateStatus.value === 'updating') return '正在更新…'
@@ -170,10 +172,10 @@ onBeforeUnmount(() => {
             <button
               class="settings-check-update"
               type="button"
-              :disabled="updateChecking"
+              :disabled="updateChecking || updateIsDev"
               @click="checkUpdate(true)"
             >
-              {{ updateChecking ? '检查中…' : '检查更新' }}
+              {{ updateIsDev ? '开发环境' : updateChecking ? '检查中…' : '检查更新' }}
             </button>
           </div>
           <div v-if="updateText" class="settings-update-state" role="status" aria-live="polite">

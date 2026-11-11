@@ -13,11 +13,15 @@ import { compareAppUpdate } from '@/utils/appVersion'
 /* global __APP_VERSION__, __APP_BUILD_ID__ */
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev'
 const APP_BUILD_ID = typeof __APP_BUILD_ID__ !== 'undefined' ? __APP_BUILD_ID__ : ''
+// dev 模式没有 dist/deploy.json（它由 closeBundle 生成），检查必然 404；
+// 此时不联网、不报错，UI 直接标注开发环境。
+const IS_DEV = import.meta.env.DEV
+const DISPLAY_VERSION = IS_DEV ? `${APP_VERSION} (dev)` : APP_VERSION
 
 const CHECK_THROTTLE_MS = 30 * 60 * 1000
 const DEPLOY_URL = new URL('deploy.json', document.baseURI).href
 
-const status = ref('idle') // idle | checking | up-to-date | available | updating | error
+const status = ref('idle') // idle | dev | checking | up-to-date | available | updating | error
 const remoteLabel = ref('')
 const errorMessage = ref('')
 const lastCheckedAt = ref(0)
@@ -32,6 +36,11 @@ async function readRemote() {
 }
 
 async function check(force = false) {
+  if (IS_DEV) {
+    status.value = 'dev'
+    errorMessage.value = ''
+    return
+  }
   if (applying) return
   if (!force && status.value === 'checking') return
   if (!force && Date.now() - lastCheckedAt.value < CHECK_THROTTLE_MS) return
@@ -90,6 +99,7 @@ function dismiss() {
 function init() {
   if (initialized) return
   initialized = true
+  if (IS_DEV) { status.value = 'dev'; return }
   // 启动不阻塞首屏
   setTimeout(() => check(), 3000)
   document.addEventListener('visibilitychange', () => {
@@ -105,7 +115,8 @@ const isChecking = computed(() => status.value === 'checking' || status.value ==
 export function useAppUpdate() {
   init()
   return {
-    appVersion: APP_VERSION,
+    appVersion: DISPLAY_VERSION,
+    isDev: IS_DEV,
     status,
     remoteLabel,
     errorMessage,
