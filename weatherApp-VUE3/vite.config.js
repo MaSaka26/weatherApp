@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
@@ -6,6 +7,20 @@ import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
+
+const configDir = fileURLToPath(new URL('.', import.meta.url))
+
+function gitValue(args, fallback = '') {
+  try {
+    return execFileSync('git', args, {
+      cwd: configDir,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim() || fallback
+  } catch {
+    return fallback
+  }
+}
 
 function injectServiceWorkerBuildId() {
   return {
@@ -30,6 +45,24 @@ function injectServiceWorkerBuildId() {
       writeFileSync(new URL('./dist/404.html', import.meta.url), index)
       // 禁止 Pages 的 Jekyll 处理，避免 _headers 等下划线文件被忽略。
       writeFileSync(new URL('./dist/.nojekyll', import.meta.url), '')
+
+      // 来源指纹：线上访问 /deploy.json 即可知道这份产物来自哪个源码版本。
+      const exactTag = gitValue(['describe', '--tags', '--exact-match', 'HEAD'])
+      const deployInfo = {
+        sourceCommit: gitValue(['rev-parse', 'HEAD'], 'unknown'),
+        sourceShort: gitValue(['rev-parse', '--short', 'HEAD'], 'unknown'),
+        sourceTag: exactTag || null,
+        latestTag: gitValue(['describe', '--tags', '--abbrev=0']) || null,
+        sourceDirty: gitValue(['status', '--porcelain']) !== '',
+        builtAt: new Date().toISOString(),
+        node: process.version,
+        buildId,
+      }
+      writeFileSync(
+        new URL('./dist/deploy.json', import.meta.url),
+        `${JSON.stringify(deployInfo, null, 2)}\n`,
+        'utf8',
+      )
     },
   }
 }

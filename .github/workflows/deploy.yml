@@ -6,14 +6,13 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
-  build:
+  deploy-gitee:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22.18'
@@ -29,16 +28,24 @@ jobs:
         working-directory: weatherApp-VUE3
         env:
           VITE_SITE_BASE: ./
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: weatherApp-VUE3/dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Push dist to Gitee gh-pages
+        env:
+          GITEE_USERNAME: ${{ secrets.GITEE_USERNAME }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          set -e
+          if [ -z "$GITEE_TOKEN" ] || [ -z "$GITEE_USERNAME" ]; then
+            echo "skip: GITEE_USERNAME / GITEE_TOKEN not configured"
+            exit 0
+          fi
+          PAGES_DIR="$(mktemp -d)"
+          cp -R weatherApp-VUE3/dist/. "$PAGES_DIR"/
+          cd "$PAGES_DIR"
+          git init -q
+          git checkout -b gh-pages
+          git -c user.name="weather-app deploy" -c user.email="deploy@local" add -A
+          git -c user.name="weather-app deploy" -c user.email="deploy@local" \
+            commit -q -m "deploy: ${GITHUB_SHA::7}"
+          git remote add origin "https://${GITEE_USERNAME}:${GITEE_TOKEN}@gitee.com/masaka0426/weather-app.git"
+          git push -f origin gh-pages
+          echo "Deployed ${GITHUB_SHA::7} to Gitee gh-pages"
