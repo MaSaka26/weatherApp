@@ -20,6 +20,7 @@ import { useAirQuality } from '../src/composables/weather/useAirQuality.js'
 import { useWeatherRefresh } from '../src/composables/weather/useWeatherRefresh.js'
 import { useLocationPreferences } from '../src/composables/weather/useLocationPreferences.js'
 import { RADAR_PROVIDER, selectRadarProvider } from '../src/utils/radarProvider.js'
+import { shouldRestartOnEpoch } from '../src/utils/gaugeRestart.js'
 
 
 
@@ -376,4 +377,17 @@ test('radar provider follows location country and local source', () => {
   assert.equal(selectRadarProvider({ countryCode: 'GB' }), RADAR_PROVIDER.RAINVIEWER)
   assert.equal(selectRadarProvider({ countryCode: '', locationSource: 'county' }), RADAR_PROVIDER.NMC)
   assert.equal(selectRadarProvider({ countryCode: '', locationSource: 'search' }), RADAR_PROVIDER.RAINVIEWER)
+})
+
+test('gauge rings restart only after the first real data epoch', () => {
+  const base = { restartOnEpoch: true, epochChanged: true }
+  // 首屏：缓存值先长一次，网络新鲜数据到达触发第一次 epoch，不应重播
+  assert.equal(shouldRestartOnEpoch({ ...base, hadPriorEpoch: false, value: 0.6 }), false)
+  // 切城市：已有过数据 epoch，再变化才让所有环同步重新生长
+  assert.equal(shouldRestartOnEpoch({ ...base, hadPriorEpoch: true, value: 0.6 }), true)
+  // 数值缺失不重播；纯数字（restartOnEpoch=false）永不重播
+  assert.equal(shouldRestartOnEpoch({ ...base, hadPriorEpoch: true, value: null }), false)
+  assert.equal(shouldRestartOnEpoch({ restartOnEpoch: false, epochChanged: true, hadPriorEpoch: true, value: 0.6 }), false)
+  // epoch 没变（6 分钟刷新但同一帧）也不重播
+  assert.equal(shouldRestartOnEpoch({ restartOnEpoch: true, epochChanged: false, hadPriorEpoch: true, value: 0.6 }), false)
 })

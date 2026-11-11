@@ -1,6 +1,7 @@
 import { inject, unref, watch } from 'vue'
 
 import { TWEEN_START_AT, useTween } from '@/composables/useTween'
+import { shouldRestartOnEpoch } from '@/utils/gaugeRestart'
 
 function readSource(source) {
   const value = typeof source === 'function' ? source() : unref(source)
@@ -22,10 +23,17 @@ export function useAnimatedNumber(
     ([value, currentEpoch]) => {
       const valueChanged = value !== previousValue
       const epochChanged = Number.isFinite(currentEpoch) && currentEpoch !== previousEpoch
+      const hadPriorEpoch = Number.isFinite(previousEpoch)
+      const shouldRestart = shouldRestartOnEpoch({
+        restartOnEpoch,
+        epochChanged,
+        hadPriorEpoch,
+        value,
+      })
       previousValue = value
       previousEpoch = currentEpoch
 
-      if (restartOnEpoch && epochChanged && value != null) {
+      if (shouldRestart) {
         restart(value, initialValue, currentEpoch)
         return
       }
