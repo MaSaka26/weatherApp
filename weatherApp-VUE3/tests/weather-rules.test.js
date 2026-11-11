@@ -21,6 +21,7 @@ import { useWeatherRefresh } from '../src/composables/weather/useWeatherRefresh.
 import { useLocationPreferences } from '../src/composables/weather/useLocationPreferences.js'
 import { RADAR_PROVIDER, selectRadarProvider } from '../src/utils/radarProvider.js'
 import { shouldRestartOnEpoch } from '../src/utils/gaugeRestart.js'
+import { compareAppUpdate } from '../src/utils/appVersion.js'
 
 
 
@@ -390,4 +391,17 @@ test('gauge rings restart only after the first real data epoch', () => {
   assert.equal(shouldRestartOnEpoch({ restartOnEpoch: false, epochChanged: true, hadPriorEpoch: true, value: 0.6 }), false)
   // epoch 没变（6 分钟刷新但同一帧）也不重播
   assert.equal(shouldRestartOnEpoch({ restartOnEpoch: true, epochChanged: false, hadPriorEpoch: true, value: 0.6 }), false)
+})
+
+test('app update compares build identity and falls back to tag', () => {
+  const local = { version: 'v0.1.2', buildId: 'commit-aaa' }
+  assert.equal(compareAppUpdate(local, { appBuildId: 'commit-aaa', sourceTag: 'v0.1.2' }).hasUpdate, false)
+  assert.equal(compareAppUpdate(local, { appBuildId: 'commit-bbb', sourceTag: 'v0.1.3' }).hasUpdate, true)
+  assert.equal(compareAppUpdate(local, { appBuildId: 'commit-bbb', sourceTag: 'v0.1.3' }).remoteLabel, 'v0.1.3')
+  // 旧产物没有 appBuildId：用 tag 比较
+  assert.equal(compareAppUpdate(local, { sourceTag: 'v0.1.2' }).hasUpdate, false)
+  assert.equal(compareAppUpdate(local, { sourceTag: 'v0.1.3' }).hasUpdate, true)
+  // 本地无身份 / 远端缺失不打扰用户
+  assert.equal(compareAppUpdate({ version: 'dev', buildId: '' }, { appBuildId: 'x' }).hasUpdate, false)
+  assert.equal(compareAppUpdate(local, null).hasUpdate, false)
 })
