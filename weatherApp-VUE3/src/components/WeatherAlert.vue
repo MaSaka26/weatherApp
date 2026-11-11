@@ -19,6 +19,8 @@
  */
 import { computed } from 'vue'
 
+import AlertWave from '@/components/AlertWave.vue'
+
 const props = defineProps({
   alerts: { type: Object, default: () => ({ list: [], top: 0, total: 0 }) },
   // idle | ok | error
@@ -34,6 +36,7 @@ const visible = computed(() => props.alerts.list.slice(0, 3))
 const showList = computed(() => props.alerts.total > 0)
 const showEmpty = computed(() => props.status === 'ok' && !showList.value)
 const showError = computed(() => props.status === 'error' && !showList.value)
+const showLoading = computed(() => props.status === 'idle' && !showList.value)
 
 function open(link) {
   if (!link) return
@@ -42,8 +45,18 @@ function open(link) {
 </script>
 
 <template>
-  <section v-if="showList || showEmpty || showError" class="alert-section">
-    <div v-if="showList" class="alert-list">
+  <section class="alert-section">
+    <!-- 预警接口未返回前用等高骨架占位，避免下方组件在结果到达时被挤压/跳动 -->
+    <div
+      v-if="showLoading"
+      class="alert-loading"
+      role="status"
+      aria-live="polite"
+      aria-label="正在获取城市预警"
+    >
+      <AlertWave :count="12" />
+    </div>
+    <div v-else-if="showList" class="alert-list">
       <button
         v-for="item in visible"
         :key="item.id"
@@ -71,7 +84,7 @@ function open(link) {
     </p>
 
     <!-- 接口失败：一行轻提示 + 只重试预警的刷新按钮。中性灰玻璃，不占用灾害级别配色 -->
-    <div v-else class="alert-fail" role="status">
+    <div v-else-if="showError" class="alert-fail" role="status">
       <span class="alert-fail-text">预警信息暂时获取失败</span>
       <button
         type="button"
@@ -89,6 +102,18 @@ function open(link) {
 <style scoped>
 .alert-section {
   width: 100%;
+}
+
+/* 预警接口未返回：等高占位 + 连续波浪，无文字、整体居中 */
+.alert-loading {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 14px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
 }
 
 .alert-list {

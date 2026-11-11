@@ -1,6 +1,6 @@
 .hourly-section {
   margin: 20px 0 24px;
-  animation: fadeUp 0.6s 0.35s ease both;
+
 }
 .section-title {
   font-size: 0.875rem;
@@ -72,7 +72,7 @@
 .daily-section {
   --daily-view-h: 376px;
   margin: 20px 0 30px;
-  animation: fadeUp 0.6s 0.4s ease both;
+
 }
 .section-head {
   display: flex;
@@ -289,7 +289,7 @@
    结论居中放大，判断依据缩成小字压在右下角，不抢主句 */
 .life-section {
   margin: 20px 0 30px;
-  animation: fadeUp 0.6s 0.45s ease both;
+
 }
 .life-grid {
   display: grid;

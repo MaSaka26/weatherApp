@@ -1,0 +1,50 @@
+/* ===== 首屏入场：统一时间线 =====
+   Apple-style staggered reveal：整块从下方明显上移 + 淡入。
+   用 animation-play-state 控制起跑，fill-mode both 锁住初始隐藏态。 */
+:root {
+  --enter-duration: 720ms;
+  --enter-step: 80ms;
+  --enter-ease: cubic-bezier(0.22, 0.68, 0, 1);
+  --enter-y: 36px;
+}
+
+[data-reveal] {
+  animation: revealUp var(--enter-duration) var(--enter-ease) both;
+  animation-delay: calc(var(--enter-index, 0) * var(--enter-step));
+  animation-play-state: paused;
+}
+
+[data-reveal].is-visible {
+  animation-play-state: running;
+}
+
+/* 首屏外区块滚动进入时不补长 stagger，立即起跑 */
+[data-reveal].is-deferred {
+  animation-delay: 0ms;
+}
+
+/* 无 IO / 已滚过视口 / reduced-motion：完全跳过动画，直接显示 */
+[data-reveal].is-instant {
+  animation: none;
+  opacity: 1;
+  transform: none;
+}
+
+@keyframes revealUp {
+  from {
+    opacity: 0;
+    transform: translate3d(0, var(--enter-y), 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal] {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}

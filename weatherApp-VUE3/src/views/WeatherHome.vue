@@ -110,12 +110,14 @@ onBeforeUnmount(() => {
 
     <!-- 不绑 :key —— 数据到达时只让子组件收到新的 prop，Vue 原地打补丁即可。
          早先这里绑了 store.renderKey，每次取数成功就 +1，等于把整棵内容树销毁重建，
-         于是页面整体闪一下、fadeUp 重播；数值本该平滑扫到新值，却变成了整页刷新。 -->
+         于是页面整体闪一下、入场动画重播；数值本该平滑扫到新值，却变成了整页刷新。 -->
     <div
       v-else
       class="weather-content active"
+      data-reveal-root
     >
       <CurrentWeather
+        v-reveal
         v-if="store.current"
         :city-name="store.cityName"
         :city-detail="store.cityDetail"
@@ -126,15 +128,20 @@ onBeforeUnmount(() => {
         :timezone="store.data?.timezone || ''"
       />
 
-      <!-- 城市预警：放在天气详情 6/9 卡上方。无本地预警整块隐藏，接口失败显示一行轻提示 + 刷新 -->
-      <WeatherAlert
-        :alerts="store.alerts"
-        :status="store.alertStatus"
-        :refreshing="store.alertRefreshing"
-        @refresh="store.retryAlerts()"
-      />
+      <!-- 城市预警：放在天气详情 6/9 卡上方。
+           指令挂在包装层真实 DOM 上：WeatherAlert 内部 idle 时显示等高 loading 骨架，
+           晚到内容不会抢档、不会挤压下方组件。 -->
+      <div v-reveal class="weather-alert-slot">
+        <WeatherAlert
+          :alerts="store.alerts"
+          :status="store.alertStatus"
+          :refreshing="store.alertRefreshing"
+          @refresh="store.retryAlerts()"
+        />
+      </div>
 
       <DetailCards
+        v-reveal
         v-if="store.current"
         :current="store.current"
         :daily="store.daily"
@@ -143,6 +150,7 @@ onBeforeUnmount(() => {
       />
 
       <HourlyForecast
+        v-reveal
         :hourly="store.hourly"
         :current="store.current"
         :data-ready="store.hasWeatherData"
@@ -150,6 +158,7 @@ onBeforeUnmount(() => {
 
       <!-- 降水预报：夹在逐小时与 16 天之间，是本次需求指定的位置 -->
       <RainForecast
+        v-reveal
         v-if="store.hasWeatherData && store.current && store.hourly"
         :current="store.current"
         :hourly="store.hourly"
@@ -157,9 +166,10 @@ onBeforeUnmount(() => {
         @prefetch="prefetchRadar"
       />
 
-      <DailyForecast :daily="store.daily" :data-ready="store.hasWeatherData" />
+      <DailyForecast v-reveal :daily="store.daily" :data-ready="store.hasWeatherData" />
 
       <LifeIndex
+        v-reveal
         v-if="store.hasWeatherData && store.current"
         :current="store.current"
         :daily="store.daily"
@@ -169,6 +179,7 @@ onBeforeUnmount(() => {
       <!-- 失败不再抹掉整页：数据更新失败时保留上一份数据，只在这一行说明。
            「占位中」表示屏幕上还是 — 骨架，从没拿到过真数据。 -->
       <div
+        v-reveal
         class="location-hint"
         :class="{ 'hint-warn': store.lastError || store.isStale || store.autoRefreshFailed }"
       >

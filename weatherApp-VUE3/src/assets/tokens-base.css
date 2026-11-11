@@ -297,10 +297,7 @@ body {
 .error-message .error-retry:hover { background: var(--surface-6); }
 
 /* ===== Weather Content ===== */
-.weather-content { display: none; animation: fadeUp 0.7s ease; }
+/* 入场动画由 entrance.css + v-reveal 统一编排，这里只负责显示切换 */
+.weather-content { display: none; }
 .weather-content.active { display: block; }
-@keyframes fadeUp {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
-}
 
