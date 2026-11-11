@@ -8,6 +8,7 @@ import '@/assets/weather.css'
 
 // 用户设置（描边 / 毛玻璃 / 圆角）：必须在挂载前应用，避免首屏闪一下默认样式
 import { initSettings } from '@/composables/useSettings'
+import { reveal } from '@/directives/index'
 
 initSettings()
 
@@ -22,6 +23,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 const app = createApp(App)
 
+app.directive('reveal', reveal)
 app.use(createPinia())
 
 app.mount('#app')

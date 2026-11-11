@@ -21,11 +21,14 @@ export function entranceDelay(el, cap = 1600) {
   // 动画挂在 .details-grid / .weather-content 等祖先节点上。
   while (node && node !== document.body) {
     if (typeof node.getAnimations === 'function') {
-      for (const a of node.getAnimations()) {
-        const timing = a.effect?.getComputedTiming?.()
-        if (!timing || !Number.isFinite(timing.endTime)) continue
-        const left = timing.endTime - (Number(a.currentTime) || 0)
-        if (left > max) max = left
+      // 只认统一编排的入场动画；忽略交互内 / 视口外 / 无限循环动画
+      if (node.hasAttribute?.('data-reveal')) {
+        for (const a of node.getAnimations()) {
+          const timing = a.effect?.getComputedTiming?.()
+          if (!timing || !Number.isFinite(timing.endTime)) continue
+          const left = timing.endTime - (Number(a.currentTime) || 0)
+          if (left > max) max = left
+        }
       }
     }
     node = node.parentElement

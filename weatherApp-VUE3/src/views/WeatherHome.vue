@@ -114,8 +114,10 @@ onBeforeUnmount(() => {
     <div
       v-else
       class="weather-content active"
+      data-reveal-root
     >
       <CurrentWeather
+        v-reveal
         v-if="store.current"
         :city-name="store.cityName"
         :city-detail="store.cityDetail"
@@ -128,6 +130,7 @@ onBeforeUnmount(() => {
 
       <!-- 城市预警：放在天气详情 6/9 卡上方。无本地预警整块隐藏，接口失败显示一行轻提示 + 刷新 -->
       <WeatherAlert
+        v-reveal
         :alerts="store.alerts"
         :status="store.alertStatus"
         :refreshing="store.alertRefreshing"
@@ -135,6 +138,7 @@ onBeforeUnmount(() => {
       />
 
       <DetailCards
+        v-reveal
         v-if="store.current"
         :current="store.current"
         :daily="store.daily"
@@ -143,6 +147,7 @@ onBeforeUnmount(() => {
       />
 
       <HourlyForecast
+        v-reveal
         :hourly="store.hourly"
         :current="store.current"
         :data-ready="store.hasWeatherData"
@@ -150,6 +155,7 @@ onBeforeUnmount(() => {
 
       <!-- 降水预报：夹在逐小时与 16 天之间，是本次需求指定的位置 -->
       <RainForecast
+        v-reveal
         v-if="store.hasWeatherData && store.current && store.hourly"
         :current="store.current"
         :hourly="store.hourly"
@@ -157,9 +163,10 @@ onBeforeUnmount(() => {
         @prefetch="prefetchRadar"
       />
 
-      <DailyForecast :daily="store.daily" :data-ready="store.hasWeatherData" />
+      <DailyForecast v-reveal :daily="store.daily" :data-ready="store.hasWeatherData" />
 
       <LifeIndex
+        v-reveal
         v-if="store.hasWeatherData && store.current"
         :current="store.current"
         :daily="store.daily"
@@ -169,6 +176,7 @@ onBeforeUnmount(() => {
       <!-- 失败不再抹掉整页：数据更新失败时保留上一份数据，只在这一行说明。
            「占位中」表示屏幕上还是 — 骨架，从没拿到过真数据。 -->
       <div
+        v-reveal
         class="location-hint"
         :class="{ 'hint-warn': store.lastError || store.isStale || store.autoRefreshFailed }"
       >

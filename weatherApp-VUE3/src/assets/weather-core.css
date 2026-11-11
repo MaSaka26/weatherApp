@@ -11,7 +11,7 @@
   width: min(100%, 520px);
   min-height: 52px;
   margin-bottom: 6px;
-  animation: fadeUp 0.6s ease both;
+
 }
 /* 等宽两栏：温度与时间各占一半，分隔线正好落在中线，左右留白对称。
    间距不用 column-gap（那会让分隔线偏右半格），改成两栏各让出 --clock-split 的内边距 */
@@ -50,7 +50,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  animation: fadeUp 0.6s 0.05s ease both;
+
 }
 .current-city.placeholder,
 .current-region.placeholder { color: var(--text-6); }
@@ -59,7 +59,7 @@
   font-weight: 200;
   line-height: 1;
   letter-spacing: -2px;
-  animation: fadeUp 0.6s 0.1s ease both;
+
 }
 .current-temp.placeholder { color: var(--text-6); letter-spacing: 0; }
 .current-temp .deg-symbol {
@@ -72,14 +72,14 @@
   font-weight: 400;
   color: var(--text-4);
   margin-top: 6px;
-  animation: fadeUp 0.6s 0.2s ease both;
+
 }
 .current-highlow {
   font-size: 1.0625rem;
   font-weight: 300;
   color: var(--text-6);
   margin-top: 4px;
-  animation: fadeUp 0.6s 0.25s ease both;
+
 }
 .current-highlow > span { margin: 0 6px; }
 .current-highlow .high { color: var(--text-2); }
@@ -92,7 +92,7 @@
   padding-left: var(--clock-split);
   border-left: 1px solid var(--line-2);
   text-align: center;
-  animation: fadeUp 0.6s 0.3s ease both;
+
 }
 .clock-time {
   font-size: 2.25rem;
@@ -173,7 +173,7 @@
   grid-auto-rows: 1fr;
   gap: 12px;
   margin: 20px 0 24px;
-  animation: fadeUp 0.6s 0.3s ease both;
+
 }
 /* 九张卡是 9 = 3+3+3，手机/平板三列正好填满，不需要通条补齐。
    新增的空气质量 / 能见度 / 降水量都按普通单格排，卡片骨架与另外六张一致 */

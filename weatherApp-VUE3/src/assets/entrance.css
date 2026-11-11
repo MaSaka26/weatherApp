@@ -1,0 +1,37 @@
+/* ===== 首屏入场：统一节奏契约 =====
+   所有入场区块由 v-reveal 分配 --enter-index；
+   动画时机由「组件已挂载 ∩ 进入视口」决定，不再写死绝对 delay。 */
+:root {
+  --enter-duration: 600ms;
+  --enter-step: 50ms;
+  --enter-ease: ease;
+  --enter-y: 20px;
+}
+
+[data-reveal] {
+  opacity: 0;
+  transform: translateY(var(--enter-y));
+  transition:
+    opacity var(--enter-duration) var(--enter-ease),
+    transform var(--enter-duration) var(--enter-ease);
+  transition-delay: calc(var(--enter-index, 0) * var(--enter-step));
+  will-change: opacity, transform;
+}
+
+[data-reveal].is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+/* 首屏外区块滚动进入时不再补长 stagger，只走单段淡入 */
+[data-reveal].is-deferred {
+  transition-delay: 0ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal] {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
