@@ -63,8 +63,8 @@ function setup(el, binding) {
 
     let observer = null
     if (inFirstScreen) {
-      // 首屏内按 index 排队；index 高但已在视口内的，交给 transition-delay 兜底
-      requestAnimationFrame(() => show(false))
+      // 立即放开 play-state；delay 由 CSS 负责，不等 rAF 以免 dev 首帧拖慢起跑
+      show(false)
     } else {
       observer = new IntersectionObserver((entries) => {
         for (const entry of entries) {

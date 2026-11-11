@@ -129,13 +129,9 @@ onBeforeUnmount(() => {
       />
 
       <!-- 城市预警：放在天气详情 6/9 卡上方。
-           v-reveal 挂在包装层而非组件上：WeatherAlert 根元素自带 v-if，
-           指令透传到 comment 占位时会丢；包装层始终是真实 DOM。 -->
-      <div
-        v-reveal
-        v-if="store.alertStatus !== 'idle' || store.alerts.total > 0"
-        class="weather-alert-slot"
-      >
+           WeatherAlert 根元素始终存在（idle 时显示等高 loading 骨架），
+           指令挂真实 DOM，晚到内容不会抢档、不会挤压下方组件。 -->
+      <div v-reveal class="weather-alert-slot">
         <WeatherAlert
           :alerts="store.alerts"
           :status="store.alertStatus"

@@ -34,6 +34,7 @@ const visible = computed(() => props.alerts.list.slice(0, 3))
 const showList = computed(() => props.alerts.total > 0)
 const showEmpty = computed(() => props.status === 'ok' && !showList.value)
 const showError = computed(() => props.status === 'error' && !showList.value)
+const showLoading = computed(() => props.status === 'idle' && !showList.value)
 
 function open(link) {
   if (!link) return
@@ -42,8 +43,13 @@ function open(link) {
 </script>
 
 <template>
-  <section v-if="showList || showEmpty || showError" class="alert-section">
-    <div v-if="showList" class="alert-list">
+  <section class="alert-section">
+    <!-- 预警接口未返回前用等高骨架占位，避免下方组件在结果到达时被挤压/跳动 -->
+    <div v-if="showLoading" class="alert-loading" role="status" aria-live="polite">
+      <span class="alert-loading-bar" aria-hidden="true"></span>
+      <span class="alert-loading-text">正在获取城市预警…</span>
+    </div>
+    <div v-else-if="showList" class="alert-list">
       <button
         v-for="item in visible"
         :key="item.id"
@@ -71,7 +77,7 @@ function open(link) {
     </p>
 
     <!-- 接口失败：一行轻提示 + 只重试预警的刷新按钮。中性灰玻璃，不占用灾害级别配色 -->
-    <div v-else class="alert-fail" role="status">
+    <div v-else-if="showError" class="alert-fail" role="status">
       <span class="alert-fail-text">预警信息暂时获取失败</span>
       <button
         type="button"
@@ -89,6 +95,35 @@ function open(link) {
 <style scoped>
 .alert-section {
   width: 100%;
+}
+
+.alert-loading {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  color: var(--text-6);
+  background: var(--surface-2);
+  font-size: 0.75rem;
+}
+.alert-loading-bar {
+  width: 34%;
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--surface-4), var(--surface-6), var(--surface-4));
+  background-size: 200% 100%;
+  animation: alertSkeleton 1.2s ease-in-out infinite;
+}
+.alert-loading-text { flex: 1; }
+@keyframes alertSkeleton {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .alert-loading-bar { animation-duration: 2.4s; }
 }
 
 .alert-list {
