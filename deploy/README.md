@@ -67,7 +67,7 @@ Gitee Pages 不允许自定义响应头；仓库已提供：
 - [deploy-gitee.sh](deploy-gitee.sh)：按 tag/确定 ref 构建并推送 `gh-pages` 分支
 - [gitee-pages.md](gitee-pages.md)：Gitee Pages 首次开启、自动发布与排错说明
 
-自动部署到 Gitee 需要 `GITEE_USERNAME` 与 `GITEE_TOKEN`；未配置时会跳过推送并正常结束。Gitee Pages 服务本身仍需在仓库后台手动开启。
+自动部署到 Gitee 需要 `GITEE_USERNAME` 与 `GITEE_TOKEN`；未配置时会跳过推送并正常结束。Gitee Pages 服务需在仓库后台开启；若「服务」菜单里没有 Gitee Pages，说明账号未实名认证或平台未开放该入口，详见 [gitee-pages.md](gitee-pages.md) 的替代方案。
 
 ## 部署前检查
 
