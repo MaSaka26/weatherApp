@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { lockBodyScroll, unlockBodyScroll } from '@/utils/scrollLock'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
@@ -74,7 +75,6 @@ let metaController = null
 let token = 0
 let historyPushed = false
 let previousFocus = null
-let previousOverflow = ''
 
 const currentFrame = computed(() => frames.value[idx.value] || null)
 const maxIdx = computed(() => Math.max(0, frames.value.length - 1))
@@ -374,12 +374,11 @@ function cleanupMap() {
 }
 
 function lockBackground() {
-  previousOverflow = document.body.style.overflow
-  document.body.style.overflow = 'hidden'
+  lockBodyScroll()
 }
 
 function unlockBackground() {
-  document.body.style.overflow = previousOverflow
+  unlockBodyScroll()
 }
 
 async function openLayer() {

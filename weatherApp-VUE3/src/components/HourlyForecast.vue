@@ -72,15 +72,23 @@ const items = computed(() => {
   return list
 })
 
-// 渲染后自动把“现在”滚动到可视区中间
+// 渲染后把“现在”这一格挪到横向可视区中间。
+// 只改 .hourly-scroll 自己的 scrollLeft —— 绝不能用 scrollIntoView：
+// 它会连带把所有可滚动祖先（包括 document）一起滚动，首屏刚挂载时
+// 整页会突然跳到逐小时预报处，把顶部搜索/设置那一行顶出屏幕。
 watch(
   items,
   async () => {
     await nextTick()
-    const nowEl = scrollEl.value?.querySelector('.now')
-    if (nowEl) {
-      nowEl.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
-    }
+    const container = scrollEl.value
+    const nowEl = container?.querySelector('.now')
+    if (!container || !nowEl) return
+    const maxScroll = container.scrollWidth - container.clientWidth
+    if (maxScroll <= 0) return
+    // offsetLeft 是相对 .hourly-scroll 的（中间没有别的定位祖先），
+    // 把格子中心对齐到容器中心；浏览器自动把值钳到 [0, maxScroll]
+    const left = nowEl.offsetLeft - (container.clientWidth - nowEl.offsetWidth) / 2
+    container.scrollTo({ left, behavior: 'smooth' })
   },
   { immediate: true },
 )

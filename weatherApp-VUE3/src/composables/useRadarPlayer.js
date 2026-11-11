@@ -1,6 +1,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { buildRadarFrames, radarSlot, radarUrl } from '@/composables/useRadarFrames'
 import { createRadarPlayback } from '@/composables/radarPlayback'
+import { lockBodyScroll, unlockBodyScroll } from '@/utils/scrollLock'
 
 export function useRadarPlayer(props, emit) {
 
@@ -664,7 +665,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('popstate', onPopState)
   if (import.meta.env.DEV) delete window.__radarDebug
-  document.body.style.overflow = ''
+  unlockBodyScroll()
   teardown()
 })
 
@@ -672,7 +673,8 @@ onBeforeUnmount(() => {
 watch(
   () => props.open,
   (open) => {
-    document.body.style.overflow = open ? 'hidden' : ''
+    if (open) lockBodyScroll()
+    else unlockBodyScroll()
   },
   { flush: 'sync' },
 )
