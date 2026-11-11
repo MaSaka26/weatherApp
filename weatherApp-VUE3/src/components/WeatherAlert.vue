@@ -19,6 +19,8 @@
  */
 import { computed } from 'vue'
 
+import AlertWave from '@/components/AlertWave.vue'
+
 const props = defineProps({
   alerts: { type: Object, default: () => ({ list: [], top: 0, total: 0 }) },
   // idle | ok | error
@@ -52,14 +54,7 @@ function open(link) {
       aria-live="polite"
       aria-label="正在获取城市预警"
     >
-      <span class="alert-wave" aria-hidden="true">
-        <span
-          v-for="i in 12"
-          :key="i"
-          class="alert-wave-bar"
-          :style="{ '--i': i - 1 }"
-        ></span>
-      </span>
+      <AlertWave :count="12" />
     </div>
     <div v-else-if="showList" class="alert-list">
       <button
@@ -109,7 +104,7 @@ function open(link) {
   width: 100%;
 }
 
-/* 预警接口未返回：等高占位 + 12 格音浪，无文字、整体居中 */
+/* 预警接口未返回：等高占位 + 连续波浪，无文字、整体居中 */
 .alert-loading {
   display: flex;
   min-height: 52px;
@@ -119,31 +114,6 @@ function open(link) {
   border: 1px solid var(--line-1);
   border-radius: var(--radius-md);
   background: var(--surface-2);
-}
-.alert-wave {
-  display: flex;
-  height: 26px;
-  /* 底对齐：所有方块 bottom 固定在同一水平线 */
-  align-items: flex-end;
-  gap: 4px;
-}
-.alert-wave-bar {
-  width: 4px;
-  /* 只动画 height：bottom 由 flex-end 固定，增高时仅 top 上移，
-     不用 scaleY(center)，避免上下同时增长，圆角也不会被拉伸。 */
-  height: 7px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.32);
-  /* 12 格共 1.2s，每格 0.1s；负 delay 错开相位，使同一时刻只有一格增高 */
-  animation: alertWave 1.2s ease-in-out infinite both;
-  animation-delay: calc((var(--i) - 12) * 0.1s);
-}
-@keyframes alertWave {
-  0%, 5% { height: 26px; background: rgba(255, 255, 255, 0.62); }
-  8%, 100% { height: 7px; background: rgba(255, 255, 255, 0.32); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .alert-wave-bar { animation-duration: 2.4s; }
 }
 
 .alert-list {
