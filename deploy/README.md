@@ -82,7 +82,7 @@ Gitee Pages 不允许自定义响应头；仓库已提供：
 
 供人工在网页端验收以下矩阵：
 
-1. 刷新页面：current → cards → hourly → rain → daily → life → hint 自上而下按 50ms 阶梯渐入。
+1. 刷新页面：current → 预警 → cards → hourly → rain → daily → life → hint 自上而下按 80ms 阶梯渐入（位移 36px）。
 2. 小视口（如 390×700）：首屏可见区块按序出现；daily / life / hint 初始不可见。
 3. 滚动到底：屏幕外区块滚入视口后才淡入，且不带长 stagger delay。
 4. 再次刷新并恢复滚动位置：已滚过的区块直接显示，不重播。

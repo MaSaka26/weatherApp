@@ -1,4 +1,4 @@
-import { getCurrentInstance, inject, nextTick, onBeforeUnmount, ref } from 'vue'
+import { inject, nextTick, onBeforeUnmount, ref } from 'vue'
 import { createTweenClock } from '@/utils/tweenClock'
 
 export const TWEEN_START_AT = Symbol('weather-tween-start-at')
@@ -8,49 +8,16 @@ const tweenClock = createTweenClock()
 let sharedFirstStartAt = null
 
 /**
- * 仪表盘的首个补间共用起跑时刻，避免每个组件按不同祖先动画各自延迟。
- *
- * 统一读取详情网格的剩余入场时间，再由所有实例共用该时间戳。
- *
- * 只认有限的 endTime：天空的 twinkle 是 infinite，endTime 为 Infinity，不能等。
- */
-export function entranceDelay(el, cap = 1600) {
-  if (!el || typeof document === 'undefined' || typeof el.getAnimations !== 'function') return 0
-  let max = 0
-  let node = el
-  // 动画挂在 .details-grid / .weather-content 等祖先节点上。
-  while (node && node !== document.body) {
-    if (typeof node.getAnimations === 'function') {
-      // 只认统一编排的入场动画；忽略交互内 / 视口外 / 无限循环动画
-      if (node.hasAttribute?.('data-reveal')) {
-        for (const a of node.getAnimations()) {
-          // 只认真正在跑的入场动画；paused 的排队动画会误算剩余时间
-          if (a.playState !== 'running') continue
-          const timing = a.effect?.getComputedTiming?.()
-          if (!timing || !Number.isFinite(timing.endTime)) continue
-          const left = timing.endTime - (Number(a.currentTime) || 0)
-          if (left > max) max = left
-        }
-      }
-    }
-    node = node.parentElement
-  }
-  // 留 120ms 重叠，让表盘在网格快显现时开始生长。
-  return Math.min(cap, Math.max(0, max - 120))
-}
-
-/**
  * 数值缓动：props 一变就让数字/表盘「扫过去」而不是瞬移。
  * 只在浏览器里跑，注意调用方要在 setup 阶段使用，onBeforeUnmount 才能挂得上。
  *
  * 两条规则：
  * 1. 不做「首值直接落位」的特例 —— 冷启动和缓存命中都从 0 扫到真实值，
  *    否则缓存命中时画面会「啪」地出现，少了数据被取回来的过程感。
- * 2. 首次补间共用网格入场动画的起跑时刻，保证所有仪表盘同时启动。
+ * 2. 首次补间共用一个起跑时刻，保证所有仪表盘同帧启动；后续刷新立即补间。
  */
 export function useTween(duration = 1000, initialValue = 0) {
   const shown = ref(initialValue)
-  const instance = getCurrentInstance()
   const injectedEpoch = inject(TWEEN_START_AT, null)
   const epochAtSetup = injectedEpoch?.value ?? null
   let animation = null
@@ -93,7 +60,7 @@ export function useTween(duration = 1000, initialValue = 0) {
   function queueUntilEntrance(target, epoch) {
     queued = { target, epoch }
     if (timer) return
-    // 首次调用发生在 setup，此时根节点还没挂上，得等一拍才量得到动画
+    // 首次调用发生在 setup，等一拍让所有表盘实例都注册完，再统一起跑
     nextTick(() => {
       if (begun) {
         if (queued != null) {
@@ -103,10 +70,8 @@ export function useTween(duration = 1000, initialValue = 0) {
         }
         return
       }
-      if (sharedFirstStartAt == null) {
-        const grid = typeof document !== 'undefined' ? document.querySelector('.details-grid') : null
-        sharedFirstStartAt = performance.now() + entranceDelay(grid || instance?.proxy?.$el)
-      }
+      // 首批补间共用一个起跑时刻，保证所有表盘同帧起跑；不再读取入场动画剩余时间。
+      if (sharedFirstStartAt == null) sharedFirstStartAt = performance.now()
       const startAt = sharedFirstStartAt
       const wait = Math.max(0, startAt - performance.now())
       timer = setTimeout(() => {
