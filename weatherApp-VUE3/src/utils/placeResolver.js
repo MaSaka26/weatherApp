@@ -5,7 +5,7 @@ import { lookupPlace } from './placeLookup.js'
 export async function resolvePlace(latitude, longitude) {
   const local = lookupPlace(latitude, longitude)
   if (local) {
-    return { name: local.name, detail: local.detail, source: local.level }
+    return { name: local.name, detail: local.detail, countryCode: 'CN', source: local.level }
   }
 
   try {
@@ -14,6 +14,7 @@ export async function resolvePlace(latitude, longitude) {
       return {
         name: place.name,
         detail: [place.province, place.country].filter(Boolean).join(' · '),
+        countryCode: place.countryCode || '',
         source: 'reverse',
       }
     }
@@ -21,5 +22,5 @@ export async function resolvePlace(latitude, longitude) {
     // 网络不可用，继续降级到坐标。
   }
 
-  return { name: formatCoords(latitude, longitude), detail: '', source: 'coord' }
+  return { name: formatCoords(latitude, longitude), detail: '', countryCode: '', source: 'coord' }
 }

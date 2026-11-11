@@ -63,6 +63,7 @@ export function useLocationPreferences({ cachedPlace = null } = {}) {
     const item = {
       name: place.name || '未知城市',
       detail: place.detail || '',
+      countryCode: place.countryCode || '',
       lat: place.lat,
       lon: place.lon,
     }

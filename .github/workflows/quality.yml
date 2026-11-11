@@ -2,8 +2,9 @@ name: Quality
 
 on:
   push:
-    branches: [master, main, 'feat/**']
+    branches: [master, main, 'feat/**', 'codex/**']
   pull_request:
+    branches: [master, main]
 
 jobs:
   verify:

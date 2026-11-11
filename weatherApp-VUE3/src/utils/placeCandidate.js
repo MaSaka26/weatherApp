@@ -10,6 +10,7 @@ export function makePlaceCandidate({
   lon,
   name,
   detail = '',
+  countryCode = '',
   source = 'coord',
   mode = 'manual',
 }) {
@@ -19,6 +20,7 @@ export function makePlaceCandidate({
     lon,
     name,
     detail: detail || '',
+    countryCode: countryCode || '',
     source,
     mode: mode === 'auto' ? 'auto' : 'manual',
   }
@@ -31,6 +33,7 @@ export function createSearchCandidate(geo) {
     lon: geo.lon,
     name: geo.name,
     detail: formatSearchDetail(geo),
+    countryCode: geo.countryCode,
     source: 'search',
     mode: 'manual',
   })
@@ -43,6 +46,7 @@ export function createManualCandidate(place, source) {
     lon: place.lon,
     name: place.name,
     detail: place.detail,
+    countryCode: place.countryCode,
     source,
     mode: 'manual',
   })
@@ -54,6 +58,7 @@ export function createAutoCandidate(lat, lon, resolved) {
     lon,
     name: resolved?.name,
     detail: resolved?.detail,
+    countryCode: resolved?.countryCode,
     source: resolved?.source,
     mode: 'auto',
   })

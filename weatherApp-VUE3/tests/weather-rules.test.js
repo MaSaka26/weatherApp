@@ -19,6 +19,7 @@ import { useLocationSession } from '../src/composables/weather/useLocationSessio
 import { useAirQuality } from '../src/composables/weather/useAirQuality.js'
 import { useWeatherRefresh } from '../src/composables/weather/useWeatherRefresh.js'
 import { useLocationPreferences } from '../src/composables/weather/useLocationPreferences.js'
+import { RADAR_PROVIDER, selectRadarProvider } from '../src/utils/radarProvider.js'
 
 
 
@@ -245,11 +246,13 @@ test('place candidates keep coordinates, source, and intent together', () => {
     name: '杭州',
     admin1: '浙江省',
     country: '中国',
+    countryCode: 'CN',
   }), {
     lat: 30.2,
     lon: 120.1,
     name: '杭州',
     detail: '浙江省',
+    countryCode: 'CN',
     source: 'search',
     mode: 'manual',
   })
@@ -354,10 +357,11 @@ test('location preferences persist manual mode and common cities', () => {
     preferences.setLocationMode('manual')
     assert.equal(values.get('weather:location-mode:v1'), 'manual')
 
-    const city = { name: '杭州', detail: '浙江省', lat: 30.2, lon: 120.1 }
+    const city = { name: '杭州', detail: '浙江省', countryCode: 'CN', lat: 30.2, lon: 120.1 }
     preferences.rememberCommonCity(city)
     preferences.rememberCommonCity(city)
     assert.equal(preferences.commonCities.value.length, 1)
+    assert.equal(preferences.commonCities.value[0].countryCode, 'CN')
 
     preferences.removeCommonCity(city)
     assert.equal(preferences.commonCities.value.length, 0)
@@ -365,4 +369,11 @@ test('location preferences persist manual mode and common cities', () => {
     if (original === undefined) delete globalThis.localStorage
     else globalThis.localStorage = original
   }
+})
+
+test('radar provider follows location country and local source', () => {
+  assert.equal(selectRadarProvider({ countryCode: 'CN' }), RADAR_PROVIDER.NMC)
+  assert.equal(selectRadarProvider({ countryCode: 'GB' }), RADAR_PROVIDER.RAINVIEWER)
+  assert.equal(selectRadarProvider({ countryCode: '', locationSource: 'county' }), RADAR_PROVIDER.NMC)
+  assert.equal(selectRadarProvider({ countryCode: '', locationSource: 'search' }), RADAR_PROVIDER.RAINVIEWER)
 })

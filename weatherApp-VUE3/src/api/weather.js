@@ -50,6 +50,7 @@ export async function geocodeCity(city, { signal } = {}) {
     lon: r.longitude,
     name: r.name,
     country: r.country || '',
+    countryCode: (r.country_code || '').toUpperCase(),
     admin1: r.admin1 || '',
   }
 }
@@ -134,6 +135,7 @@ async function requestReverseGeocode(lat, lon) {
     locality: data.locality || '',
     province: data.principalSubdivision || '',
     country: data.countryName || '',
+    countryCode: (data.countryCode || '').toUpperCase(),
   }
   writePlaceCache(lat, lon, result)
   return result

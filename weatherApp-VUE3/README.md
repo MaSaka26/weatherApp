@@ -31,7 +31,7 @@ npm run format   # Prettier 格式化 src/
 src/
 ├── api/weather.js          # Open-Meteo 三个接口
 ├── assets/weather.css      # 全局样式与设计令牌
-├── components/             # 23 个组件
+├── components/             # 25 个组件
 ├── composables/
 │   ├── weather/            # 定位偏好/会话、AQI、预警、刷新控制
 │   └── useSettings / useTween / useWheelScroll
