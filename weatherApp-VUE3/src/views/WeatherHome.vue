@@ -128,14 +128,21 @@ onBeforeUnmount(() => {
         :timezone="store.data?.timezone || ''"
       />
 
-      <!-- 城市预警：放在天气详情 6/9 卡上方。无本地预警整块隐藏，接口失败显示一行轻提示 + 刷新 -->
-      <WeatherAlert
+      <!-- 城市预警：放在天气详情 6/9 卡上方。
+           v-reveal 挂在包装层而非组件上：WeatherAlert 根元素自带 v-if，
+           指令透传到 comment 占位时会丢；包装层始终是真实 DOM。 -->
+      <div
         v-reveal
-        :alerts="store.alerts"
-        :status="store.alertStatus"
-        :refreshing="store.alertRefreshing"
-        @refresh="store.retryAlerts()"
-      />
+        v-if="store.alertStatus !== 'idle' || store.alerts.total > 0"
+        class="weather-alert-slot"
+      >
+        <WeatherAlert
+          :alerts="store.alerts"
+          :status="store.alertStatus"
+          :refreshing="store.alertRefreshing"
+          @refresh="store.retryAlerts()"
+        />
+      </div>
 
       <DetailCards
         v-reveal

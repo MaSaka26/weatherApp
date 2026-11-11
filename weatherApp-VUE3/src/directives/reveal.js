@@ -24,6 +24,15 @@ function prefersReducedMotion() {
 
 export const reveal = {
   mounted(el, binding) {
+    setup(el, binding)
+  },
+  unmounted(el) {
+    el.__revealCleanup?.()
+    delete el.__revealCleanup
+  },
+}
+
+function setup(el, binding) {
     const root = el.closest?.('[data-reveal-root]') || el.parentElement
     const index = Number.isFinite(binding.value?.index)
       ? binding.value.index
@@ -67,9 +76,4 @@ export const reveal = {
     }
 
     el.__revealCleanup = () => observer?.disconnect()
-  },
-  unmounted(el) {
-    el.__revealCleanup?.()
-    delete el.__revealCleanup
-  },
 }
