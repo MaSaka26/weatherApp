@@ -123,23 +123,24 @@ function open(link) {
 .alert-wave {
   display: flex;
   height: 26px;
-  align-items: center;
+  /* 底对齐：所有方块 bottom 固定在同一水平线 */
+  align-items: flex-end;
   gap: 4px;
 }
 .alert-wave-bar {
   width: 4px;
-  height: 26px;
+  /* 只动画 height：bottom 由 flex-end 固定，增高时仅 top 上移，
+     不用 scaleY(center)，避免上下同时增长，圆角也不会被拉伸。 */
+  height: 7px;
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.32);
-  transform: scaleY(0.28);
-  transform-origin: center;
   /* 12 格共 1.2s，每格 0.1s；负 delay 错开相位，使同一时刻只有一格增高 */
   animation: alertWave 1.2s ease-in-out infinite both;
   animation-delay: calc((var(--i) - 12) * 0.1s);
 }
 @keyframes alertWave {
-  0%, 5% { transform: scaleY(1); background: rgba(255, 255, 255, 0.62); }
-  8%, 100% { transform: scaleY(0.28); background: rgba(255, 255, 255, 0.32); }
+  0%, 5% { height: 26px; background: rgba(255, 255, 255, 0.62); }
+  8%, 100% { height: 7px; background: rgba(255, 255, 255, 0.32); }
 }
 @media (prefers-reduced-motion: reduce) {
   .alert-wave-bar { animation-duration: 2.4s; }
