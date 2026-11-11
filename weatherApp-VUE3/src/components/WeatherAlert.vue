@@ -45,9 +45,21 @@ function open(link) {
 <template>
   <section class="alert-section">
     <!-- 预警接口未返回前用等高骨架占位，避免下方组件在结果到达时被挤压/跳动 -->
-    <div v-if="showLoading" class="alert-loading" role="status" aria-live="polite">
-      <span class="alert-loading-bar" aria-hidden="true"></span>
-      <span class="alert-loading-text">正在获取城市预警…</span>
+    <div
+      v-if="showLoading"
+      class="alert-loading"
+      role="status"
+      aria-live="polite"
+      aria-label="正在获取城市预警"
+    >
+      <span class="alert-wave" aria-hidden="true">
+        <span
+          v-for="i in 12"
+          :key="i"
+          class="alert-wave-bar"
+          :style="{ '--i': i - 1 }"
+        ></span>
+      </span>
     </div>
     <div v-else-if="showList" class="alert-list">
       <button
@@ -97,33 +109,40 @@ function open(link) {
   width: 100%;
 }
 
+/* 预警接口未返回：等高占位 + 12 格音浪，无文字、整体居中 */
 .alert-loading {
   display: flex;
   min-height: 52px;
   align-items: center;
-  gap: 12px;
+  justify-content: center;
   padding: 10px 14px;
   border: 1px solid var(--line-1);
   border-radius: var(--radius-md);
-  color: var(--text-6);
   background: var(--surface-2);
-  font-size: 0.75rem;
 }
-.alert-loading-bar {
-  width: 34%;
-  height: 8px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--surface-4), var(--surface-6), var(--surface-4));
-  background-size: 200% 100%;
-  animation: alertSkeleton 1.2s ease-in-out infinite;
+.alert-wave {
+  display: flex;
+  height: 26px;
+  align-items: center;
+  gap: 4px;
 }
-.alert-loading-text { flex: 1; }
-@keyframes alertSkeleton {
-  from { background-position: 200% 0; }
-  to { background-position: -200% 0; }
+.alert-wave-bar {
+  width: 4px;
+  height: 26px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.32);
+  transform: scaleY(0.28);
+  transform-origin: center;
+  /* 12 格共 1.2s，每格 0.1s；负 delay 错开相位，使同一时刻只有一格增高 */
+  animation: alertWave 1.2s ease-in-out infinite both;
+  animation-delay: calc((var(--i) - 12) * 0.1s);
+}
+@keyframes alertWave {
+  0%, 5% { transform: scaleY(1); background: rgba(255, 255, 255, 0.62); }
+  8%, 100% { transform: scaleY(0.28); background: rgba(255, 255, 255, 0.32); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .alert-loading-bar { animation-duration: 2.4s; }
+  .alert-wave-bar { animation-duration: 2.4s; }
 }
 
 .alert-list {
