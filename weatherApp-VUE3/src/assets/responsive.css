@@ -88,10 +88,17 @@
 .settings-layer {
   position: fixed; inset: 0; z-index: 60;
   display: flex; align-items: flex-end; justify-content: center;
-  visibility: hidden; opacity: 0;
+  visibility: hidden; opacity: 0; pointer-events: none;
+  /* 关闭方向：opacity 淡出 0.24s，visibility 的离散过渡让层在淡出期间保持 visible、
+     结束才 hidden（否则淡出会被提前掐断，看起来像「啪地消失」）。
+     pointer-events 负责关闭态不拦截点击。打开方向由 .open 的 transition:none 覆盖。 */
   transition: opacity 0.24s ease, visibility 0.24s;
 }
-.settings-layer.open { visibility: visible; opacity: 1; }
+/* 打开时整层不做过渡：visibility/opacity 立即到位，遮罩的 backdrop-filter 模糊
+   立刻满强度，不再随 opacity 在 0.24s 内渐渐浮现（就是用户说的「模糊有延迟」）。
+   关闭时移除 .open、回到基础规则的过渡，保留可见的淡出退场。
+   面板自己的 transform 滑入动画在 .settings-panel 上，不受影响。 */
+.settings-layer.open { visibility: visible; opacity: 1; pointer-events: auto; transition: none; }
 
 .settings-mask {
   position: absolute; inset: 0;
