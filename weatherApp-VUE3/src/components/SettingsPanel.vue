@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { DEFAULTS, SETTING_OPTIONS, resetSettings, setSetting, settings } from '@/composables/useSettings'
 import { useAppUpdate } from '@/composables/useAppUpdate'
+import { lockBodyScroll, unlockBodyScroll } from '@/utils/scrollLock'
 
 const {
   appVersion,
@@ -30,7 +31,6 @@ const props = defineProps({
 const emit = defineEmits(['close'])
 const panel = ref(null)
 let previousFocus = null
-let previousOverflow = ''
 
 /* 面板结构用数据描述：以后加设置项只改这里，模板不用动 */
 const groups = [
@@ -109,12 +109,11 @@ watch(
     if (typeof document === 'undefined') return
     if (open) {
       previousFocus = document.activeElement
-      previousOverflow = document.body.style.overflow
-      document.body.style.overflow = 'hidden'
+      lockBodyScroll()
       await nextTick()
       ;(getFocusableElements()[0] ?? panel.value)?.focus()
     } else {
-      document.body.style.overflow = previousOverflow
+      unlockBodyScroll()
       if (previousFocus?.isConnected) previousFocus.focus()
       previousFocus = null
     }
@@ -124,7 +123,7 @@ watch(
 onMounted(() => window.addEventListener('keydown', onKeydown))
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
-  document.body.style.overflow = previousOverflow
+  unlockBodyScroll()
   if (previousFocus?.isConnected) previousFocus.focus()
 })
 </script>
