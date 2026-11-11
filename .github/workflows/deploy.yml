@@ -1,0 +1,44 @@
+name: Deploy
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18'
+          cache: npm
+          cache-dependency-path: weatherApp-VUE3/package-lock.json
+      - run: npm ci
+        working-directory: weatherApp-VUE3
+      - run: npm test
+        working-directory: weatherApp-VUE3
+      - run: npm run lint
+        working-directory: weatherApp-VUE3
+      - run: npm run build
+        working-directory: weatherApp-VUE3
+        env:
+          VITE_SITE_BASE: ./
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: weatherApp-VUE3/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

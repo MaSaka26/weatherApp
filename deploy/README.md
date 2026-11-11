@@ -63,11 +63,10 @@ Gitee Pages 不允许自定义响应头；仓库已提供：
 ## CI / CD
 
 - [.github/workflows/quality.yml](../.github/workflows/quality.yml)：推送和 PR 时运行 test / lint / build
-- [.gitee/workflows/pages.yml](../.gitee/workflows/pages.yml)：master 或 `v*` tag 推送时构建并部署 Gitee Pages
+- [.github/workflows/deploy.yml](../.github/workflows/deploy.yml)：GitHub Pages 部署流水线（仓库镜像到 GitHub 时适用）
+- [deploy-gitee.sh](deploy-gitee.sh)：当前 Gitee 远端的本地一键部署脚本，推送 `gh-pages` 分支
 
-Gitee Go 需要仓库变量/密钥：
-
-- `GITEE_TOKEN`：具有仓库 Pages 权限的个人访问令牌
+当前 Gitee 远端使用本地脚本发布；GitHub Pages 流水线不需要额外 Secret。
 
 ## 部署前检查
 

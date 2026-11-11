@@ -1,23 +1,68 @@
-# Gitee Pages 部署配置
+# Gitee Pages 部署
 
-`yanglbme/gitee-pages-action` 在不同版本里参数名略有差异。当前 [.gitee/workflows/pages.yml](../.gitee/workflows/pages.yml) 使用的是常见命名；如果 Gitee Go 报参数错误，请按该 Action 最新文档调整。
+当前仓库远端是 `https://gitee.com/masaka0426/weather-app.git`。Gitee Pages 与 GitHub Pages 不同，不能直接使用 `actions/deploy-pages`，因此提供两种发布路径。
 
-需要配置仓库密钥：
+## 路径 A：本地一键发布到 Gitee Pages（当前远端适用）
 
-- `GITEE_TOKEN`：Gitee 个人访问令牌，需具备仓库读写权限
-- 必要时还需 `GITEE_PASSWORD` 或 SSH 密钥，取决于 Action 实现
+`deploy/deploy-gitee.sh` 会：
 
-首次部署：
+1. `npm ci`、test、lint、build
+2. 取 `weatherApp-VUE3/dist`
+3. 创建临时 Git 仓库，提交为 `gh-pages` 分支
+4. 强制推送 `origin/gh-pages`
 
-1. 推送 `master` 与 `v0.1.0` tag。
-2. 在 Gitee 仓库「服务 → Gitee Pages」中开启 Pages。
-3. 选择部署分支（流水线默认写 `gh-pages`）和部署目录 `dist`。
-4. 访问 `https://masaka0426.gitee.io/weather-app/`。
+运行：
 
-如果 Gitee Pages 要求直接选择仓库内目录，而不允许从 `dist` 分支部署，可改为：
+```bash
+bash deploy/deploy-gitee.sh
+```
 
-- 取消 `.gitignore` 对 `weatherApp-VUE3/dist/` 的忽略
-- 把构建产物提交到 `master`
-- Pages 目录选择 `weatherApp-VUE3/dist`
+推送成功后，在 Gitee 仓库：
 
-更推荐的方式仍是使用 Gitee Go / 镜像到 GitHub Pages，避免把构建产物混入源码。
+1. 打开「服务 → Gitee Pages」
+2. 部署分支选择 `gh-pages`
+3. 部署目录留空（根目录就是 dist 内容）
+4. 勾选/确认 HTTPS
+5. 访问 `https://masaka0426.gitee.io/weather-app/`
+
+可能需要输入 Gitee 用户名和私人令牌。该脚本会覆盖远端 `gh-pages` 分支，不会改动 `master` 源码。
+
+## 路径 B：GitHub Actions Pages
+
+如果仓库镜像到 GitHub，或把远端切到 GitHub，使用：
+
+- `.github/workflows/deploy.yml`：上传 `dist` 并通过 `actions/deploy-pages` 发布
+- 仓库 Settings → Pages → Source 选「GitHub Actions」
+
+该方式不适用于当前 Gitee 远端。
+
+## 构建产物
+
+`vite.config.js` 在构建结束时自动生成：
+
+- `dist/404.html`：从 `index.html` 复制
+- `dist/.nojekyll`：避免 Pages 忽略下划线文件
+
+因此静态托管目录完整包含：
+
+```text
+index.html
+404.html
+.nojekyll
+robots.txt
+sitemap.xml
+manifest.webmanifest
+sw.js
+_headers
+favicon.ico
+apple-touch-icon.png
+icon-192.png
+icon-512.png
+assets/
+```
+
+## 注意
+
+- 线上地址目前可能仍为 404：Gitee Pages 需要在仓库后台手动开启，并选择 `gh-pages` 分支。
+- 没有 `GITEE_TOKEN` 也能用本地脚本发布，只要本机有 Gitee 推送凭据。
+- `_headers` 只有 Netlify/Cloudflare Pages 等平台识别；Gitee Pages 不提供自定义响应头。自有服务器用 `deploy/nginx.conf`。

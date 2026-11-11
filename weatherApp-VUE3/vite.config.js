@@ -25,6 +25,11 @@ function injectServiceWorkerBuildId() {
         throw new Error('Service worker build placeholder is missing')
       }
       writeFileSync(swUrl, sw.replaceAll('__WEATHER_BUILD_ID__', buildId), 'utf8')
+
+      // 静态托管把 index.html 当作 404 fallback；构建产物自带一份，避免依赖 CI 复制。
+      writeFileSync(new URL('./dist/404.html', import.meta.url), index)
+      // 禁止 Pages 的 Jekyll 处理，避免 _headers 等下划线文件被忽略。
+      writeFileSync(new URL('./dist/.nojekyll', import.meta.url), '')
     },
   }
 }
