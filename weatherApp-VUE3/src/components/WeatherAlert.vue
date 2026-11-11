@@ -66,7 +66,7 @@ function open(link) {
 
     <p v-else-if="showEmpty" class="alert-empty" role="status" aria-live="polite">
       未匹配到当前城市预警，请以
-      <a href="https://www.nmc.cn/publish/alarm.html" target="_blank" rel="noopener">中央气象台</a>
+      <a class="nmc-link" href="https://www.nmc.cn/publish/alarm.html" target="_blank" rel="noopener"><span class="nmc-link-text">中央气象台</span></a>
       发布为准
     </p>
 
@@ -104,6 +104,26 @@ function open(link) {
   font-size: 0.75rem;
   line-height: 1.5;
   text-align: center;
+}
+.alert-empty .nmc-link,
+.alert-empty .nmc-link:link,
+.alert-empty .nmc-link:visited,
+.alert-empty .nmc-link:hover,
+.alert-empty .nmc-link:active {
+  color: inherit;
+  text-decoration: none !important;
+  text-decoration-line: none !important;
+}
+.alert-empty .nmc-link-text {
+  color: #8fd6ff;
+  font-weight: 600;
+  background: linear-gradient(90deg, #6db3f2 0%, #ffffff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.alert-empty .nmc-link:hover .nmc-link-text {
+  filter: brightness(1.1);
 }
 
 .alert-item {

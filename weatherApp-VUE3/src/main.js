@@ -2,7 +2,6 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 
 import App from './App.vue'
-import router from './router'
 
 // 全局样式（由原 weather.html 抽离，保证视觉一致）
 import '@/assets/weather.css'
@@ -14,7 +13,7 @@ initSettings()
 
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    const serviceWorkerUrl = `${import.meta.env.BASE_URL}sw.js`
+    const serviceWorkerUrl = new URL('sw.js', document.baseURI).href
     navigator.serviceWorker.register(serviceWorkerUrl).catch((error) => {
       console.warn('Service worker registration failed', error)
     })
@@ -24,6 +23,5 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 const app = createApp(App)
 
 app.use(createPinia())
-app.use(router)
 
 app.mount('#app')

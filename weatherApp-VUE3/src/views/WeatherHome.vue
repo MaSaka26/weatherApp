@@ -126,20 +126,20 @@ onBeforeUnmount(() => {
         :timezone="store.data?.timezone || ''"
       />
 
+      <!-- 城市预警：放在天气详情 6/9 卡上方。无本地预警整块隐藏，接口失败显示一行轻提示 + 刷新 -->
+      <WeatherAlert
+        :alerts="store.alerts"
+        :status="store.alertStatus"
+        :refreshing="store.alertRefreshing"
+        @refresh="store.retryAlerts()"
+      />
+
       <DetailCards
         v-if="store.current"
         :current="store.current"
         :daily="store.daily"
         :air="store.air"
         :data-ready="store.hasWeatherData"
-      />
-
-      <!-- 天气预警：夹在 6/9 张详情卡与逐小时之间。无本地预警整块隐藏，接口失败显示一行轻提示 + 刷新 -->
-      <WeatherAlert
-        :alerts="store.alerts"
-        :status="store.alertStatus"
-        :refreshing="store.alertRefreshing"
-        @refresh="store.retryAlerts()"
       />
 
       <HourlyForecast
@@ -203,6 +203,11 @@ onBeforeUnmount(() => {
     :open="radarOpen"
     :city-name="store.cityName"
     :sky-class="store.skyClass"
+    :country-code="store.cityCountryCode"
+    :latitude="store.lat"
+    :longitude="store.lon"
+    :location-source="store.locationSource"
+    :timezone="store.data?.timezone || ''"
     @close="radarOpen = false"
   />
 </template>

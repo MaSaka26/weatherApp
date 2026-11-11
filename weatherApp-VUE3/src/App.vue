@@ -1,7 +1,7 @@
 <script setup>
-import { RouterView } from 'vue-router'
+import WeatherHome from '@/views/WeatherHome.vue'
 </script>
 
 <template>
-  <RouterView />
+  <WeatherHome />
 </template>

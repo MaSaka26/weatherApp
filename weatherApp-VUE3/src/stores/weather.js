@@ -8,6 +8,7 @@ import { buildPlaceholderWeather } from '@/utils/weatherPlaceholder'
 import { createWeatherLoader } from '@/utils/weatherRequest'
 import { shouldAutoLocate } from '@/utils/locationIntent'
 import { resolvePlace } from '@/utils/placeResolver'
+import { lookupPlace } from '@/utils/placeLookup'
 import { useLocationPreferences } from '@/composables/weather/useLocationPreferences'
 import { useLocationSession } from '@/composables/weather/useLocationSession'
 import { useAirQuality } from '@/composables/weather/useAirQuality'
@@ -31,6 +32,13 @@ export const useWeatherStore = defineStore('weather', () => {
   const lon = ref(cached?.place?.lon ?? null)
   const cityName = ref(cached?.place?.cityName ?? '')
   const cityDetail = ref(cached?.place?.cityDetail ?? '')
+  const cachedCountryCode = cached?.place?.countryCode || (
+    ['county', 'city', 'near'].includes(cached?.place?.locationSource) ||
+    (Number.isFinite(cached?.place?.lat) && lookupPlace(cached.place.lat, cached.place.lon)?.level)
+      ? 'CN'
+      : ''
+  )
+  const cityCountryCode = ref(cachedCountryCode)
   const locationSource = ref(cached?.place?.locationSource ?? '')
 
   const data = ref(cached?.data ?? buildPlaceholderWeather())
@@ -85,10 +93,18 @@ export const useWeatherStore = defineStore('weather', () => {
         lon: lon.value,
         cityName: cityName.value,
         cityDetail: cityDetail.value,
+        countryCode: cityCountryCode.value,
         locationSource: locationSource.value,
         locationMode: locationMode.value,
       },
     })
+  }
+
+  function inferCountryCode(place) {
+    if (!place) return ''
+    if (place.countryCode) return place.countryCode
+    if (!Number.isFinite(place.lat) || !Number.isFinite(place.lon)) return ''
+    return lookupPlace(place.lat, place.lon)?.level ? 'CN' : ''
   }
 
   function applyPlace(place) {
@@ -97,6 +113,7 @@ export const useWeatherStore = defineStore('weather', () => {
     if (place.lon != null) lon.value = place.lon
     if (place.name) cityName.value = place.name
     if (place.detail != null) cityDetail.value = place.detail
+    if (place.countryCode != null) cityCountryCode.value = place.countryCode
     if (place.source != null) locationSource.value = place.source
     if (place.mode === 'auto' || place.mode === 'manual') setLocationMode(place.mode)
   }
@@ -159,14 +176,16 @@ export const useWeatherStore = defineStore('weather', () => {
 
   function loadPlace(place) {
     weatherLoader.cancel()
-    const candidate = locationSession.fromManualPlace(place, 'search')
+    const enrichedPlace = { ...place, countryCode: inferCountryCode(place) }
+    const candidate = locationSession.fromManualPlace(enrichedPlace, 'search')
     if (!candidate) return false
     return loadMain(candidate.lat, candidate.lon, { place: candidate })
   }
 
   function loadCommonCity(place) {
     weatherLoader.cancel()
-    const candidate = locationSession.fromManualPlace(place, 'common')
+    const enrichedPlace = { ...place, countryCode: inferCountryCode(place) }
+    const candidate = locationSession.fromManualPlace(enrichedPlace, 'common')
     if (!candidate) return false
     return loadMain(candidate.lat, candidate.lon, { place: candidate })
   }
@@ -242,6 +261,7 @@ export const useWeatherStore = defineStore('weather', () => {
     lon,
     cityName,
     cityDetail,
+    cityCountryCode,
     locationSource,
     locationMode,
     commonCities,

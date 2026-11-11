@@ -6,8 +6,8 @@ let CACHE = FALLBACK_CACHE
 const scopeUrl = new URL(self.registration.scope)
 const rootUrl = new URL('./', scopeUrl)
 const rootPath = rootUrl.pathname
-const assetPrefix = new URL('assets/', scopeUrl).pathname
-const SHELL = [rootPath, new URL('favicon.ico', scopeUrl).pathname]
+const assetPrefix = new URL('assets/', rootUrl).pathname
+const SHELL = [rootPath, new URL('favicon.ico', rootUrl).pathname]
 
 async function precache() {
   const files = new Set(SHELL)

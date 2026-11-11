@@ -59,6 +59,8 @@ function buildItem(level, sections, lat, lon) {
             : (parent[0] || ''),
     lat,
     lon,
+    // 本地候选表只包含中国行政区，Provider 选择需要显式国家代码。
+    countryCode: 'CN',
     _match: { name: shortName(leaf), full: leaf, collapsed: collapse(sections) },
   }
 }

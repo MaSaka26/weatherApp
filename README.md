@@ -6,7 +6,7 @@
 
 | 目录 | 说明 |
 | --- | --- |
-| `weatherApp-VUE3/` | **唯一主工程**。Vite 8 + Vue 3.5 + Pinia + vue-router + Highcharts 13。 |
+| `weatherApp-VUE3/` | **唯一主工程**。Vite 8 + Vue 3.5 + Pinia + Highcharts 13 + Leaflet 1.9。 |
 
 > 最早的原生单文件版 `weather.html`（167 KB，无构建、双击即开）已在 `a7ebabe` 删除，需要时可从 Git 历史 `e1105ff` 取回；不再维护。
 
@@ -70,7 +70,7 @@ npm run dev        # http://localhost:5173
 - 空气质量走独立接口且懒加载：先渲染天气，AQI 到了再补进卡片，**不占用首屏等待时间**
 - 能见度和降水量不需要额外请求，直接从已有的 `current.visibility` / `current.precipitation` 读
 
-**天气预警**（夹在详情卡与逐小时之间）
+**天气预警**（放在天气详情 6/9 卡上方）
 - 数据来自中央气象台 `/rest/findAlarm`，免 Key、带 `Access-Control-Allow-Origin: *`，浏览器可直连
 - **只有本地有预警时才出现**，没有就整块不渲染 —— 空态是常态，留一张「无预警」的空卡只会占地方
 - 不显示标题栏和「多少条」，只留预警卡片本体；每条整块毛玻璃按级别染色（蓝/黄/橙/红：背景、边框、级别文字同一套色），不再是左侧一条色条 + 官方预警图标（125×94 PNG，接口直接给 URL）+ 类型 + 级别 + 区域与发布时间；按级别从高到低排，最多 3 条
@@ -86,7 +86,7 @@ npm run dev        # http://localhost:5173
 - 左侧：标题「降水预报」+ 一句结论（如「正在下雨」「约 2 小时后转停」「未来 24 小时无雨」）
 - 结论下方一条 **12 小时强度柱条**：一小时一格，柱高按 0–3 档递进，颜色取自雷达色带的中层，和右侧回波说的是同一件事；超出预报覆盖的小时画成更淡的基座，与「这一小时不下雨」区分开
 - 右侧：手绘感 SVG —— 十字街道 + 两团分散的雷达回波色块，色带随峰值档位切换
-- 点整条弹出全屏雷达回放：**中央气象台（NMC）拼图 12 帧**、播放/暂停/拖动、Escape 关闭
+- 点整条弹出全屏雷达回放：中国大陆使用 **NMC 全国拼图**，境外自动切换 **RainViewer 全球瓦片**；支持播放/暂停、拖动、速度档与 Escape 关闭
 - 雷达组件走动态 import，只在首次打开时才挂载；打开后**先出第一帧就撤遮罩**，其余 11 张后台预载，换帧命中缓存零延迟
 - 打开期间每分钟回探最新帧并滚动追加到时间轴（上限 60 帧 / 6 小时），长时间停留不会停在旧帧
 - 四档区域（全国 1349×1208 / 华东 774×1326 / 华北 954×949 / 中南 975×980）可在控制条切换；分区图官方只发原图一档，切过去时画质组自动灰化为「仅原图」
@@ -120,14 +120,22 @@ npm run dev        # http://localhost:5173
 | `air-quality-api.open-meteo.com/v1/air-quality` | AQI、PM2.5、PM10 |
 | `geocoding-api.open-meteo.com/v1/search` | 地名反查（备用） |
 | `www.nmc.cn/rest/findAlarm` | 省级天气预警列表（中央气象台） |
-| `image.nmc.cn/product/...` | NMC 雷达拼图 |
+| `image.nmc.cn/product/...` | NMC 中国雷达拼图 |
 | `image.nmc.cn/assets/img/alarm/...` | NMC 预警图标 |
+| `api.rainviewer.com/public/weather-maps.json` | RainViewer 全球雷达帧 |
+| `tilecache.rainviewer.com/...` | RainViewer 雷达瓦片 |
+| `server.arcgisonline.com/...` | RainViewer 模式的全球暗色底图 |
 
 地名解析优先走本地表 `src/data/china-places.json`（394 个地级市 + 2814 个区县，区县挂在所属地级市下），命中即用，避免网络往返。
 
-**雷达回放**
+**雷达回放：区域 Provider**
 
-改用 [中央气象台（NMC）](http://www.nmc.cn/publish/radar/chinaall.html) 的全国雷达拼图：整幅 PNG 一次性显示，**不再叠 Leaflet 地图**，也就没有坐标系对齐问题。
+雷达回放按地点自动选择数据源：
+- **中国大陆**：使用 [中央气象台（NMC）](http://www.nmc.cn/publish/radar/chinaall.html) 全国雷达拼图，优先官方来源与 6 分钟帧率。
+- **境外**：使用 [RainViewer](https://www.rainviewer.com/api.html) 全球雷达瓦片，通过 Leaflet 叠加在 Esri 暗色底图上。
+- **未知国家/地区**：有本地行政区来源时按中国处理，其余回退 RainViewer；不把 NMC 中国图当成全球图。
+
+NMC Provider：
 - 图片按 6 分钟一档发布，URL 由 UTC 时间戳推算（`slotOf` 用 `Math.floor`，否则 07:35 会被推到还没发布的 07:36）。发布有 6–15 分钟延迟，所以从当前档往回最多探测 6 档找最新帧。
 - **首帧先出**：探测到最新帧后立即建好 12 帧列表，只等第一张图 `decode()` 完成就撤遮罩开播，其余 11 张在后台并发预载，不等整批完成（避免冷缓存下 1.6–2.4 秒的空白等待）。若首帧 8 秒仍未落地也放行，真 404 由 `onerror` 单独标记。
 - **开着时滚动刷新**：每 60 秒静默回探一次，把新发布的帧追加到时间轴尾部；超过 60 帧（6 小时）就从头裁掉并平移当前索引。回看旧帧的用户不会被强行拉回最新帧。
@@ -136,12 +144,20 @@ npm run dev        # http://localhost:5173
 - 图片是白底烘焙图（底图、省界、城市名、回波、图例都在一张图里），用 `invert(1) hue-rotate(180deg)` 转暗色主题；`hue-rotate` 是为了把反相后变品红的绿色回波绕回原色相。
 - 响应带 `Access-Control-Allow-Origin: *`，但**没有 JSON 帧列表接口**，只能靠时间戳回推。
 
-选 NMC 而非 RainViewer 的理由：单帧 0.27–0.62 秒（RainViewer 单块瓦片实测 1.3–12.4 秒）、6 分钟一帧（RainViewer 10 分钟）、当天有 70+ 帧可用（RainViewer 死限 13 帧）。代价是整图不能缩放、不能与自定义暗色底图叠加。
+RainViewer Provider：
+- 元数据固定 10 分钟刷新，过去约 2 小时、10 分钟一帧。
+- 瓦片模板为 512px + `zoomOffset: -1`，原生缩放上限 7；更高缩放由 Leaflet 客户端上采样。
+- 首帧在瓦片整层加载完成或 6 秒兜底后自动播放；用户暂停或拖动时间轴不会被强制恢复。
+- 雷达帧采用双 pane 双缓冲：新帧在隐藏 pane 加载，完成后用 visibility 硬切，不使用 opacity 过渡，避免前后帧双重曝光。
+- 底图使用 Esri Dark Gray Base + Reference 两层：Base 提供暗色地理底，Reference 提供全球地名标注。
+- RainViewer 全球覆盖仍受各国雷达站与海洋空白限制，界面明确显示“空白不代表无降水”。
+- RainViewer 与 Esri 署名在回放层和地图 attribution 中保留。
 
 **性能取舍**
-- 主路由 JS 约 123 KB gzip；Highcharts 只在首次打开曲线时加载（约 103 KB gzip），雷达预览走独立动态 import（JS gzip 5.92 KB、CSS gzip 2.34 KB）
-- 移除 Leaflet 与 Esri 底图后，WeatherHome 的 CSS 从 14.79 KB 降到 2.10 KB（Leaflet 样式不再打包）
-- 雷达组件只在首次打开时挂载；打开后首帧先出、其余后台预载，之后换帧命中缓存零延迟
+- 主路由 JS 仍约 123 KB gzip；Highcharts 只在首次打开曲线时加载（约 103 KB gzip）。
+- NMC Provider 动态 chunk：JS gzip 5.91 KB、CSS gzip 2.34 KB。
+- RainViewer + Leaflet Provider 动态 chunk：JS gzip 约 47.2 KB、CSS gzip 约 7.73 KB，只在境外地点首次打开雷达时下载。
+- 雷达 Host 只在首次点击后挂载；NMC 保持首帧先出和后台预载，RainViewer 进入时按当前城市坐标初始化地图。
 
 ---
 
@@ -155,14 +171,16 @@ weatherApp-VUE3/
 │   │   ├── weather.css         # 全局样式入口，拆分到 tokens/core/forecast/responsive
 │   │   ├── icons.js            # 23 个 Tabler 图标的 path 数据
 │   │   └── icons/*.svg         # 同上，用于生成 icons.js
-│   ├── components/             # 23 个组件
+│   ├── components/             # 25 个组件
 │   │   ├── CurrentWeather.vue  # 温度 + 时钟
 │   │   ├── DetailCards.vue     # 详情卡容器（6 / 9 张）
 │   │   ├── NeedleDial / DialGauge / WindCompass / UvGauge
 │   │   ├── WeatherAlert.vue    # 天气预警（空态明确提示匹配可能不完整）
 │   │   ├── HourlyForecast.vue
 │   │   ├── RainForecast.vue    # 降水条目（左文 + 12 小时强度柱条 + 手绘 SVG）
-│   │   ├── RainRadarPreview.vue# 全屏 NMC 雷达回放（约 752 行）
+│   │   ├── RainRadarPreview.vue# 雷达 Provider 选择壳
+│   │   ├── NmcRainRadarPreview.vue # 中国 NMC 整图回放
+│   │   ├── RainViewerRadarPreview.vue # 全球 RainViewer 瓦片回放
 │   │   ├── DailyForecast / DailyChart
 │   │   ├── LifeIndex.vue       # 生活指数
 │   │   ├── TablerIcon.vue      # 通用图标组件
@@ -183,6 +201,7 @@ weatherApp-VUE3/
 │   │   ├── weatherFreshness.js # 数据过期判断
 │   │   ├── placeCandidate.js   # 统一地点候选结构
 │   │   ├── placeResolver.js    # 坐标 -> 地名解析
+│   │   ├── radarProvider.js    # 按国家选择 NMC / RainViewer
 │   │   ├── timezone.js         # 目标城市时区换算
 │   │   ├── weatherCodes.js     # WMO 天气码 → 中文 + 昼夜
 │   │   └── placeLookup / placeSearch
@@ -214,20 +233,20 @@ weatherApp-VUE3/
 
 ### 可靠性
 
-- **雷达数据依赖第三方**。NMC 无 SLA、无 JSON 帧列表接口，只能按 UTC 时间戳回推；发布有 6–15 分钟延迟，所以要从当前档往回探测最多 6 档。
+- **雷达数据依赖两套第三方**。NMC 无 SLA、无 JSON 帧列表接口，只能按 UTC 时间戳回推；RainViewer 的全球覆盖、延迟和可用性同样无 SLA，且海洋和部分国家可能无回波覆盖。
 - **雷达是整幅烘焙图**。省界、城市名、回波、图例都在一张 PNG 里，不能缩放叠加到自定义底图，只能整张显示；暗色主题靠 CSS 反相实现。
 - **图片没有 `Cache-Control` 头**，但有 `Access-Control-Allow-Origin: *` 和 `Last-Modified`；换帧靠「首帧先出 + 其余后台预载 + 每分钟滚动追加」把图拉进内存，不依赖 HTTP 缓存。
 
 ### 未实现
 
-1. **完全离线不可行**。雷达图是实时发布的滚动数据，缓存意义有限；且 NMC 无离线授权说明。断网时用不了雷达回放。
-2. **PM2.5 之外的地图叠加未做**。NMC 只有雷达拼图这一种产品，没有可叠加到地图的瓦片；想要「任意缩放 + 叠加」只能自建瓦片服务（成本与授权都不划算）。
+1. **完全离线不可行**。NMC 和 RainViewer 都是实时滚动数据，缓存意义有限；断网时用不了雷达回放。
+2. **自定义气象图层叠加未做**。RainViewer 已支持境外瓦片叠加，但还没有多图层管理、时间同步和任意第三方瓦片接入。
 3. **城市对比未做**。常用城市已支持保存与快速切换，但没有多城市并排对比或收藏分组。
 4. **预警只能看到标题，看不到正文**。NMC 详情页没有 CORS 头，浏览器 fetch 读不了「防御指南」全文，只能点开新窗口。另外接口只支持按省筛选，本地判定靠在标题里匹配城市名——如果某条预警的标题写的是上级市台发布、区域串里不含当前城市名，就会被漏掉（保守地少报，不会多报）。
 5. **空气质量只有 AQI / PM2.5 / PM10**，没有 O₃、NO₂、SO₂、CO 的细分展示，也没有分时段预报；中国区无花粉数据（接口返回空），所以也没接。
 6. **降水条目不区分降水类型**。只判断「有没有雨」，没有雨/雪/冻雨的分别文案；强度已用 12 小时柱条展示（`intensities`），但柱条只有粗细高低的档位，没有标出每格对应的具体时刻。
 7. **离线能力有限**。已提供 Web App Manifest、安装图标和按构建指纹自动更新的 Service Worker；天气可显示 24 小时内的本地缓存。首次打开前必须先联网，天气 API、预警和实时雷达仍需网络。
-8. **测试覆盖仍有限**。19 个自动化测试覆盖生活指数、降水展望、雷达播放、请求竞态、缓存、定位会话、AQI 竞态、刷新控制、数据过期与城市时区；完整浏览器端交互仍建议后续补充端到端测试。
+8. **测试覆盖仍有限**。20 个自动化测试覆盖生活指数、降水展望、雷达播放、Provider 选择、请求竞态、缓存、定位会话、AQI 竞态、刷新控制、数据过期与城市时区；完整浏览器端交互仍建议后续补充端到端测试。
 
 ### 工程债
 
@@ -240,9 +259,9 @@ weatherApp-VUE3/
 
 - [开发日志 2026-10-30 ~ 11-02](weatherApp-VUE3/docs/开发日志-2026-10-30至11-02.md) —— 45 节，单文件原版的迁移与前三轮改版
 - [开发日志 2026-11-03 ~ 11-04](weatherApp-VUE3/docs/开发日志-2026-11-03至11-04.md) —— 图标体系、雷达 demo、降水预报条目
-- [雷达 demo 技术规格](weatherApp-VUE3/docs/radar-demo-spec.md) —— 15 行技术契约、5 条 ADR、15 条审查清单。**记录的是早期 RainViewer + Leaflet 版 demo**，正式组件已改为 NMC 整图，仅作历史参考
+- [雷达 demo 技术规格](weatherApp-VUE3/docs/radar-demo-spec.md) —— RainViewer + Leaflet 的瓦片契约、缩放限制与审查清单，仍是全球 Provider 的实现参考
 - [生活指数结果对照表](weatherApp-VUE3/docs/life-index-catalog.html) —— 54 种可能结果 × 对应图标，单文件可开
-- [雷达回放 demo](weatherApp-VUE3/docs/radar-demo.html) —— 独立单文件、双击即开的开发期验证页（含 RainViewer 地图版与 NMC 整图版切换），**不是正式组件用的实现**
+- [雷达回放 demo](weatherApp-VUE3/docs/radar-demo.html) —— 独立单文件验证页，包含 RainViewer 全球瓦片与 NMC 整图两套实现，也是 Provider 拆分的来源
 
 ## 工程增强
 
@@ -257,5 +276,5 @@ weatherApp-VUE3/
 ## 数据来源
 
 天气与空气质量数据来自 [Open-Meteo](https://open-meteo.com/)（CC BY 4.0）。
-雷达拼图来自 [中央气象台](http://www.nmc.cn/publish/radar/chinaall.html)（NMC），界面已保留「数据来源 中央气象台」署名。
+中国雷达拼图来自 [中央气象台](http://www.nmc.cn/publish/radar/chinaall.html)（NMC）；全球雷达瓦片来自 [RainViewer](https://www.rainviewer.com/api.html)，界面保留其署名。全球模式底图来自 Esri。
 图标来自 [Tabler Icons](https://tabler.io/icons)（MIT）。

@@ -13,13 +13,21 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0"
     >
-    <title>天气</title>
+    <title>天气仪表盘 · 实时天气与雷达回放</title>
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="天气仪表盘">
+    <meta property="og:description" content="实时天气、逐小时预报、空气质量与全球雷达回放">
+    <meta property="og:image" content="./icon-512.png">
+    <meta property="og:locale" content="zh_CN">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="天气仪表盘">
+    <meta name="twitter:description" content="实时天气、逐小时预报、空气质量与全球雷达回放">
     <!-- 提前建连，缩短首次接口握手耗时 -->
     <link rel="preconnect" href="https://api.open-meteo.com" crossorigin>
     <link rel="preconnect" href="https://api.bigdatacloud.net" crossorigin>
   </head>
   <body>
     <div id="app"></div>
-    <script type="module" src="/src/main.js"></script>
+    <script type="module" src="./src/main.js"></script>
   </body>
 </html>
