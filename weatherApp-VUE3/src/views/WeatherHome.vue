@@ -139,6 +139,7 @@ onBeforeUnmount(() => {
         <WeatherAlert
           :alerts="store.alerts"
           :status="store.alertStatus"
+          :country-code="store.cityCountryCode"
           :refreshing="store.alertRefreshing"
           @refresh="store.retryAlerts()"
         />
