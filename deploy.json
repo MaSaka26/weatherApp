@@ -1,0 +1,12 @@
+{
+  "appVersion": "v0.1.10",
+  "appBuildId": "7c92a5243cd9b65f5abfe2f992ff3d2183b34f1c",
+  "sourceCommit": "7c92a5243cd9b65f5abfe2f992ff3d2183b34f1c",
+  "sourceShort": "7c92a52",
+  "sourceTag": "v0.1.10",
+  "latestTag": "v0.1.10",
+  "sourceDirty": false,
+  "builtAt": "2026-11-12T07:39:37.381Z",
+  "node": "v24.18.0",
+  "buildId": "46c4fb64ef43"
+}
