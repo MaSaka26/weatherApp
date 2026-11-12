@@ -26,6 +26,8 @@ const props = defineProps({
   // idle | ok | error
   status: { type: String, default: 'idle' },
   refreshing: { type: Boolean, default: false },
+  // 当前城市国家码（CN 表示中国大陆）；非 CN 时预警功能不可用
+  countryCode: { type: String, default: '' },
 })
 
 const emit = defineEmits(['refresh'])
@@ -37,6 +39,10 @@ const showList = computed(() => props.alerts.total > 0)
 const showEmpty = computed(() => props.status === 'ok' && !showList.value)
 const showError = computed(() => props.status === 'error' && !showList.value)
 const showLoading = computed(() => props.status === 'idle' && !showList.value)
+
+// 非中国大陆城市：预警源（中央气象台）只覆盖 CN，直接说明不支持，避免误以为模块失效
+const isForeign = computed(() => props.countryCode && props.countryCode !== 'CN')
+const showForeign = computed(() => isForeign.value && !showList.value)
 
 function open(link) {
   if (!link) return
@@ -76,6 +82,10 @@ function open(link) {
         </span>
       </button>
     </div>
+
+    <p v-else-if="showForeign" class="alert-foreign" role="status" aria-live="polite">
+      当前城市预警仅支持中国大陆用户
+    </p>
 
     <p v-else-if="showEmpty" class="alert-empty" role="status" aria-live="polite">
       未匹配到当前城市预警，请以
@@ -128,6 +138,26 @@ function open(link) {
 }
 
 .alert-empty {
+  box-sizing: border-box;
+  display: flex;
+  min-height: var(--alert-slot-h);
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--text-6);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+/* 非中国大陆城市：预警源（中央气象台）只覆盖 CN，直接说明不支持，避免误以为模块失效。
+   样式与 .alert-empty 同为中性灰玻璃，不占用灾害级别配色。 */
+.alert-foreign {
   box-sizing: border-box;
   display: flex;
   min-height: var(--alert-slot-h);

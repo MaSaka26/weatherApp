@@ -1,25 +1,49 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 
-import { searchPlaces } from '@/utils/placeSearch'
+import {
+  buildLocalCandidates,
+  buildGlobalCandidates,
+  mergeCandidates,
+} from '@/utils/geoSuggest'
 
 const emit = defineEmits(['search', 'select'])
 
 const value = ref('')
 const inputEl = ref(null)
 const rootEl = ref(null)
-const candidates = ref([])
+const localCandidates = ref([])
+const globalCandidates = ref([])
+const candidates = computedMerge()
 const open = ref(false)
 const activeIndex = ref(-1)
 const listboxId = 'weather-city-suggest'
 const optionId = (index) => `weather-city-option-${index}`
 
-// 本地查表即查即显，不触发天气搜索；自动搜索已按需求取消
+let suggestToken = 0
+
+// 本地查表即查即显（中国行政区）；同时异步补充全球城市建议（伦敦 / 纽约 / Tokyo…）。
 function refreshCandidates() {
   const trimmed = value.value.trim()
-  candidates.value = trimmed ? searchPlaces(trimmed) : []
-  open.value = candidates.value.length > 0
+  localCandidates.value = trimmed ? buildLocalCandidates(trimmed) : []
+  globalCandidates.value = []
   activeIndex.value = -1
+  open.value = localCandidates.value.length > 0
+  if (!trimmed) return
+  const token = ++suggestToken
+  const controller = new AbortController()
+  buildGlobalCandidates(trimmed, { signal: controller.signal })
+    .then((list) => {
+      if (token !== suggestToken) return
+      globalCandidates.value = list
+      // 境外城市本地表无候选，等全球建议回来后再展开下拉
+      if (list.length) open.value = true
+    })
+    .catch(() => {})
+}
+
+function computedMerge() {
+  return computed(() => mergeCandidates(localCandidates.value, globalCandidates.value))
 }
 
 function onInput() {
@@ -75,7 +99,8 @@ function onKeydown(e) {
 function clear() {
   value.value = ''
   open.value = false
-  candidates.value = []
+  localCandidates.value = []
+  globalCandidates.value = []
   activeIndex.value = -1
   inputEl.value?.focus()
 }
@@ -132,20 +157,21 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocPointerDo
         <!-- pointerdown.prevent：抢在输入框 blur 之前完成选中 -->
         <li
           v-for="(item, i) in candidates"
-          :key="`${item.path}:${item.level}`"
+          :key="`${item.path}:${item.level}:${item.lat}:${item.lon}:${i}`"
           class="suggest-item"
+          :class="{ active: i === activeIndex, 'suggest-global': item.isGlobal }"
           :id="optionId(i)"
-          :class="{ active: i === activeIndex }"
           role="option"
           :aria-selected="i === activeIndex"
           @pointerdown.prevent="pick(item)"
           @mouseenter="activeIndex = i"
         >
           <span class="suggest-text" :title="item.path">
-            <span v-if="item.parent" class="suggest-parent">{{ item.parent }}-</span>
+            <span v-if="item.parent" class="suggest-parent">{{ item.parent }} · </span>
             <span class="suggest-leaf">{{ item.leaf }}</span>
+            <span v-if="item.altName && item.altName !== item.leaf" class="suggest-alt">{{ item.altName }}</span>
           </span>
-          <span class="suggest-level">{{ item.levelLabel }}</span>
+          <span class="suggest-level" :class="{ 'suggest-tag-global': item.isGlobal }">{{ item.levelLabel }}</span>
         </li>
       </ul>
     </div>

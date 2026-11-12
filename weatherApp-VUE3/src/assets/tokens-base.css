@@ -264,6 +264,14 @@ body {
   color: var(--text-6);
   letter-spacing: 1px;
 }
+.suggest-parent { color: var(--text-6); }
+.suggest-alt { color: var(--text-6); font-size: 0.75rem; margin-left: 6px; }
+.suggest-global .suggest-leaf { color: var(--text-1); }
+.suggest-tag-global {
+  color: var(--accent, #7fb2ff);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
 
 /* ===== Error State ===== */
 .error-message {
@@ -300,4 +308,3 @@ body {
 /* 入场动画由 entrance.css + v-reveal 统一编排，这里只负责显示切换 */
 .weather-content { display: none; }
 .weather-content.active { display: block; }
-
