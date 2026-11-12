@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { lookupPlace } from '@/utils/placeLookup'
+import { buildFavoriteGroups } from '@/utils/favoriteGroups'
 
 const props = defineProps({ cities: { type: Array, default: () => [] } })
 const emit = defineEmits(['select', 'remove', 'locate'])
@@ -55,10 +56,12 @@ const classified = computed(() => {
   return { domestic, foreign }
 })
 
-const groups = computed(() => [
-  { key: 'domestic', label: '国内', cities: classified.value.domestic },
-  { key: 'foreign', label: '国外', cities: classified.value.foreign },
-].map((group) => {
+// 只展示确实有收藏城市的分组（空分类由 buildFavoriteGroups 过滤掉），
+// 再叠加每个分组的多选全选 / 半选状态。
+const groups = computed(() => buildFavoriteGroups(
+  classified.value.domestic,
+  classified.value.foreign,
+).map((group) => {
   const chosen = group.cities.filter(isSelected).length
   return {
     ...group,
@@ -198,7 +201,7 @@ onBeforeUnmount(() => {
                 <span class="cc-group-label">{{ group.label }}</span>
                 <span class="cc-group-count">{{ group.cities.length }}</span>
               </div>
-              <div v-if="group.cities.length" class="cc-group-rows">
+              <div class="cc-group-rows">
                 <div v-for="place in group.cities" :key="keyOf(place)" class="cc-row">
                   <input
                     class="cc-checkbox"
@@ -214,7 +217,6 @@ onBeforeUnmount(() => {
                   </button>
                 </div>
               </div>
-              <p v-else class="cc-group-empty">暂无{{ group.label }}城市</p>
             </section>
           </template>
           <p v-else class="cc-empty">搜索并查看城市天气后，会自动加入这里</p>
@@ -297,7 +299,6 @@ onBeforeUnmount(() => {
 .cc-group-label { flex: 1; color: var(--text-3); font-size: 0.75rem; font-weight: 600; letter-spacing: .5px; }
 .cc-group-count { min-width: 18px; color: var(--text-6); font-size: 0.6875rem; text-align: center; }
 .cc-group-rows { padding-left: 4px; }
-.cc-group-empty { margin: 0; padding: 4px 8px 8px 32px; color: var(--text-6); font-size: 0.75rem; }
 .cc-row { display: flex; align-items: center; gap: 10px; padding: 2px 8px; border-radius: var(--radius-sm); }
 .cc-row:hover, .cc-row:focus-within { background: var(--surface-3); }
 .cc-city {

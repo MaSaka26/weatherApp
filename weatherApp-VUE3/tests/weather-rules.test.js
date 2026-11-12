@@ -22,6 +22,7 @@ import { useLocationPreferences } from '../src/composables/weather/useLocationPr
 import { RADAR_PROVIDER, selectRadarProvider } from '../src/utils/radarProvider.js'
 import { shouldRestartOnEpoch } from '../src/utils/gaugeRestart.js'
 import { compareAppUpdate } from '../src/utils/appVersion.js'
+import { buildFavoriteGroups } from '../src/utils/favoriteGroups.js'
 
 
 
@@ -475,6 +476,28 @@ test('rememberLocatedCity adds geolocated cities and de-dups jittered GPS coordi
     if (original === undefined) delete globalThis.localStorage
     else globalThis.localStorage = original
   }
+})
+
+test('favorite groups only include categories that have cities', () => {
+  const hangzhou = { name: '杭州', lat: 30.27, lon: 120.15 }
+  const london = { name: '伦敦', lat: 51.5, lon: -0.12 }
+
+  // 两类都为空 -> 一个分组都不渲染（下拉表为空）
+  assert.deepEqual(buildFavoriteGroups([], []), [])
+  assert.deepEqual(buildFavoriteGroups(), [])
+
+  // 只有国内 -> 只显示「国内」，不显示空的「国外」表头
+  const domesticOnly = buildFavoriteGroups([hangzhou], [])
+  assert.deepEqual(domesticOnly.map((g) => g.key), ['domestic'])
+  assert.equal(domesticOnly[0].cities.length, 1)
+
+  // 只有国外 -> 只显示「国外」
+  const foreignOnly = buildFavoriteGroups([], [london])
+  assert.deepEqual(foreignOnly.map((g) => g.key), ['foreign'])
+
+  // 两类都有 -> 顺序为国内、国外
+  const both = buildFavoriteGroups([hangzhou], [london])
+  assert.deepEqual(both.map((g) => g.label), ['国内', '国外'])
 })
 
 test('radar provider follows location country and local source', () => {
