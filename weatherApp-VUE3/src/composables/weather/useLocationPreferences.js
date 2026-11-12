@@ -81,11 +81,19 @@ export function useLocationPreferences({ cachedPlace = null } = {}) {
     persistCommonCities()
   }
 
+  function removeCommonCities(places) {
+    if (!Array.isArray(places) || places.length === 0) return
+    const keys = new Set(places.map((p) => `${p.lat},${p.lon}`))
+    commonCities.value = commonCities.value.filter((city) => !keys.has(`${city.lat},${city.lon}`))
+    persistCommonCities()
+  }
+
   return {
     locationMode,
     commonCities,
     setLocationMode,
     rememberCommonCity,
     removeCommonCity,
+    removeCommonCities,
   }
 }

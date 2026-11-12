@@ -26,6 +26,7 @@ export const useWeatherStore = defineStore('weather', () => {
     setLocationMode,
     rememberCommonCity,
     removeCommonCity,
+    removeCommonCities: prefsRemoveCommonCities,
   } = useLocationPreferences({ cachedPlace: cached?.place })
 
   const lat = ref(cached?.place?.lat ?? null)
@@ -190,6 +191,17 @@ export const useWeatherStore = defineStore('weather', () => {
     return loadMain(candidate.lat, candidate.lon, { place: candidate })
   }
 
+  function removeCommonCities(places = []) {
+    if (!Array.isArray(places) || places.length === 0) return
+    const keys = new Set(places.map((p) => `${p.lat},${p.lon}`))
+    const wasActive = keys.has(`${lat.value},${lon.value}`)
+    prefsRemoveCommonCities(places)
+    if (wasActive) {
+      const next = commonCities.value[0]
+      if (next) loadCommonCity(next)
+    }
+  }
+
   async function loadByGeolocation() {
     weatherLoader.cancel()
     isFetching.value = true
@@ -266,6 +278,7 @@ export const useWeatherStore = defineStore('weather', () => {
     locationMode,
     commonCities,
     removeCommonCity,
+    removeCommonCities,
     data,
     hasWeatherData,
     animationEpoch,

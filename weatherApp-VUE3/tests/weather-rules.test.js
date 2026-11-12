@@ -373,6 +373,45 @@ test('location preferences persist manual mode and common cities', () => {
   }
 })
 
+test('removeCommonCities removes a batch at once and persists the rest', () => {
+  const original = globalThis.localStorage
+  const values = new Map()
+  globalThis.localStorage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+    removeItem: (key) => values.delete(key),
+  }
+  try {
+    const preferences = useLocationPreferences()
+    const cities = [
+      { name: '杭州', detail: '浙江省', countryCode: 'CN', lat: 30.2, lon: 120.1 },
+      { name: '北京', detail: '北京市', countryCode: 'CN', lat: 39.9, lon: 116.4 },
+      { name: '伦敦', detail: '英国', countryCode: 'GB', lat: 51.5, lon: -0.12 },
+      { name: '东京', detail: '日本', countryCode: 'JP', lat: 35.7, lon: 139.7 },
+    ]
+    cities.forEach((city) => preferences.rememberCommonCity(city))
+    assert.equal(preferences.commonCities.value.length, 4)
+
+    preferences.removeCommonCities([cities[0], cities[2]])
+    assert.deepEqual(
+      preferences.commonCities.value.map((c) => c.name),
+      ['东京', '北京'],
+    )
+    assert.deepEqual(
+      JSON.parse(values.get('weather:common-cities:v1')).map((c) => c.name),
+      ['东京', '北京'],
+    )
+
+    // 空集合 / 非数组是空操作，不应误删或抛错
+    preferences.removeCommonCities([])
+    preferences.removeCommonCities(null)
+    assert.equal(preferences.commonCities.value.length, 2)
+  } finally {
+    if (original === undefined) delete globalThis.localStorage
+    else globalThis.localStorage = original
+  }
+})
+
 test('radar provider follows location country and local source', () => {
   assert.equal(selectRadarProvider({ countryCode: 'CN' }), RADAR_PROVIDER.NMC)
   assert.equal(selectRadarProvider({ countryCode: 'GB' }), RADAR_PROVIDER.RAINVIEWER)

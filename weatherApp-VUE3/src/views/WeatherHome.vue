@@ -96,7 +96,7 @@ onBeforeUnmount(() => {
       <CommonCities
         :cities="store.commonCities"
         @select="store.loadCommonCity"
-        @remove="store.removeCommonCity"
+        @remove="store.removeCommonCities"
         @locate="store.loadByGeolocation"
       />
       <RefreshButton />
