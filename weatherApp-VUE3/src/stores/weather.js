@@ -25,6 +25,7 @@ export const useWeatherStore = defineStore('weather', () => {
     commonCities,
     setLocationMode,
     rememberCommonCity,
+    rememberLocatedCity,
     removeCommonCity,
     removeCommonCities: prefsRemoveCommonCities,
   } = useLocationPreferences({ cachedPlace: cached?.place })
@@ -137,7 +138,12 @@ export const useWeatherStore = defineStore('weather', () => {
     },
     onSuccess: (_result, place) => {
       lastError.value = ''
-      if (place?.source === 'search') rememberCommonCity(place)
+      // 搜索与定位得到的城市都进收藏；定位坐标会抖动，单独走网格去重避免重复堆积。
+      if (place?.source === 'search') {
+        rememberCommonCity(place)
+      } else if (place?.mode === 'auto') {
+        rememberLocatedCity({ ...place, countryCode: place.countryCode || inferCountryCode(place) })
+      }
       commitWeather()
       loadAir(lat.value, lon.value, { clear: place != null })
       refreshAlerts()

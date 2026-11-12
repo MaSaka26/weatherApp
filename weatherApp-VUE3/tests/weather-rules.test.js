@@ -412,6 +412,71 @@ test('removeCommonCities removes a batch at once and persists the rest', () => {
   }
 })
 
+test('rememberLocatedCity adds geolocated cities and de-dups jittered GPS coordinates', () => {
+  const original = globalThis.localStorage
+  const values = new Map()
+  globalThis.localStorage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+    removeItem: (key) => values.delete(key),
+  }
+  try {
+    const preferences = useLocationPreferences()
+
+    // 首次定位写入收藏（countryCode 由 store 推断后透传）
+    preferences.rememberLocatedCity({
+      name: '杭州', detail: '浙江省', countryCode: 'CN', lat: 30.2741, lon: 120.1551,
+    })
+    assert.equal(preferences.commonCities.value.length, 1)
+    assert.equal(preferences.commonCities.value[0].countryCode, 'CN')
+
+    // GPS 抖动：2km 半径内（含跨 toFixed 网格边界）的坐标变化不新增条目，且复用已有精确坐标作为身份
+    preferences.rememberLocatedCity({
+      name: '杭州', detail: '浙江省', countryCode: 'CN', lat: 30.2749, lon: 120.1542,
+    })
+    assert.equal(preferences.commonCities.value.length, 1)
+    assert.equal(preferences.commonCities.value[0].lat, 30.2741)
+    assert.equal(preferences.commonCities.value[0].lon, 120.1551)
+    assert.deepEqual(
+      JSON.parse(values.get('weather:common-cities:v1'))[0],
+      { name: '杭州', detail: '浙江省', countryCode: 'CN', lat: 30.2741, lon: 120.1551 },
+    )
+
+    // 搜索添加的精确坐标也参与网格匹配：定位到同一地点时不重复，且被置顶
+    const searched = { name: '北京', detail: '北京市', countryCode: 'CN', lat: 39.9042, lon: 116.4074 }
+    preferences.rememberCommonCity(searched)
+    assert.equal(preferences.commonCities.value.length, 2)
+    preferences.rememberLocatedCity({
+      name: '北京', detail: '北京市', countryCode: 'CN', lat: 39.9038, lon: 116.4081,
+    })
+    assert.equal(preferences.commonCities.value.length, 2)
+    assert.equal(preferences.commonCities.value[0].name, '北京')
+    assert.equal(preferences.commonCities.value[0].lat, 39.9042)
+
+    // 真正不同的地点是独立条目
+    preferences.rememberLocatedCity({
+      name: '伦敦', detail: '英国', countryCode: 'GB', lat: 51.5074, lon: -0.1278,
+    })
+    assert.equal(preferences.commonCities.value.length, 3)
+
+    // 非法坐标是空操作
+    preferences.rememberLocatedCity({ name: 'X', lat: NaN, lon: 1 })
+    preferences.rememberLocatedCity(null)
+    assert.equal(preferences.commonCities.value.length, 3)
+
+    // 不超过 MAX_COMMON_CITIES(12)
+    for (let i = 0; i < 20; i += 1) {
+      preferences.rememberLocatedCity({
+        name: 'C' + i, detail: '', countryCode: 'CN', lat: 10 + i, lon: 10 + i,
+      })
+    }
+    assert.equal(preferences.commonCities.value.length, 12)
+  } finally {
+    if (original === undefined) delete globalThis.localStorage
+    else globalThis.localStorage = original
+  }
+})
+
 test('radar provider follows location country and local source', () => {
   assert.equal(selectRadarProvider({ countryCode: 'CN' }), RADAR_PROVIDER.NMC)
   assert.equal(selectRadarProvider({ countryCode: 'GB' }), RADAR_PROVIDER.RAINVIEWER)

@@ -74,6 +74,37 @@ export function useLocationPreferences({ cachedPlace = null } = {}) {
     persistCommonCities()
   }
 
+  /**
+   * 定位得到的城市也进入收藏。GPS 坐标每次会略有抖动，若按精确坐标去重，
+   * 同一个地点会反复占满收藏名额；因此按约 2km 半径匹配已有收藏条目，
+   * 复用它的精确坐标作为身份，只刷新展示信息并置顶。
+   * 用连续的距离阈值而非 toFixed 网格，避免两个相距几十米的点恰好落在网格边界两侧。
+   */
+  function rememberLocatedCity(place) {
+    if (!place || !Number.isFinite(place.lat) || !Number.isFinite(place.lon)) return
+    const radius = 0.02 // 度，约 2km
+    const cosLat = Math.cos((place.lat * Math.PI) / 180)
+    const matched = commonCities.value.find((city) => {
+      const dLat = city.lat - place.lat
+      const dLon = (city.lon - place.lon) * cosLat
+      return Math.hypot(dLat, dLon) < radius
+    })
+    const identity = matched || place
+    const item = {
+      name: place.name || '未知城市',
+      detail: place.detail || '',
+      countryCode: place.countryCode || '',
+      lat: identity.lat,
+      lon: identity.lon,
+    }
+    const key = `${identity.lat},${identity.lon}`
+    commonCities.value = [
+      item,
+      ...commonCities.value.filter((city) => `${city.lat},${city.lon}` !== key),
+    ].slice(0, MAX_COMMON_CITIES)
+    persistCommonCities()
+  }
+
   function removeCommonCity(place) {
     if (!place) return
     const key = `${place.lat},${place.lon}`
@@ -93,6 +124,7 @@ export function useLocationPreferences({ cachedPlace = null } = {}) {
     commonCities,
     setLocationMode,
     rememberCommonCity,
+    rememberLocatedCity,
     removeCommonCity,
     removeCommonCities,
   }
