@@ -10,6 +10,7 @@ const WEATHER_API = 'https://api.open-meteo.com/v1/forecast'
 // 空气质量是独立接口（同一家、同样免 Key），风速湿度那套 forecast 里没有 AQI
 const AIR_QUALITY_API = 'https://air-quality-api.open-meteo.com/v1/air-quality'
 const REVERSE_GEO_API = 'https://api.bigdatacloud.net/data/reverse-geocode-client'
+import { toTraditional, hasChinese } from '../utils/zhVariant.js'
 
 export async function requestJson(url, { signal, timeoutMs = 10000, errorMessage = '请求失败' } = {}) {
   const controller = new AbortController()
@@ -41,18 +42,86 @@ export async function requestJson(url, { signal, timeoutMs = 10000, errorMessage
 }
 
 export async function geocodeCity(city, { signal } = {}) {
-  const url = `${GEO_API}?name=${encodeURIComponent(city)}&count=5&language=zh&format=json`
-  const data = await requestJson(url, { signal, timeoutMs: 10000, errorMessage: '城市搜索请求失败' })
-  if (!data.results || data.results.length === 0) throw new Error('CITY_NOT_FOUND')
-  const r = data.results[0]
+  if (!city || !city.trim()) throw new Error('CITY_NOT_FOUND')
+  const results = await fetchGeoVariants(city.trim(), signal)
+  if (!results.length) throw new Error('CITY_NOT_FOUND')
+  return toGeoPlace(results[0])
+}
+
+/** 按查询词取多语言结果并合并：zh(简体) + zh(繁体变体) + en，按坐标去重 */
+async function fetchGeoVariants(query, signal) {
+  const q = encodeURIComponent(query)
+  const variants = hasChinese(query) ? toTraditional(query) : ''
+  const tasks = [
+    fetchGeo(q, 'zh', signal),
+    fetchGeo(q, 'en', signal),
+  ]
+  if (variants && variants !== query) {
+    tasks.push(fetchGeo(encodeURIComponent(variants), 'zh', signal))
+  }
+  const responses = await Promise.all(tasks)
+  return mergeGeoResults(...responses)
+}
+
+/** 单语言地理编码；任一语言失败不影响其它语言的结果 */
+async function fetchGeo(q, lang, signal) {
+  try {
+    return await requestJson(
+      `${GEO_API}?name=${q}&count=8&language=${lang}&format=json`,
+      { signal, timeoutMs: 10000, errorMessage: '城市搜索请求失败' },
+    )
+  } catch {
+    return { results: [] }
+  }
+}
+
+/**
+ * 合并多语言结果：按「坐标(3位小数) + 国家码」去重 —— 中英双名（倫敦/London）坐标相同，
+ * 合并成一条并保留两种写法；同名但不同国家（伦敦 GB / CA / US）坐标不同，全部保留。
+ * 中文名优先展示，英文名存 altName；同名城市因此能并列出现，交用户自己选。
+ */
+function mergeGeoResults(...responses) {
+  const seen = new Map()
+  for (const resp of responses) {
+    for (const r of resp?.results || []) {
+      if (!Number.isFinite(r.latitude) || !Number.isFinite(r.longitude)) continue
+      const cc = (r.country_code || '').toUpperCase()
+      const key = `${r.latitude.toFixed(3)},${r.longitude.toFixed(3)}|${cc}`
+      const existing = seen.get(key)
+      if (!existing) {
+        seen.set(key, { ...r, countryCode: cc, altName: '' })
+      } else {
+        // 后到的英文写法补进 altName；若已有中文名则不覆盖展示名
+        if (r.name && r.name !== existing.name && !existing.altName) {
+          existing.altName = r.name
+        }
+      }
+    }
+  }
+  return [...seen.values()].slice(0, 12)
+}
+
+/** API 原始结果 -> 统一的 place 形状 */
+function toGeoPlace(r) {
   return {
     lat: r.latitude,
     lon: r.longitude,
     name: r.name,
+    altName: r.altName || '',
     country: r.country || '',
-    countryCode: (r.country_code || '').toUpperCase(),
+    countryCode: r.countryCode || '',
     admin1: r.admin1 || '',
   }
+}
+
+/**
+ * 候选词建议：返回多语言合并去重后的全球地点，供搜索下拉补充本地表之外的城市。
+ * 失败（离线 / 网络）返回空数组，下拉仍可正常显示本地候选。
+ */
+export async function suggestCities(query, { signal, limit = 8 } = {}) {
+  if (!query || !query.trim()) return []
+  const results = await fetchGeoVariants(query.trim(), signal)
+  return results.slice(0, limit).map(toGeoPlace)
 }
 
 /**
