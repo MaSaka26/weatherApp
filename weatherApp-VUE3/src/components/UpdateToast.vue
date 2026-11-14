@@ -1,7 +1,7 @@
 <script setup>
 import { useAppUpdate } from '@/composables/useAppUpdate'
 
-const { hasUpdate, remoteLabel, status, applyUpdate, dismiss } = useAppUpdate()
+const { hasUpdate, remoteLabel, status, notice, applyUpdate, dismiss } = useAppUpdate()
 </script>
 
 <template>
@@ -14,7 +14,8 @@ const { hasUpdate, remoteLabel, status, applyUpdate, dismiss } = useAppUpdate()
     >
       <div class="update-toast-text">
         <strong>发现新版本 {{ remoteLabel }}</strong>
-        <span>是否立即更新？</span>
+        <span v-if="notice" class="update-toast-notice">{{ notice }}</span>
+        <span v-else>是否立即更新？</span>
       </div>
       <div class="update-toast-actions">
         <button type="button" class="update-later" @click="dismiss">稍后</button>
@@ -53,6 +54,7 @@ const { hasUpdate, remoteLabel, status, applyUpdate, dismiss } = useAppUpdate()
 .update-toast-text { display: flex; flex-direction: column; gap: 4px; }
 .update-toast-text strong { font-size: 0.9375rem; font-weight: 600; }
 .update-toast-text span { font-size: 0.8125rem; color: var(--text-5); }
+.update-toast-text .update-toast-notice { color: var(--accent-warm, #ffc98a); }
 .update-toast-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .update-toast-actions button {
   padding: 8px 14px;

@@ -13,7 +13,8 @@ const {
   errorMessage: updateError,
   isChecking: updateChecking,
   isDev: updateIsDev,
-  check: checkUpdate,
+  lastSourceLabel,
+  checkManually: checkUpdate,
 } = useAppUpdate()
 
 const updateText = computed(() => {
@@ -22,7 +23,11 @@ const updateText = computed(() => {
   if (updateStatus.value === 'available') return `发现新版本 ${remoteLabel.value}`
   if (updateStatus.value === 'updating') return '正在更新…'
   if (updateStatus.value === 'error') return updateError.value
-  if (updateStatus.value === 'up-to-date') return '已是最新版本'
+  if (updateStatus.value === 'up-to-date') {
+    // 交代「从哪查到的」：站点自身的 deploy.json 有 10 分钟 CDN 缓存，
+    // 命中 GitHub 源说明已经绕开缓存，看到的是真实最新版本
+    return lastSourceLabel.value ? `已是最新版本（${lastSourceLabel.value}）` : '已是最新版本'
+  }
   return ''
 })
 

@@ -24,6 +24,7 @@ import { sameLocatedPlace } from '../src/utils/placeIdentity.js'
 import { RADAR_PROVIDER, selectRadarProvider } from '../src/utils/radarProvider.js'
 import { shouldRestartOnEpoch } from '../src/utils/gaugeRestart.js'
 import { compareAppUpdate } from '../src/utils/appVersion.js'
+import { API_MIN_INTERVAL_MS, buildDeployProbeSources, parseDeployManifest, readDeployManifest } from '../src/utils/updateProbe.js'
 import {
   ALERT_BORDER_Y,
   ALERT_ITEM_CONTENT_H,
@@ -924,4 +925,141 @@ test('app update compares build identity and falls back to tag', () => {
   // 本地无身份 / 远端缺失不打扰用户
   assert.equal(compareAppUpdate({ version: 'dev', buildId: '' }, { appBuildId: 'x' }).hasUpdate, false)
   assert.equal(compareAppUpdate(local, null).hasUpdate, false)
+})
+
+test('update probe reads GitHub first so the ten minute page cache cannot hide a release', async () => {
+  const sources = buildDeployProbeSources('https://example.test/app/')
+  assert.deepEqual(sources.map((source) => source.id), ['github-api', 'github-raw', 'site'])
+  const [api, raw, site] = sources
+  // GitHub 源必须比站点自身快，否则「主动发现」没有意义
+  assert.ok(api.freshMs < site.freshMs)
+  assert.ok(raw.freshMs < site.freshMs)
+  assert.ok(api.quota, 'api.github.com 未登录只能 60 次/小时，必须标记为有配额')
+  assert.equal(raw.quota, false)
+  // 每 2 分钟探测一次 = 30 次/小时，API 必须有最小使用间隔，否则多标签页就打满配额
+  assert.equal(api.minIntervalMs, API_MIN_INTERVAL_MS)
+  assert.ok(api.minIntervalMs >= 5 * 60 * 1000, 'API 间隔不能低于 5 分钟')
+  assert.equal(raw.minIntervalMs, 0)
+  assert.equal(site.minIntervalMs, 0)
+  assert.equal(api.init.headers.accept, 'application/vnd.github.raw')
+  assert.equal(api.init.cache, 'no-store')
+  assert.ok(api.url.includes('/contents/deploy.json?ref=gh-pages'))
+  assert.ok(raw.url.startsWith('https://raw.githubusercontent.com/'))
+  assert.equal(site.url, 'https://example.test/app/deploy.json')
+  // baseHref 非法时退回相对路径，而不是抛错
+  assert.equal(buildDeployProbeSources('').at(-1).url, 'deploy.json')
+})
+
+test('update probe rejects payloads that cannot prove a version', () => {
+  const bad = (text) => {
+    try {
+      parseDeployManifest(text)
+      return null
+    } catch (error) {
+      return error.code
+    }
+  }
+  assert.equal(bad(''), 'BAD_PAYLOAD')
+  assert.equal(bad('   '), 'BAD_PAYLOAD')
+  assert.equal(bad(undefined), 'BAD_PAYLOAD')
+  assert.equal(bad('<html>404</html>'), 'BAD_PAYLOAD')
+  assert.equal(bad('[1,2]'), 'BAD_PAYLOAD')
+  assert.equal(bad('{}'), 'BAD_PAYLOAD')
+  assert.equal(bad('{"appVersion":"v0.1.13"}'), 'BAD_PAYLOAD')
+  // 三个版本字段任一存在即可
+  assert.equal(parseDeployManifest('{"appBuildId":"abc"}').appBuildId, 'abc')
+  assert.equal(parseDeployManifest('{"sourceTag":"v0.1.13"}').sourceTag, 'v0.1.13')
+  assert.equal(parseDeployManifest('{"latestTag":"v0.1.12"}').latestTag, 'v0.1.12')
+})
+
+function fakeResponse(body, { status = 200, headers = {} } = {}) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get: (name) => headers[name.toLowerCase()] ?? null },
+    text: async () => body,
+  }
+}
+
+test('update probe falls back source by source and reports every failure', async () => {
+  const sources = buildDeployProbeSources('https://example.test/')
+  const calls = []
+  const manifest = await readDeployManifest(sources, {
+    fetchImpl: async (url) => {
+      calls.push(url)
+      if (calls.length === 1) throw Object.assign(new Error('offline'), { code: 'NETWORK' })
+      if (calls.length === 2) return fakeResponse('', { status: 503 })
+      return fakeResponse(JSON.stringify({ appBuildId: 'commit-new' }))
+    },
+  })
+  assert.equal(calls.length, 3, '前两个源都失败时要继续试第三个')
+  assert.equal(manifest.source.id, 'site')
+  assert.equal(manifest.manifest.appBuildId, 'commit-new')
+  assert.equal(manifest.failures.length, 2)
+  assert.equal(manifest.failures[1].error.code, 'HTTP_ERROR')
+  assert.equal(manifest.failures[1].error.status, 503)
+})
+
+test('update probe honours rate limits and skips a cooling source', async () => {
+  const sources = buildDeployProbeSources('https://example.test/')
+  let limited
+  await assert.rejects(
+    readDeployManifest(sources, {
+      fetchImpl: async () => fakeResponse('rate limited', {
+        status: 403,
+        headers: { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '1700000000' },
+      }),
+    }),
+    (error) => {
+      assert.equal(error.code, 'ALL_SOURCES_FAILED')
+      limited = error.failures[0].error
+      assert.equal(limited.code, 'RATE_LIMITED')
+      assert.equal(limited.resetAt, 1700000000000)
+      return true
+    },
+  )
+  // 冷却中的源必须被跳过，而不是再打一次配额
+  const calls = []
+  const result = await readDeployManifest(sources, {
+    isSourceBlocked: (source) => source.id === 'github-api',
+    fetchImpl: async (url) => {
+      calls.push(url)
+      return fakeResponse(JSON.stringify({ sourceTag: 'v0.1.99' }))
+    },
+  })
+  assert.equal(calls.length, 1)
+  assert.equal(result.source.id, 'github-raw')
+  assert.equal(result.failures[0].error.code, 'SKIPPED')
+})
+
+test('update probe gives up after a timeout instead of hanging forever', async () => {
+  const sources = buildDeployProbeSources('https://example.test/')
+  const started = Date.now()
+  await assert.rejects(
+    readDeployManifest(sources, {
+      timeoutMs: 20,
+      fetchImpl: (url, init) => new Promise((resolve, reject) => {
+        init.signal.addEventListener('abort', () => {
+          const error = new Error('aborted')
+          error.name = 'AbortError'
+          reject(error)
+        })
+      }),
+    }),
+    (error) => {
+      assert.equal(error.code, 'ALL_SOURCES_FAILED')
+      assert.equal(error.failures.length, sources.length)
+      for (const failure of error.failures) assert.equal(failure.error.code, 'TIMEOUT')
+      return true
+    },
+  )
+  assert.ok(Date.now() - started < 2000, '超时要真的中断，不能等到 HTTP 自己超时')
+})
+
+test('update probe keeps the quota source on a leash instead of burning it every poll', () => {
+  const [api] = buildDeployProbeSources('https://example.test/')
+  // 反推上限：一小时内的调用次数必须远小于未登录限额 60 次
+  const perHour = Math.floor((60 * 60 * 1000) / api.minIntervalMs)
+  assert.ok(perHour <= 12, `GitHub API 一小时最多用 ${perHour} 次`)
+  assert.ok(perHour > 0)
 })
