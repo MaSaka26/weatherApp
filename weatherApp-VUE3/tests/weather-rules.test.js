@@ -20,6 +20,7 @@ import { useAirQuality } from '../src/composables/weather/useAirQuality.js'
 import { useWeatherAlerts } from '../src/composables/weather/useWeatherAlerts.js'
 import { useWeatherRefresh } from '../src/composables/weather/useWeatherRefresh.js'
 import { useLocationPreferences } from '../src/composables/weather/useLocationPreferences.js'
+import { sameLocatedPlace } from '../src/utils/placeIdentity.js'
 import { RADAR_PROVIDER, selectRadarProvider } from '../src/utils/radarProvider.js'
 import { shouldRestartOnEpoch } from '../src/utils/gaugeRestart.js'
 import { compareAppUpdate } from '../src/utils/appVersion.js'
@@ -608,6 +609,125 @@ test('rememberLocatedCity adds geolocated cities and de-dups jittered GPS coordi
   }
 })
 
+function withFakeStorage(run) {
+  const original = globalThis.localStorage
+  const values = new Map()
+  globalThis.localStorage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+    removeItem: (key) => values.delete(key),
+  }
+  try {
+    return run(values)
+  } finally {
+    if (original === undefined) delete globalThis.localStorage
+    else globalThis.localStorage = original
+  }
+}
+
+test('the same address counts as one favorite however it was spelled', () => {
+  // 严格口径：名字与详情都相同（空白差异不算不同）
+  const hangzhou = { name: '杭州', detail: '浙江省 · 杭州市' }
+  assert.equal(sameLocatedPlace(hangzhou, { name: ' 杭州 ', detail: '浙江省·杭州市' }), true)
+  // 行政区查表在区县 / 地级两档之间切换时详情会变短，仍是同一条地址
+  assert.equal(sameLocatedPlace(hangzhou, { name: '杭州', detail: '浙江省' }), true)
+  assert.equal(sameLocatedPlace({ name: '杭州', detail: '浙江省' }, hangzhou), true)
+  // 详情缺失（反地理编码降级 / 坐标文本）也复用同名条目
+  assert.equal(sameLocatedPlace(hangzhou, { name: '杭州', detail: '' }), true)
+  // 名字不同就是两个地方：搜「西湖」不该并进「杭州」
+  assert.equal(sameLocatedPlace(hangzhou, { name: '西湖', detail: '浙江省 · 杭州市' }), false)
+  // 同名不同详情是两个地方：国外同名城市很多，只比名字会把它们合成一条
+  assert.equal(sameLocatedPlace(hangzhou, { name: '杭州', detail: '浙江省 · 宁波市' }), false)
+  assert.equal(sameLocatedPlace({ name: '春田', detail: '美国 · 伊利诺伊州' }, { name: '春田', detail: '美国 · 马萨诸塞州' }), false)
+  // 没有名字的旧数据 / 未知城市不参与身份匹配，否则会互相合并成一条
+  assert.equal(sameLocatedPlace({ name: '', detail: '' }, { name: '', detail: '' }), false)
+  assert.equal(sameLocatedPlace(null, hangzhou), false)
+})
+
+test('a located city is reused when the geocoder reports a coarser address', () =>
+  withFakeStorage(() => {
+    const preferences = useLocationPreferences()
+    // 第一次进入：定位落进区县圈
+    preferences.rememberLocatedCity({ name: '杭州', detail: '浙江省 · 杭州市', countryCode: 'CN', lat: 30.2741, lon: 120.1551 })
+    // 第二次进入：同一城市，但只落进城市圈，详情少了一段
+    preferences.rememberLocatedCity({ name: '杭州', detail: '浙江省', countryCode: 'CN', lat: 30.2810, lon: 120.1620 })
+    assert.equal(preferences.commonCities.value.length, 1)
+    assert.equal(preferences.commonCities.value[0].detail, '浙江省')
+    assert.equal(preferences.commonCities.value[0].lat, 30.2741)
+  }))
+
+test('a located city whose name changes with the lookup radius stays one favorite', () =>
+  withFakeStorage(() => {
+    const preferences = useLocationPreferences()
+    // 第一次落进城市圈：名字规整
+    preferences.rememberLocatedCity({ name: '杭州', detail: '浙江省', countryCode: 'CN', lat: 30.2741, lon: 120.1551 })
+    // 第二次只落进 200km 的「附近」档：名字多了前缀，但离上一次不到 1km
+    preferences.rememberLocatedCity({ name: '附近：杭州', detail: '浙江省', countryCode: 'CN', lat: 30.2790, lon: 120.1560 })
+    assert.equal(preferences.commonCities.value.length, 1)
+    // 复用第一次的坐标与名字，只把展示字段刷新到最新
+    assert.equal(preferences.commonCities.value[0].lat, 30.2741)
+    assert.equal(preferences.commonCities.value[0].name, '附近：杭州')
+  }))
+
+test('a located city stays one favorite even when Wi-Fi positioning drifts far', () =>
+  withFakeStorage(() => {
+    const preferences = useLocationPreferences()
+    // 首次进入：定位写入收藏
+    preferences.rememberLocatedCity({ name: '杭州', detail: '浙江省 · 杭州市', countryCode: 'CN', lat: 30.2741, lon: 120.1551 })
+    assert.equal(preferences.commonCities.value.length, 1)
+
+    // 第二次进入：地址一样，但 WiFi / IP 定位把坐标甩出十几公里（远超 2km 抖动半径）
+    preferences.rememberLocatedCity({ name: '杭州', detail: '浙江省 · 杭州市', countryCode: 'CN', lat: 30.3441, lon: 120.2551 })
+    assert.equal(preferences.commonCities.value.length, 1)
+    // 复用第一次的坐标作身份，只刷新展示字段
+    assert.equal(preferences.commonCities.value[0].lat, 30.2741)
+    assert.equal(preferences.commonCities.value[0].lon, 120.1551)
+
+    // 再来一次更远的漂移（约 40km）仍然只有一条，并且被置顶
+    preferences.rememberLocatedCity({ name: '北京', detail: '北京市', countryCode: 'CN', lat: 39.9042, lon: 116.4074 })
+    preferences.rememberLocatedCity({ name: '杭州', detail: '浙江省 · 杭州市', countryCode: 'CN', lat: 30.6, lon: 120.6 })
+    assert.equal(preferences.commonCities.value.length, 2)
+    assert.deepEqual(
+      preferences.commonCities.value.map((city) => city.name),
+      ['杭州', '北京'],
+    )
+  }))
+
+test('searching a neighbouring place does not swallow an existing favorite', () => withFakeStorage(() => {
+  const preferences = useLocationPreferences()
+  preferences.rememberLocatedCity({ name: '杭州', detail: '浙江省 · 杭州市', countryCode: 'CN', lat: 30.2741, lon: 120.1551 })
+  // 西湖离杭州不到 1km：搜索路径不开 2km 匹配，两个地点各自保留一条
+  preferences.rememberCommonCity({ name: '西湖', detail: '浙江省 · 杭州市', countryCode: 'CN', lat: 30.2790, lon: 120.1550 })
+  assert.equal(preferences.commonCities.value.length, 2)
+  assert.deepEqual(
+    preferences.commonCities.value.map((city) => city.name),
+    ['西湖', '杭州'],
+  )
+
+  // 但搜索同一个地点（名字与详情一致）时仍然复用已有条目，不会多出一条
+  preferences.rememberCommonCity({ name: '杭州', detail: '浙江省 · 杭州市', countryCode: 'CN', lat: 30.3000, lon: 120.2000 })
+  assert.equal(preferences.commonCities.value.length, 2)
+  assert.equal(preferences.commonCities.value[0].lat, 30.2741)
+}) )
+
+test('legacy duplicate favorites collapse the next time the city is remembered', () => withFakeStorage((values) => {
+  // 旧版本已经写坏的数据：同一个地址两条，坐标不同
+  values.set('weather:common-cities:v1', JSON.stringify([
+    { name: '杭州', detail: '浙江省 · 杭州市', countryCode: 'CN', lat: 30.2741, lon: 120.1551 },
+    { name: '杭州', detail: '浙江省 · 杭州市', countryCode: 'CN', lat: 30.3441, lon: 120.2551 },
+    { name: '伦敦', detail: '英国', countryCode: 'GB', lat: 51.5074, lon: -0.1278 },
+  ]))
+  const preferences = useLocationPreferences()
+  assert.equal(preferences.commonCities.value.length, 3)
+
+  preferences.rememberLocatedCity({ name: '杭州', detail: '浙江省 · 杭州市', countryCode: 'CN', lat: 30.3500, lon: 120.2600 })
+  assert.deepEqual(
+    preferences.commonCities.value.map((city) => city.name),
+    ['杭州', '伦敦'],
+  )
+  assert.equal(JSON.parse(values.get('weather:common-cities:v1')).length, 2)
+}) )
+
 test('favorite groups only include categories that have cities', () => {
   const hangzhou = { name: '杭州', lat: 30.27, lon: 120.15 }
   const london = { name: '伦敦', lat: 51.5, lon: -0.12 }
@@ -647,6 +767,31 @@ test('active favorite marks exactly the city currently being viewed', () => {
   assert.equal(findActiveFavorite(nearCities, { lat: 30.2741, lon: 120.1551 }), hangzhou)
   assert.equal(findActiveFavorite(nearCities, { lat: 30.275, lon: 120.14 }), westLake)
 
+  // 定位漂移十几公里：收藏里存的是首次进入时的代表坐标，靠展示身份把绿点找回
+  // （去重把它们并成了一条，如果高亮只会按坐标找，绿点就会凭空消失）
+  const drifted = [
+    { name: '杭州', detail: '浙江省 · 杭州市', lat: 30.2741, lon: 120.1551 },
+    { name: '伦敦', detail: '英国', lat: 51.5074, lon: -0.1278 },
+  ]
+  assert.equal(
+    findActiveFavorite(drifted, { name: '杭州', detail: '浙江省 · 杭州市', lat: 30.3441, lon: 120.2551 }),
+    drifted[0],
+  )
+  // 详情变短（行政区查表在区县 / 地级之间切换）同样能找回
+  assert.equal(
+    findActiveFavorite(drifted, { name: '杭州', detail: '浙江省', lat: 30.3441, lon: 120.2551 }),
+    drifted[0],
+  )
+  // 同名但确实是另一个地点时不误标
+  assert.equal(
+    findActiveFavorite(drifted, { name: '杭州', detail: '浙江省 · 宁波市', lat: 29.87, lon: 121.55 }),
+    null,
+  )
+  // 名字不同（杭州 vs 西湖）从不互相点亮
+  assert.equal(
+    findActiveFavorite(drifted, { name: '西湖', detail: '浙江省 · 杭州市', lat: 30.3441, lon: 120.2551 }),
+    null,
+  )
   // 浏览不在收藏里的城市 / 空列表 / 无当前城市 / 非法坐标 -> 不标
   assert.equal(findActiveFavorite(cities, { lat: 31.2, lon: 121.5 }), null)
   assert.equal(findActiveFavorite([], { lat: 30.27, lon: 120.15 }), null)

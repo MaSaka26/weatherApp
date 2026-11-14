@@ -70,8 +70,15 @@ export const useWeatherStore = defineStore('weather', () => {
   const current = computed(() => data.value?.current ?? null)
   const hourly = computed(() => data.value?.hourly ?? null)
   const daily = computed(() => data.value?.daily ?? null)
-  // 当前正在浏览的城市坐标，供收藏列表标记绿点；无缓存时坐标为 null，不会命中任何收藏。
-  const activeCity = computed(() => ({ lat: lat.value, lon: lon.value }))
+  // 当前正在浏览的城市，供收藏列表标记绿点。名字与详情一起带上：
+  // 收藏条目存的是首次进入时的代表坐标，定位漂移较大时只能靠展示身份找回那一条。
+  // 无缓存时坐标为 null，不会命中任何收藏。
+  const activeCity = computed(() => ({
+    lat: lat.value,
+    lon: lon.value,
+    name: cityName.value,
+    detail: cityDetail.value,
+  }))
 
   const skyClass = computed(() => {
     const value = current.value
