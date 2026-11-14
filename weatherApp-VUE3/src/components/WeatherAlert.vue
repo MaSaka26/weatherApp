@@ -19,12 +19,15 @@
  */
 import { computed } from 'vue'
 
-import AlertWave from '@/components/AlertWave.vue'
+import AlertLoader from '@/components/animations/AlertLoader.vue'
+import { ALERT_SLOT_H, alertLoaderScale } from '@/utils/alertSlot.js'
 
 const props = defineProps({
   alerts: { type: Object, default: () => ({ list: [], top: 0, total: 0 }) },
   // idle | ok | error
   status: { type: String, default: 'idle' },
+  // 失败原因（超时 / 请求失败），拼在提示文案后面，让用户知道是网络问题还是接口问题
+  error: { type: String, default: '' },
   refreshing: { type: Boolean, default: false },
   // 当前城市国家码（CN 表示中国大陆）；非 CN 时预警功能不可用
   countryCode: { type: String, default: '' },
@@ -34,11 +37,16 @@ const emit = defineEmits(['refresh'])
 
 const LEVEL_CLASS = { 1: 'lv-blue', 2: 'lv-yellow', 3: 'lv-orange', 4: 'lv-red' }
 
+// 动画按 48px 设计，塞进 64px 槽（含 10px 内边距 + 1px 边框）会撑破盒子，
+// 让骨架比真实预警条目高约 10px，数据到达时整块版面往上跳。按净空间等比缩小即可。
+const loaderScale = alertLoaderScale(ALERT_SLOT_H)
+
 const visible = computed(() => props.alerts.list.slice(0, 3))
 const showList = computed(() => props.alerts.total > 0)
 const showEmpty = computed(() => props.status === 'ok' && !showList.value)
 const showError = computed(() => props.status === 'error' && !showList.value)
 const showLoading = computed(() => props.status === 'idle' && !showList.value)
+const errorText = computed(() => (props.error ? `预警信息暂时获取失败（${props.error}）` : '预警信息暂时获取失败'))
 
 // 非中国大陆城市：预警源（中央气象台）只覆盖 CN，直接说明不支持，避免误以为模块失效
 const isForeign = computed(() => props.countryCode && props.countryCode !== 'CN')
@@ -60,7 +68,7 @@ function open(link) {
       aria-live="polite"
       aria-label="正在获取城市预警"
     >
-      <AlertWave :count="12" />
+      <AlertLoader :scale="loaderScale" />
     </div>
     <div v-else-if="showList" class="alert-list">
       <button
@@ -95,7 +103,7 @@ function open(link) {
 
     <!-- 接口失败：一行轻提示 + 只重试预警的刷新按钮。中性灰玻璃，不占用灾害级别配色 -->
     <div v-else-if="showError" class="alert-fail" role="status">
-      <span class="alert-fail-text">预警信息暂时获取失败</span>
+      <span class="alert-fail-text">{{ errorText }}</span>
       <button
         type="button"
         class="alert-retry"
@@ -112,8 +120,13 @@ function open(link) {
 <style scoped>
 .alert-section {
   width: 100%;
-  /* 所有预警状态共用的基准高度，避免 loading / 无预警 / 有预警 / 失败切换时布局跳动 */
-  --alert-slot-h: 56px;
+  /* 所有预警状态共用的基准高度，避免 loading / 无预警 / 有预警 / 失败切换时布局跳动。
+     必须与 utils/alertSlot.js 的 ALERT_SLOT_H 一致 —— 有单测盯着，改一处忘了另一处会直接红。
+     槽高也不得低于真实条目的自然内容高度（实测约 59.8px），否则 min-height 说了不算，
+     条目会被内容撑到 60px，和骨架差 4px 又开始跳。
+     取 64px：动画缩到 0.87 倍、占 42px，骨架 = 1*2 + 10*2 + 42 = 64px，
+     真实条目 = max(64, 59.8) = 64px，两者等高。 */
+  --alert-slot-h: 64px;
 }
 
 /* 预警接口未返回：等高占位 + 连续波浪，无文字、整体居中。

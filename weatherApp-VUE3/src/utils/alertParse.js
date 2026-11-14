@@ -6,8 +6,8 @@
  *   标题形如「陕西省渭南市韩城市气象台发布寒潮蓝色预警信号」
  *   区域 = 陕西省渭南市韩城市 / 类型 = 寒潮 / 级别 = 蓝色
  */
-import PLACES from '@/data/china-places.json'
-import { shortName } from './placeLookup'
+import PLACES from '../data/china-places.json' with { type: 'json' }
+import { shortName } from './placeLookup.js'
 
 /** 34 个省级行政区全名（取自本地行政区表的省列，带「省/市/自治区」后缀） */
 export const PROVINCE_NAMES = (() => {

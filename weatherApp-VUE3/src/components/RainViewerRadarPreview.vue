@@ -4,6 +4,7 @@ import { lockBodyScroll, unlockBodyScroll } from '@/utils/scrollLock'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
+import AlertLoader from '@/components/animations/AlertLoader.vue'
 import { requestJson } from '@/api/weather'
 import { getZonedParts } from '@/utils/timezone'
 
@@ -484,8 +485,8 @@ onBeforeUnmount(() => {
       </header>
 
       <div v-if="loading" class="rv-status" role="status">
-        <span class="rv-spinner" aria-hidden="true"></span>
-        正在获取 RainViewer 雷达帧…
+        <AlertLoader group="radar" :scale="0.6" />
+        <span>正在获取 RainViewer 雷达帧…</span>
       </div>
       <div v-else-if="errorMsg" class="rv-status error" role="alert">
         <strong>全球雷达加载失败</strong>
@@ -645,16 +646,6 @@ onBeforeUnmount(() => {
 .rv-status.error { flex-direction: column; align-items: stretch; text-align: center; }
 .rv-status.error span { color: rgba(255,255,255,.62); font-size: 12px; }
 .rv-status.error button { margin-top: 4px; padding: 8px 12px; border: 0; border-radius: 10px; cursor: pointer; }
-.rv-spinner {
-  width: 17px;
-  height: 17px;
-  flex: 0 0 auto;
-  border: 2px solid rgba(255,255,255,.24);
-  border-top-color: #fff;
-  border-radius: 50%;
-  animation: rv-spin .8s linear infinite;
-}
-@keyframes rv-spin { to { transform: rotate(360deg); } }
 .rv-note {
   position: absolute;
   z-index: 12;
@@ -749,8 +740,5 @@ onBeforeUnmount(() => {
   .rv-track { flex-basis: calc(100% - 58px); }
   .rv-speeds { width: 100%; justify-content: flex-end; }
   .rv-credit { max-width: calc(100vw - 20px); overflow: hidden; text-overflow: ellipsis; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .rv-spinner { animation-duration: 1.6s; }
 }
 </style>

@@ -7,7 +7,7 @@
  * 结构：{ c: [ [name, province, lat, lon], ... ],            // 地级（含直辖市、省直辖县级）
  *        d: [ [name, cityIndex, lat, lon], ... ] }          // 区县，cityIndex 指向 c
  */
-import PLACES from '@/data/china-places.json'
+import PLACES from '../data/china-places.json' with { type: 'json' }
 
 const CITIES = PLACES.c
 const COUNTIES = PLACES.d

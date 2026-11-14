@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 12 格音浪：一条连续滚动的波峰。
+ * 音浪加载动画：一条连续滚动的波峰。
  * 波峰高度为 peak，左右相邻按 0.5^距离 递减（1 : 1/2 : 1/4 …），
  * 用浮点相位 rAF 驱动，波峰平滑扫过，整体像一条 sin 形状的波浪。
  */
@@ -53,25 +53,25 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <span class="alert-wave" aria-hidden="true">
+  <span class="sound-wave" aria-hidden="true">
     <span
       v-for="(h, i) in bars"
       :key="i"
-      class="alert-wave-bar"
+      class="sound-wave-bar"
       :style="{ height: h + 'px' }"
     ></span>
   </span>
 </template>
 
 <style scoped>
-.alert-wave {
+.sound-wave {
   display: flex;
   height: 26px;
   /* 底对齐：bottom 固定，增高时只有 top 上移 */
   align-items: flex-end;
   gap: 4px;
 }
-.alert-wave-bar {
+.sound-wave-bar {
   width: 4px;
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.42);

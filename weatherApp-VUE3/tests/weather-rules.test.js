@@ -17,12 +17,26 @@ import { ref } from 'vue'
 import { createManualCandidate, createSearchCandidate } from '../src/utils/placeCandidate.js'
 import { useLocationSession } from '../src/composables/weather/useLocationSession.js'
 import { useAirQuality } from '../src/composables/weather/useAirQuality.js'
+import { useWeatherAlerts } from '../src/composables/weather/useWeatherAlerts.js'
 import { useWeatherRefresh } from '../src/composables/weather/useWeatherRefresh.js'
 import { useLocationPreferences } from '../src/composables/weather/useLocationPreferences.js'
 import { RADAR_PROVIDER, selectRadarProvider } from '../src/utils/radarProvider.js'
 import { shouldRestartOnEpoch } from '../src/utils/gaugeRestart.js'
 import { compareAppUpdate } from '../src/utils/appVersion.js'
+import {
+  ALERT_BORDER_Y,
+  ALERT_ITEM_CONTENT_H,
+  ALERT_LOADER_BASE,
+  ALERT_PAD_Y,
+  ALERT_SLOT_H,
+  alertLoaderBox,
+  alertLoaderScale,
+  alertLoaderSpace,
+  isLoaderFittingSlot,
+} from '../src/utils/alertSlot.js'
 import { buildFavoriteGroups } from '../src/utils/favoriteGroups.js'
+import { findActiveFavorite } from '../src/utils/activeFavorite.js'
+import { levelOf, readAir } from '../src/utils/aqi.js'
 
 
 
@@ -301,6 +315,122 @@ test('air quality keeps only the newest request result', async () => {
   assert.equal(air.value.us_aqi, 25)
 })
 
+test('air quality reports a failure state instead of staying silent', async () => {
+  const timeoutError = Object.assign(new Error('请求超时，请检查网络后重试'), { code: 'REQUEST_TIMEOUT' })
+  const { air, airStatus, airError, load, fail } = useAirQuality({
+    fetcher: () => Promise.reject(timeoutError),
+  })
+
+  await load(1, 1)
+  assert.equal(airStatus.value, 'error')
+  assert.equal(airError.value, '请求超时')
+
+  // 恢复成功后状态要跟着回正，否则失败态会永远挂在卡片上
+  const ok = useAirQuality({ fetcher: () => Promise.resolve({ us_aqi: 42 }) })
+  await ok.load(1, 1)
+  assert.equal(ok.airStatus.value, 'ok')
+  assert.equal(ok.airError.value, '')
+
+  // 缺少坐标时根本不发请求，但仍然要落一个失败态
+  let called = false
+  const missing = useAirQuality({ fetcher: () => { called = true; return Promise.resolve(null) } })
+  await missing.load(null, null)
+  assert.equal(called, false)
+  assert.equal(missing.airStatus.value, 'error')
+  assert.equal(missing.airError.value, '缺少城市坐标')
+
+  // 空响应体（current 缺失）是「无数据」，不是失败
+  const empty = useAirQuality({ fetcher: () => Promise.resolve(null) })
+  await empty.load(1, 1)
+  assert.equal(empty.airStatus.value, 'ok')
+
+  void air
+  void fail
+})
+
+test('alerts can be forced out of idle so the skeleton cannot spin forever', async () => {
+  const XIAN = '陕西省 · 西安市'
+  const { alertStatus, alertError, fail } = useWeatherAlerts({
+    fetcher: () => Promise.reject(new Error('预警请求失败')),
+  })
+
+  // 冷启动时主天气就失败，二级链路没人推状态 —— fail 必须能兜住 idle
+  assert.equal(alertStatus.value, 'idle')
+  fail('缺少城市坐标')
+  assert.equal(alertStatus.value, 'error')
+  assert.equal(alertError.value, '缺少城市坐标')
+
+  // 正在请求时不能被迟到/重复的兜底覆写
+  const busy = useWeatherAlerts({ fetcher: () => new Promise(() => {}) })
+  busy.refresh(XIAN, '西安')
+  assert.equal(busy.alertRefreshing.value, true)
+  busy.fail('迟到的兜底')
+  assert.equal(busy.alertStatus.value, 'idle')
+
+  // 已经有结果时也不能被覆写
+  const settled = useWeatherAlerts({ fetcher: () => Promise.resolve([]) })
+  await settled.refresh(XIAN, '西安')
+  settled.fail('迟到的兜底')
+  assert.equal(settled.alertStatus.value, 'ok')
+
+  // 真正失败时要有 error 文案，UI 才好显示「失败 + 重试」
+  const failed = useWeatherAlerts({ fetcher: () => Promise.reject(new Error('坏请求')) })
+  await failed.refresh(XIAN, '西安')
+  assert.equal(failed.alertStatus.value, 'error')
+  assert.equal(failed.alertError.value, '坏请求')
+
+  // 重试时保持 error，不会闪回骨架
+  failed.retry(XIAN, '西安')
+  assert.equal(failed.alertStatus.value, 'error')
+
+  // 境外城市（没有省份）不发请求，直接是 ok + 0 条
+  let called = false
+  const foreign = useWeatherAlerts({ fetcher: () => { called = true; return Promise.resolve([]) } })
+  await foreign.refresh('California · United States', 'San Francisco')
+  assert.equal(called, false)
+  assert.equal(foreign.alertStatus.value, 'ok')
+  assert.equal(foreign.alerts.value.total, 0)
+})
+
+test('alert loading skeleton is exactly as tall as a real alert item', async () => {
+  // 骨架高度 = 边框*2 + 内边距*2 + 动画盒子。动画是 48px 的死尺寸，
+  // 一旦它超过净空间就会把骨架撑到比真实条目更高 —— 数据到达时整块版面往上跳。
+  assert.ok(
+    isLoaderFittingSlot(),
+    `loader box ${alertLoaderBox()}px must fit inside ${alertLoaderSpace()}px, otherwise the skeleton outgrows a real item`
+  )
+
+  const skeletonH = ALERT_BORDER_Y * 2 + ALERT_PAD_Y * 2 + alertLoaderBox()
+  assert.equal(skeletonH, ALERT_SLOT_H)
+
+  // 真实条目高度 = max(槽高, 自然内容高)，必须和骨架一模一样
+  const itemH = Math.max(ALERT_SLOT_H, ALERT_ITEM_CONTENT_H)
+  assert.equal(skeletonH, itemH)
+
+  // 槽高必须真的能盖住内容，否则 min-height 说了不算，条目会被内容顶高
+  assert.ok(
+    ALERT_SLOT_H >= ALERT_ITEM_CONTENT_H,
+    `slot ${ALERT_SLOT_H}px must be >= natural item content ${ALERT_ITEM_CONTENT_H}px`
+  )
+
+  // 缩放只缩不放：动画永远不能比设计尺寸更大
+  assert.ok(alertLoaderScale() > 0 && alertLoaderScale() <= 1)
+  assert.ok(alertLoaderBox(70) <= ALERT_LOADER_BASE)
+  assert.equal(alertLoaderScale(70), 1)
+  assert.equal(alertLoaderBox(70), ALERT_LOADER_BASE)
+  // 越小的槽只会缩得越狠，绝不反向放大
+  assert.ok(alertLoaderScale(48) < alertLoaderScale(64))
+  assert.ok(alertLoaderBox(48) < alertLoaderBox(64))
+
+  // CSS 里的 --alert-slot-h 必须与这里一致，改一处忘了另一处会在这里红
+  const { readFileSync } = await import('node:fs')
+  const vue = readFileSync(new URL('../src/components/WeatherAlert.vue', import.meta.url), 'utf8')
+  const cssSlot = Number((vue.match(/--alert-slot-h:\s*(\d+)px/) || [])[1])
+  const cssPad = Number((vue.match(/\.alert-loading[\s\S]*?padding:\s*(\d+)px/) || [])[1])
+  assert.equal(cssSlot, ALERT_SLOT_H, 'WeatherAlert.vue --alert-slot-h drifted from utils/alertSlot.js')
+  assert.equal(cssPad, ALERT_PAD_Y, 'WeatherAlert.vue .alert-loading padding drifted from utils/alertSlot.js')
+})
+
 test('refresh controller marks failures stale and resets after success', async () => {
   let now = 20 * 60 * 1000
   let refreshCalls = 0
@@ -498,6 +628,43 @@ test('favorite groups only include categories that have cities', () => {
   // 两类都有 -> 顺序为国内、国外
   const both = buildFavoriteGroups([hangzhou], [london])
   assert.deepEqual(both.map((g) => g.label), ['国内', '国外'])
+})
+
+test('active favorite marks exactly the city currently being viewed', () => {
+  const hangzhou = { name: '杭州', lat: 30.2741, lon: 120.1551 }
+  const london = { name: '伦敦', lat: 51.5, lon: -0.12 }
+  const cities = [hangzhou, london]
+
+  // 浏览坐标与收藏条目完全一致 -> 精确命中该条
+  assert.equal(findActiveFavorite(cities, { lat: 30.2741, lon: 120.1551 }), hangzhou)
+  assert.equal(findActiveFavorite(cities, { lat: 51.5, lon: -0.12 }), london)
+  // 定位 GPS 抖动：约 90m 内仍命中同一条代表坐标（与 2km 去重口径一致）
+  assert.equal(findActiveFavorite(cities, { lat: 30.2749, lon: 120.1542 }), hangzhou)
+
+  // 同城近邻：精确坐标各自命中自己，不会两条一起亮
+  const westLake = { name: '西湖区', lat: 30.275, lon: 120.14 }
+  const nearCities = [hangzhou, westLake]
+  assert.equal(findActiveFavorite(nearCities, { lat: 30.2741, lon: 120.1551 }), hangzhou)
+  assert.equal(findActiveFavorite(nearCities, { lat: 30.275, lon: 120.14 }), westLake)
+
+  // 浏览不在收藏里的城市 / 空列表 / 无当前城市 / 非法坐标 -> 不标
+  assert.equal(findActiveFavorite(cities, { lat: 31.2, lon: 121.5 }), null)
+  assert.equal(findActiveFavorite([], { lat: 30.27, lon: 120.15 }), null)
+  assert.equal(findActiveFavorite(cities, null), null)
+  assert.equal(findActiveFavorite(cities, undefined), null)
+  assert.equal(findActiveFavorite(cities, { lat: null, lon: null }), null)
+  assert.equal(findActiveFavorite(cities, { lat: NaN, lon: 120 }), null)
+  assert.equal(findActiveFavorite([{ name: '坏数据', lat: NaN, lon: 1 }], { lat: 30.27, lon: 120.15 }), null)
+})
+
+test('aqi dial captions are plain adjectives without 污染', () => {
+  const names = [0, 80, 130, 180, 250, 400].map((v) => levelOf(v).name)
+  assert.deepEqual(names, ['优', '良', '轻度', '中度', '重度', '严重'])
+  for (const name of names) assert.equal(name.includes('污染'), false)
+  assert.equal(readAir({ us_aqi: 130 }).level.name, '轻度')
+  assert.equal(readAir({ us_aqi: 260 }).level.name, '重度')
+  assert.equal(readAir({ us_aqi: 400 }).level.name, '严重')
+  assert.equal(levelOf(null), null)
 })
 
 test('radar provider follows location country and local source', () => {

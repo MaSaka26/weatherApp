@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { DEFAULTS, SETTING_OPTIONS, resetSettings, setSetting, settings } from '@/composables/useSettings'
 import { useAppUpdate } from '@/composables/useAppUpdate'
 import { lockBodyScroll, unlockBodyScroll } from '@/utils/scrollLock'
+import GitHubStarButton from '@/components/GitHubStarButton.vue'
 
 const {
   appVersion,
@@ -258,6 +259,13 @@ onBeforeUnmount(() => {
           </div>
           <div v-if="updateText" class="settings-update-state" role="status" aria-live="polite">
             {{ updateText }}
+          </div>
+          <div class="set-row">
+            <div class="set-text">
+              <div class="set-label">GitHub 仓库</div>
+              <div class="set-hint">点个星吧，你的支持是动力</div>
+            </div>
+            <GitHubStarButton />
           </div>
         </div>
       </div>

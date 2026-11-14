@@ -76,6 +76,9 @@ onMounted(() => {
   // 注意这里不等数据：模板已经用缓存（或数值占位骨架）画好了完整仪表盘，
   // 数据回来只是把数字替换掉。
   store.loadInitialLocation()
+  // 手动模式 + 新缓存时上面一行会直接返回 false（不定位、也不请求天气），
+  // 二级接口就永远不会被触发。这里显式补一次，否则预警骨架会一直转。
+  store.loadSecondary()
   // 每分钟检查一次「距上次成功是否已满 6 分钟」，满足才真正请求 —— 节流在这里
   store.startAutoRefresh()
 })
@@ -95,6 +98,7 @@ onBeforeUnmount(() => {
       <SearchBar @search="store.loadCity" @select="store.loadPlace" />
       <CommonCities
         :cities="store.commonCities"
+        :active="store.activeCity"
         @select="store.loadCommonCity"
         @remove="store.removeCommonCities"
         @locate="store.loadByGeolocation"
@@ -139,6 +143,7 @@ onBeforeUnmount(() => {
         <WeatherAlert
           :alerts="store.alerts"
           :status="store.alertStatus"
+          :error="store.alertError"
           :country-code="store.cityCountryCode"
           :refreshing="store.alertRefreshing"
           @refresh="store.retryAlerts()"
@@ -151,7 +156,10 @@ onBeforeUnmount(() => {
         :current="store.current"
         :daily="store.daily"
         :air="store.air"
+        :air-status="store.airStatus"
+        :air-error="store.airError"
         :data-ready="store.hasWeatherData"
+        @retry-air="store.retryAir()"
       />
 
       <HourlyForecast

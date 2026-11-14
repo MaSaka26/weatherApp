@@ -47,13 +47,15 @@ export const useWeatherStore = defineStore('weather', () => {
   const hasWeatherData = ref(Boolean(cached?.data?.current))
   const animationEpoch = ref(null)
 
-  const { air, load: loadAir } = useAirQuality()
+  const { air, airStatus, airError, load: loadAir, fail: failAir } = useAirQuality()
   const {
     alerts,
     alertStatus,
+    alertError,
     alertRefreshing,
     refresh: refreshAlertsForPlace,
     retry: retryAlertsForPlace,
+    fail: failAlerts,
   } = useWeatherAlerts()
 
   const status = ref('success')
@@ -68,6 +70,8 @@ export const useWeatherStore = defineStore('weather', () => {
   const current = computed(() => data.value?.current ?? null)
   const hourly = computed(() => data.value?.hourly ?? null)
   const daily = computed(() => data.value?.daily ?? null)
+  // 当前正在浏览的城市坐标，供收藏列表标记绿点；无缓存时坐标为 null，不会命中任何收藏。
+  const activeCity = computed(() => ({ lat: lat.value, lon: lon.value }))
 
   const skyClass = computed(() => {
     const value = current.value
@@ -151,6 +155,17 @@ export const useWeatherStore = defineStore('weather', () => {
     onFailure: (error) => {
       pendingPlace = null
       lastError.value = error?.message || '网络请求失败'
+      // 这两个接口原本只在主天气成功后才发请求。主链路失败时若不管，
+      // alertStatus 会永远停在 idle，界面上就是一个永不停的骨架 —— 用户报的
+      // 无限 loading 正是这么来的。有坐标就照常单独发一次（各自带超时和状态），
+      // 没坐标才干脆置为失败，绝不让状态停在 idle。
+      if (lat.value != null && lon.value != null) {
+        loadAir(lat.value, lon.value, { clear: !hasWeatherData.value })
+        refreshAlerts()
+      } else {
+        failAir('缺少城市坐标')
+        failAlerts('缺少城市坐标')
+      }
     },
     onFinish: () => {
       isFetching.value = false
@@ -161,6 +176,13 @@ export const useWeatherStore = defineStore('weather', () => {
     weatherLoader.load(latitude, longitude, options)
 
   const locationSession = useLocationSession({ geocode: geocodeCity, resolve: resolvePlace })
+
+  // 切城市/定位在「还没发出请求」就失败时（城市解析不到、定位被拒），
+  // 两条独立链路不会有人去推状态，仍会停在 idle。这里统一补一个失败态。
+  function markSecondaryUnavailable(reason) {
+    failAir(reason)
+    failAlerts(reason)
+  }
 
   async function loadCity(city) {
     weatherLoader.cancel()
@@ -177,6 +199,7 @@ export const useWeatherStore = defineStore('weather', () => {
           : error?.code === 'LOCATION_INVALID'
             ? '城市定位结果无效，请重试'
             : error?.message || '加载失败'
+      markSecondaryUnavailable('城市切换失败')
       return false
     }
   }
@@ -185,7 +208,10 @@ export const useWeatherStore = defineStore('weather', () => {
     weatherLoader.cancel()
     const enrichedPlace = { ...place, countryCode: inferCountryCode(place) }
     const candidate = locationSession.fromManualPlace(enrichedPlace, 'search')
-    if (!candidate) return false
+    if (!candidate) {
+      markSecondaryUnavailable('城市定位结果无效')
+      return false
+    }
     return loadMain(candidate.lat, candidate.lon, { place: candidate })
   }
 
@@ -193,7 +219,10 @@ export const useWeatherStore = defineStore('weather', () => {
     weatherLoader.cancel()
     const enrichedPlace = { ...place, countryCode: inferCountryCode(place) }
     const candidate = locationSession.fromManualPlace(enrichedPlace, 'common')
-    if (!candidate) return false
+    if (!candidate) {
+      markSecondaryUnavailable('收藏城市坐标无效')
+      return false
+    }
     return loadMain(candidate.lat, candidate.lon, { place: candidate })
   }
 
@@ -229,6 +258,7 @@ export const useWeatherStore = defineStore('weather', () => {
                 : ['数据加载失败', error?.message || '网络请求失败，请稍后重试。']
       if (lat.value == null) showError(reason[0], reason[1])
       else lastError.value = reason[0]
+      markSecondaryUnavailable(reason[0])
       return false
     }
   }
@@ -249,6 +279,27 @@ export const useWeatherStore = defineStore('weather', () => {
 
   function retryAlerts() {
     return retryAlertsForPlace(cityDetail.value, cityName.value)
+  }
+
+  /**
+   * 首屏补拉两条独立链路（空气质量 / 城市预警）。
+   *
+   * 这两路原本只挂在主天气 onSuccess 上。但手动模式 + 24h 内有效的缓存时，
+   * loadInitialLocation 会直接返回 false（不需要定位也不用请求），
+   * 6 分钟节流又让自动刷新不会立刻跑 —— 于是整个页面一条请求都不发，
+   * 预警骨架和空气质量就永远停在 idle。挂载时显式补一次即可。
+   */
+  function loadSecondary() {
+    if (lat.value == null || lon.value == null) return false
+    loadAir(lat.value, lon.value, { clear: !hasWeatherData.value })
+    refreshAlerts()
+    return true
+  }
+
+  // 空气质量的重试：只重拉这一路，不重拉整个天气
+  function retryAir() {
+    if (lat.value == null || lon.value == null) return false
+    return loadAir(lat.value, lon.value, { clear: true })
   }
 
   const weatherRefresh = useWeatherRefresh({
@@ -277,6 +328,7 @@ export const useWeatherStore = defineStore('weather', () => {
   return {
     lat,
     lon,
+    activeCity,
     cityName,
     cityDetail,
     cityCountryCode,
@@ -289,8 +341,11 @@ export const useWeatherStore = defineStore('weather', () => {
     hasWeatherData,
     animationEpoch,
     air,
+    airStatus,
+    airError,
     alerts,
     alertStatus,
+    alertError,
     alertRefreshing,
     status,
     errorTitle,
@@ -314,6 +369,8 @@ export const useWeatherStore = defineStore('weather', () => {
     refresh,
     retry,
     retryAlerts,
+    retryAir,
+    loadSecondary,
     startAutoRefresh,
     stopAutoRefresh,
   }

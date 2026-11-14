@@ -3,8 +3,12 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { lookupPlace } from '@/utils/placeLookup'
 import { buildFavoriteGroups } from '@/utils/favoriteGroups'
+import { findActiveFavorite } from '@/utils/activeFavorite'
 
-const props = defineProps({ cities: { type: Array, default: () => [] } })
+const props = defineProps({
+  cities: { type: Array, default: () => [] },
+  active: { type: Object, default: null },
+})
 const emit = defineEmits(['select', 'remove', 'locate'])
 
 const open = ref(false)
@@ -43,6 +47,9 @@ function cityAriaLabel(place) {
 
 const selectedPlaces = computed(() => props.cities.filter(isSelected))
 const selectedCount = computed(() => selectedPlaces.value.length)
+
+// 只标记一个当前浏览城市：精确坐标优先，定位抖动则取 2km 内最近的一条。
+const activePlace = computed(() => findActiveFavorite(props.cities, props.active))
 
 // 分类只依赖收藏列表本身。lookupPlace 是 O(行政区数) 的查表，若放进 groups
 // 里，每次勾选都会把 12 个城市重查一遍造成卡顿，故单独缓存。
@@ -215,6 +222,16 @@ onBeforeUnmount(() => {
                     <strong>{{ place.name }}</strong>
                     <small>{{ place.detail || ' ' }}</small>
                   </button>
+                  <span
+                    v-if="place === activePlace"
+                    class="cc-active"
+                    role="img"
+                    aria-label="当前正在浏览"
+                    title="当前正在浏览"
+                  >
+                    <span class="cc-active-core"></span>
+                    <span class="cc-active-wave"></span>
+                  </span>
                 </div>
               </div>
             </section>
@@ -317,6 +334,35 @@ onBeforeUnmount(() => {
 }
 .cc-city strong, .cc-city small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cc-city small { color: var(--text-5); font-size: 0.75rem; }
+
+/* 当前正在浏览的城市：右侧绿点，每 1s 向外发散一圈光波并渐隐。
+   波限制在固定 24px 容器内居中扩散，不会被 .cc-scroll 的滚动裁切。 */
+.cc-active { position: relative; flex: 0 0 24px; width: 24px; height: 24px; margin-right: 2px; }
+.cc-active-core, .cc-active-wave {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+}
+.cc-active-core {
+  background: var(--uv-1, #22c55e);
+  box-shadow: 0 0 6px rgba(34, 197, 94, .85);
+}
+.cc-active-wave {
+  border: 1.5px solid var(--uv-1, #22c55e);
+  animation: cc-active-ripple 1s ease-out infinite;
+  will-change: transform, opacity;
+}
+@keyframes cc-active-ripple {
+  0% { transform: scale(1); opacity: .75; }
+  100% { transform: scale(2); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cc-active-wave { animation: none; opacity: .35; }
+}
 
 /* 自定义三态多选框：全选 / 半选 / 未选，视觉由 is-checked / is-mixed 驱动，
    :checked / :indeterminate 只负责原生语义与键盘，避免依赖浏览器默认外观。 */

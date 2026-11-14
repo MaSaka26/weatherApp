@@ -43,6 +43,23 @@
   --shadow-color: rgba(0, 0, 0, 0.18);
   --bar-from: rgba(100, 180, 255, 0.6);
   --bar-to: rgba(255, 200, 100, 0.6);
+
+  /* 预警加载动画 WatchSpinner 的自定义色板（替代 React 版的 light/dark 硬编码 border 色） */
+  --watch-ring-main: #ffffff; /* 亮边（深底用白） */
+
+  /* 雷达扫描（RadarSweep）色板 */
+  --radar-sweep-border: rgba(255, 255, 255, 0.1);
+  --radar-sweep-ring: rgba(255, 255, 255, 0.05);
+  --radar-sweep-dot: rgba(255, 255, 255, 0.8);
+  --radar-sweep-c1: rgba(255, 255, 255, 0.02);
+  --radar-sweep-c2: rgba(255, 255, 255, 0.15);
+  --radar-sweep-c3: rgba(255, 255, 255, 0.55);
+
+  /* 人脸识别扫描（FaceIDScan）色板 */
+  --faceid-border: rgba(212, 212, 216, 0.55);
+  --faceid-icon: rgba(255, 255, 255, 0.35);
+  --faceid-line: #22c55e;
+  --faceid-glow: rgba(74, 222, 128, 0.3);
   /* 高低温：橙 = 暖，蓝 = 冷。曲线标签与 16 天列表共用同一对值，
      避免两处各写一份色号后改一处忘一处 */
   --temp-high: #fb923c;
@@ -89,10 +106,29 @@
   --glass-soft: calc(10px * var(--glass-scale));
   --glass-btn: calc(12px * var(--glass-scale));
   --glass-card: calc(16px * var(--glass-scale));
+
   --glass-strong: calc(20px * var(--glass-scale));
   --glass-frost: rgba(255, 255, 255, max(0, calc((1 - var(--glass-scale)) * 0.12)));
   /* 反方向：档位高于标准时卡片更「通透」——背景是深色，透出来的自然更暗 */
   --glass-shade: rgba(6, 14, 26, max(0, calc((var(--glass-scale) - 1) * 0.2)));
+}
+
+/* 浅色主题（若有）：沿用 React 版 light 调色（zinc-200→zinc-800 反色）。
+   独立选择器，不与 :root 嵌套——否则会被 CSS 嵌套规则解析成后代选择器而永不命中。 */
+[data-theme="light"] {
+  --watch-ring-main: rgb(24, 24, 27);
+
+  --radar-sweep-border: rgba(24, 24, 27, 0.1);
+  --radar-sweep-ring: rgba(24, 24, 27, 0.05);
+  --radar-sweep-dot: rgba(24, 24, 27, 0.8);
+  --radar-sweep-c1: rgba(39, 39, 42, 0.02);
+  --radar-sweep-c2: rgba(39, 39, 42, 0.1);
+  --radar-sweep-c3: rgba(39, 39, 42, 0.45);
+
+  --faceid-border: rgba(161, 161, 170, 0.6);
+  --faceid-icon: rgba(24, 24, 27, 0.28);
+  --faceid-line: #16a34a;
+  --faceid-glow: rgba(34, 197, 94, 0.3);
 }
 
 /* ===== Reset & Base ===== */

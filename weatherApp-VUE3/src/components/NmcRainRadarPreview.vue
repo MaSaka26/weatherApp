@@ -1,4 +1,5 @@
 <script setup>
+import AlertLoader from '@/components/animations/AlertLoader.vue'
 import { useRadarPlayer } from '@/composables/useRadarPlayer'
 
 const props = defineProps({
@@ -67,7 +68,7 @@ const {
       </header>
 
       <div v-if="status === 'loading'" class="radar-status" role="status">
-        <div class="radar-spinner"></div>
+        <AlertLoader group="radar" />
         <p class="radar-status-text">{{ probeHint || '正在获取雷达回放帧…' }}</p>
       </div>
 
@@ -426,27 +427,6 @@ const {
   background: rgba(6, 13, 22, 0.86);
   backdrop-filter: blur(3px);
   text-align: center;
-}
-
-.radar-spinner {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  border: 2px solid rgba(127, 212, 245, 0.22);
-  border-top-color: var(--rr-accent-bright);
-  animation: radar-spin 0.9s linear infinite;
-}
-
-@keyframes radar-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .radar-spinner {
-    animation-duration: 2.4s;
-  }
 }
 
 .radar-status-text {

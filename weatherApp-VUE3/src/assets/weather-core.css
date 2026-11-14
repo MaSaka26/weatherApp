@@ -211,6 +211,39 @@
 /* 空气质量卡：主值下面挂 PM2.5 / PM10。
    拆成两行而不是拼一行「PM2.5 46 · PM10 60」：9 张时它是普通单格，
    桌面只有 236px、手机 112px，拼一行必然折在「PM10」和数字之间 */
+/* 空气质量失败态：主值已是「—」，就地补一行原因 + 重试。
+   字号与 .air-pm 同级，不撑高卡片（9 卡时单格很窄，多一行就会顶到表盘） */
+.air-card .air-fail {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  font-size: 0.625rem;
+  line-height: 1.25;
+  color: var(--text-6);
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+.air-card .air-fail-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.air-card .air-retry {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border: 1px solid var(--line-1);
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text-5);
+  font-size: 0.625rem;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+.air-card .air-retry:hover {
+  color: var(--text-3);
+  border-color: var(--line-2);
+}
 .air-card .air-pm {
   display: flex;
   flex-direction: column;

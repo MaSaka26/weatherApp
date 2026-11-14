@@ -15,8 +15,15 @@ const props = defineProps({
   daily: { type: Object, default: null },
   // 空气质量来自独立接口，可能为 null（请求失败或超时），卡片会显示「暂无」
   air: { type: Object, default: null },
+  // 空气质量这一路的独立状态：idle 等待 / ok 有结果 / error 失败。
+  // 没有它的话，「接口挂了」和「当地真没有数据」在卡片上长得一模一样
+  airStatus: { type: String, default: 'idle' },
+  airError: { type: String, default: '' },
   dataReady: { type: Boolean, default: false },
 })
+
+// 空气质量失败时卡片里给一个就地重试，只重拉这一个接口，不重刷整页天气
+const emit = defineEmits(['retry-air'])
 
 // 卡片 item 布局由设置决定：layout-row 左文右图（默认）/ layout-stack 文字在上图形在下。
 // 手机、平板、桌面三档都听这个设置，样式分档在 weather.css 的各段媒体查询里
@@ -277,7 +284,12 @@ const air = computed(() => readAir(props.air))
 const aqiValue = computed(() => (air.value.aqi == null ? '—' : String(Math.round(air.value.aqi))))
 const aqiLevelName = computed(() => air.value.level?.name || '暂无')
 const aqiHint = computed(() => air.value.level?.hint || '暂无空气质量数据')
-// 与 AQI_LEVELS 的上限 50/100/150/200/300 对齐，最后 300–500 表示严重污染。
+// 有值就照常显示；没值且这一路明确失败时，卡片里出失败提示 + 重试
+const airFailed = computed(() => props.airStatus === 'error' && air.value.aqi == null)
+const airFailText = computed(() => props.airError || '空气质量获取失败')
+// 还没拿到结果（首屏请求在路上）：给一行轻提示，避免只剩一个「—」看不出在加载
+const airBusy = computed(() => props.airStatus === 'idle' && air.value.aqi == null)
+// 与 AQI_LEVELS 的上限 50/100/150/200/300 对齐，最后 300–500 表示严重。
 const aqiGradientStops = [
   { position: 0, color: 'var(--aqi-1)' },
   { position: 0.1, color: 'var(--aqi-2)' },
@@ -634,9 +646,19 @@ const dot = computed(() => {
         <div class="value">
           <AnimatedNumber :value="air.aqi" /><span v-if="air.aqi != null" class="unit">AQI</span>
         </div>
+        <!-- 失败态：主值已经是「—」，这里补一行原因 + 就地重试，
+             免得接口超时后卡片只剩一个「暂无」，用户既不知道原因也没法救 -->
+        <div v-if="airFailed" class="air-fail">
+          <span class="air-fail-text">{{ airFailText }}</span>
+          <button type="button" class="air-retry" @click="emit('retry-air')">重试</button>
+        </div>
+        <!-- 加载中：只占一行文字，不引入骨架，避免和 CSS 入场动画抢帧 -->
+        <div v-else-if="airBusy" class="air-fail">
+          <span class="air-fail-text">正在获取空气质量…</span>
+        </div>
         <!-- PM 两项各占一行：单格宽只有 236px（手机 112px），
              拼成一行「PM2.5 65.7 · PM10 67.1」必然折行，而且会断在 PM10 和数字之间 -->
-        <div v-if="pmRows.length" class="air-pm">
+        <div v-else-if="pmRows.length" class="air-pm">
           <span v-for="row in pmRows" :key="row">{{ row }}</span>
         </div>
       </div>
