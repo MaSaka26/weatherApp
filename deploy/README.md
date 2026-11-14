@@ -63,7 +63,7 @@ Geolocation 与 Service Worker 都只在 HTTPS secure context 下可用。GitHub
 ## CI / CD
 
 - [.github/workflows/quality.yml](../.github/workflows/quality.yml)：推送与 PR 时运行 test / lint / build
-- [.github/workflows/deploy.yml](../.github/workflows/deploy.yml)：打 `v*` tag（或手动触发）时运行 test / lint / build，把 `dist` 提交推送到 `gh-pages` 分支（GitHub Pages 从该分支发布），并用 `gh release create --generate-notes` 自动创建对应 Release
+- [.github/workflows/deploy.yml](../.github/workflows/deploy.yml)：打 `v*` tag（或手动触发）时运行 test / lint / build，把 `dist` 提交推送到 `gh-pages` 分支（GitHub Pages 从该分支发布），并自动创建对应 Release
 
 ### 发布一个版本
 

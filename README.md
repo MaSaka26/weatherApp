@@ -293,11 +293,11 @@ weatherApp-VUE3/
 - 发布任务加了 `concurrency: pages-deploy` 串行锁与 `permissions: contents: write`，连续打 tag 不会互相覆盖产物
 
 **修复**
-- `robots.txt` 与 `sitemap.xml` 里指向已停用的 Gitee Pages 域名（`masaka0426.gitee.io`，线上 404），改为 `https://masaka26.github.io/weatherApp/`
+- `robots.txt` 与 `sitemap.xml` 里的站点域名改为 `https://masaka26.github.io/weatherApp/`
 
 **工程**
-- 删除仅用于 Gitee Pages 的 `deploy/deploy-gitee.sh` 与 `deploy/gitee-pages.md`，`deploy/README.md` 的部署说明改为 GitHub Pages 单一路径，仓库内不再出现 Gitee 引用
-- `deploy.yml` 的 Gitee 推送步骤（secrets 从未配置、永远走 skip 分支）一并移除
+- 删除 `deploy/` 下旧的第三方 Pages 部署脚本与文档，`deploy/README.md` 收敛为 GitHub Pages 单一路径，仓库内不再出现第二套部署方式
+- `deploy.yml` 里那段从未配置 secrets、永远走 skip 分支的外部推送步骤一并移除
 - Release 正文改由根 README 更新日志里该版本的小节生成（`.github/scripts/release-notes.mjs`），没有条目时回退到 `--generate-notes`
 
 ### v0.1.11 — 2026-11-14
