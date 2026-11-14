@@ -77,9 +77,7 @@
 .refresh-btn:active,
 .settings-btn:active,
 .common-cities-btn:active { transform: scale(0.92); }
-.refresh-icon { display: inline-block; transform-origin: center; }
-.refresh-icon.spinning { animation: iconSpin 0.8s linear infinite; }
-@keyframes iconSpin { to { transform: rotate(360deg); } }
+/* .refresh-icon 的尺寸与布局在 RefreshButton.vue 里（刷新中换成动画后仍需锁死盒模型） */
 .settings-btn svg { display: block; }
 
 /* ===== Settings Panel ===== */

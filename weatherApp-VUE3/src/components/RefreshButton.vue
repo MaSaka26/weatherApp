@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, ref } from 'vue'
 
+import SpinningSquaresLoader from '@/components/animations/SpinningSquaresLoader.vue'
 import { useWeatherStore } from '@/stores/weather'
 
 const store = useWeatherStore()
@@ -73,7 +74,12 @@ onBeforeUnmount(() => {
       :aria-busy="refreshing"
       @click="onClick"
     >
-      <span class="refresh-icon" :class="{ spinning: refreshing }" aria-hidden="true">⟳</span>
+      <span class="refresh-icon" aria-hidden="true">
+        <!-- 刷新中换成动画，按钮尺寸/其余样式完全不动：容器固定 32px，
+             动画与 ⟳ 共用一个居中盒子，切换时不会引起布局跳动 -->
+        <SpinningSquaresLoader v-if="refreshing" />
+        <template v-else>⟳</template>
+      </span>
     </button>
     <Transition name="refresh-feedback">
       <div v-if="feedback" class="refresh-feedback" :class="`is-${feedbackKind}`" role="status" aria-live="polite" aria-atomic="true">
@@ -87,6 +93,21 @@ onBeforeUnmount(() => {
 <style scoped>
 .refresh-control { position: relative; flex: 0 0 auto; margin-top: 20px; }
 .refresh-control .refresh-btn { margin-top: 0; }
+/* 图标容器锁死 32px：动画与 ⟳ 字符共用同一个盒子，互换时按钮不抖。
+   按钮本身的 48px / 44px 尺寸仍由 responsive.css 决定，这里不碰。 */
+.refresh-icon {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+/* 窄屏按钮收到 44px，图标盒同比收一档，四周仍留 6px */
+@media (max-width: 344px) {
+  .refresh-icon { width: 28px; height: 28px; font-size: 1.125rem; }
+}
 .refresh-feedback {
   position: fixed;
   z-index: 90;

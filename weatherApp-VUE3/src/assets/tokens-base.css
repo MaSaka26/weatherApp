@@ -129,6 +129,10 @@
   --faceid-icon: rgba(24, 24, 27, 0.28);
   --faceid-line: #16a34a;
   --faceid-glow: rgba(34, 197, 94, 0.3);
+
+  /* 刷新按钮的旋转方块：原版 light 档 lead=zinc-800、trail=zinc-300 */
+  --spinning-squares-lead: rgb(24, 24, 27);
+  --spinning-squares-trail: rgba(24, 24, 27, 0.26);
 }
 
 /* ===== Reset & Base ===== */

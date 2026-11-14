@@ -432,6 +432,69 @@ test('alert loading skeleton is exactly as tall as a real alert item', async () 
   assert.equal(cssPad, ALERT_PAD_Y, 'WeatherAlert.vue .alert-loading padding drifted from utils/alertSlot.js')
 })
 
+test('spinning squares loader keeps the framer-motion geometry and the button size', async () => {
+  // 刷新按钮里的动画：React 版 SpinningSquares 是 40×40 容器里 16px 方块跑 24px 行程，
+  // 即 方块占 40%、行程占 60%（translate 百分比相对方块自身，故 40% × 150% = 60%）。
+  // 这里把「比例」锁死：以后有人调百分比、调时长、把两块改成同向，都会在这里红。
+  const { readFileSync } = await import('node:fs')
+  const read = (rel) => readFileSync(new URL('../' + rel, import.meta.url), 'utf8')
+  const loader = read('src/components/animations/SpinningSquaresLoader.vue')
+
+  // 1) 方块边长 40%，容器铺满父级
+  assert.match(loader, /\.spinning-squares\s*\{[^}]*width:\s*100%/, 'loader must fill its parent')
+  const cellRule = (loader.match(/\.spinning-squares-cell\s*\{([\s\S]*?)\}/) || [])[1] || ''
+  const cellSize = Number((cellRule.match(/width:\s*(\d+)%/) || [])[1])
+  assert.equal(cellSize, 40, 'cell must be 40% of the container like the 16/40 original')
+
+  // 2) 2s 一圈、无限循环、easeInOut（CSS 的 cubic-bezier 与 framer-motion 的 easeInOut 同曲线）
+  assert.match(cellRule, /animation-duration:\s*2s/, 'duration must stay 2s')
+  assert.match(cellRule, /animation-iteration-count:\s*infinite/)
+  assert.match(cellRule, /animation-timing-function:\s*cubic-bezier\(0\.42,\s*0,\s*0\.58,\s*1\)/, 'easing drifted from easeInOut')
+
+  // 3) 关键帧：行程 150%（相对方块自身 = 容器 60%），四段回到原点
+  const framesOf = (name) => {
+    const body = (loader.match(new RegExp('@keyframes ' + name + '\\s*\\{([\\s\\S]*?\\n\\})')) || [])[1] || ''
+    return [...body.matchAll(/(\d+)%\s*\{\s*transform:\s*translate\(([^)]*)\)/g)].map((m) => [Number(m[1]), m[2].replace(/\s+/g, '')])
+  }
+  const lead = framesOf('squares-lead')
+  const trail = framesOf('squares-trail')
+  assert.deepEqual(lead.map(([pct]) => pct), [0, 25, 50, 75, 100], 'lead keyframes must close the loop')
+  assert.equal(lead[1][1], '150%,0', 'lead travels 150% of its own width (= 60% of container)')
+  assert.equal(lead[2][1], '150%,150%')
+  const travelPct = 150
+  assert.equal((travelPct * cellSize) / 100, 60, '16px cell + 24px travel on a 40px box = 60%')
+
+  // 4) 两块必须始终点对称：轨迹取负、起点在对角
+  const negate = (v) => v.replace(/(-?\d+)%/g, (_, n) => (n === '0' ? '0' : String(-Number(n))) + '%')
+  assert.deepEqual(trail.map(([pct, v]) => [pct, v]), lead.map(([pct, v]) => [pct, negate(v)]), 'trail must be the exact negation of lead')
+  const leadPos = (loader.match(/--lead\s*\{([\s\S]*?)\}/) || [])[1] || ''
+  const trailPos = (loader.match(/--trail\s*\{([\s\S]*?)\}/) || [])[1] || ''
+  assert.match(leadPos, /top:\s*0/)
+  assert.match(leadPos, /left:\s*0/)
+  assert.match(trailPos, /right:\s*0/)
+  assert.match(trailPos, /bottom:\s*0/)
+
+  // 5) 减少动态效果时停住，不做无意义的循环
+  assert.match(loader, /prefers-reduced-motion:[\s\S]*?\.spinning-squares-cell\s*\{\s*animation:\s*none/, 'reduced motion must stop the loop')
+
+  // 6) 按钮只换图标，尺寸不许被改写
+  const button = read('src/components/RefreshButton.vue')
+  assert.match(button, /import SpinningSquaresLoader from '@\/components\/animations\/SpinningSquaresLoader\.vue'/)
+  assert.match(button, /<SpinningSquaresLoader v-if="refreshing"\s*\/>/, 'loader shows only while refreshing')
+  assert.match(button, /<template v-else>⟳<\/template>/, 'idle state keeps the plain glyph')
+  assert.doesNotMatch(button, /\.refresh-btn\s*\{[^}]*\b(width|height):/, 'button size must not be redefined here')
+  assert.doesNotMatch(button, /refresh-icon[^{]*\{[^}]*animation:/, 'the glyph must no longer spin via CSS')
+  // 图标盒是固定尺寸，动画与 ⟳ 共用，切换时不会引起布局跳动
+  const iconBox = (button.match(/\.refresh-icon\s*\{([\s\S]*?)\}/) || [])[1] || ''
+  assert.match(iconBox, /width:\s*32px/)
+  assert.match(iconBox, /height:\s*32px/)
+
+  // 7) 旧的旋转关键帧必须已经清掉，不能和动画叠着转
+  const responsive = read('src/assets/responsive.css')
+  assert.doesNotMatch(responsive, /@keyframes iconSpin/, 'legacy iconSpin keyframes must be gone')
+  assert.doesNotMatch(responsive, /\.refresh-icon\.spinning/, 'legacy spinning class must be gone')
+})
+
 test('refresh controller marks failures stale and resets after success', async () => {
   let now = 20 * 60 * 1000
   let refreshCalls = 0
