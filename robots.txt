@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://masaka0426.gitee.io/weather-app/sitemap.xml
+Sitemap: https://masaka26.github.io/weatherApp/sitemap.xml

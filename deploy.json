@@ -1,12 +1,12 @@
 {
-  "appVersion": "v0.1.11",
-  "appBuildId": "c545cf0265eb9e6b89d6e5dae4837b8ea5f72513",
-  "sourceCommit": "c545cf0265eb9e6b89d6e5dae4837b8ea5f72513",
-  "sourceShort": "c545cf0",
-  "sourceTag": "v0.1.11",
-  "latestTag": "v0.1.11",
+  "appVersion": "v0.1.12",
+  "appBuildId": "625cd6fd7bada7c85715822bf8c72f779a634d2d",
+  "sourceCommit": "625cd6fd7bada7c85715822bf8c72f779a634d2d",
+  "sourceShort": "625cd6f",
+  "sourceTag": "v0.1.12",
+  "latestTag": "v0.1.12",
   "sourceDirty": false,
-  "builtAt": "2026-11-14T01:06:23.271Z",
-  "node": "v24.18.0",
-  "buildId": "e7061d81ab88"
+  "builtAt": "2026-11-14T01:34:05.942Z",
+  "node": "v22.18.0",
+  "buildId": "c81a8ba6921a"
 }
