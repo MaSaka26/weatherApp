@@ -2,7 +2,7 @@
 
 一个深色玻璃拟态的天气应用。数据来自 Open-Meteo（免费、无需 Key），界面为自定义的高 DPI 仪表盘风格，桌面与移动端分别布局。
 
-> 当前版本 **v0.1.11**（2026-11-14）· 历史记录见 [更新日志](#更新日志)
+> 当前版本 **v0.1.12**（2026-11-14）· 历史记录见 [更新日志](#更新日志)
 
 当前仓库只维护一代实现：
 
@@ -278,12 +278,26 @@ weatherApp-VUE3/
 - 常用城市保存在本机，按国内/国外分组，支持批量删除、当前城市绿点标记，可从顶部菜单快速切换或回到当前位置。
 - 生产环境注册 Service Worker，按构建产物指纹预缓存应用 HTML 与资源；提供 Web App Manifest、192/512 安装图标，离线时可打开已缓存应用并显示天气缓存时间。天气 API 与实时雷达仍需联网。
 - 核心规则测试通过 `npm test` 运行；GitHub Actions 会在推送与 PR 时运行测试、lint 和生产构建。
+- 发布全自动：推一个 `v*` tag，CI 依次跑质量门、构建、把产物推到 `gh-pages`，并自动创建同名 Release；本地不再需要手动构建或手动推 `gh-pages`。
 - 全局样式入口保留在 `weatherApp-VUE3/src/assets/weather.css`，按基础令牌/页面区块/预报/响应式规则拆分到相邻文件。
 - 雷达帧时间取整、URL 与时间轴组装抽到 `weatherApp-VUE3/src/composables/useRadarFrames.js`，播放器与 UI 仍由 `RainRadarPreview.vue` 管理。
 
 ## 更新日志
 
 版本号同时写在 `weatherApp-VUE3/package.json` 与根目录的 tag 上；线上页面右下角与 `/deploy.json` 里的 `appVersion` 由构建时的 git tag 注入。
+
+### v0.1.12 — 2026-11-14
+
+**新增**
+- 发布流程全面交给 CI：推 `v*` tag（或手动 `workflow_dispatch`）触发 `deploy.yml`，依次执行 test / lint / build，把 `dist` 覆盖到 `gh-pages` 分支并推送，再由 `gh release create --generate-notes` 自动创建对应 Release
+- 发布任务加了 `concurrency: pages-deploy` 串行锁与 `permissions: contents: write`，连续打 tag 不会互相覆盖产物
+
+**修复**
+- `robots.txt` 与 `sitemap.xml` 里指向已停用的 Gitee Pages 域名（`masaka0426.gitee.io`，线上 404），改为 `https://masaka26.github.io/weatherApp/`
+
+**工程**
+- 删除仅用于 Gitee Pages 的 `deploy/deploy-gitee.sh` 与 `deploy/gitee-pages.md`，`deploy/README.md` 的部署说明改为 GitHub Pages 单一路径，仓库内不再出现 Gitee 引用
+- `deploy.yml` 的 Gitee 推送步骤（secrets 从未配置、永远走 skip 分支）一并移除
 
 ### v0.1.11 — 2026-11-14
 

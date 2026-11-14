@@ -8,13 +8,13 @@ npm ci
 npm run build
 ```
 
-产物在 `weatherApp-VUE3/dist/`。默认 `base: './'` 使用相对资源路径，可部署在域名根目录或 Gitee Pages 项目子路径。
+产物在 `weatherApp-VUE3/dist/`。默认 `base: './'` 使用相对资源路径，可部署在域名根目录或任意子路径。
 
 ## 部署路径
 
-- Gitee Pages：`https://masaka0426.gitee.io/weather-app/`
+- GitHub Pages（当前线上）：`https://masaka26.github.io/weatherApp/`
   - 使用相对 `base: './'`，无需修改 Vite 配置
-  - 在 Gitee 仓库设置中开启 Pages，部署目录选择 `dist`，或配置 Gitee Go 流水线
+  - 由 `.github/workflows/deploy.yml` 在打 tag 时自动构建并发布，不需要手动推分支
 - 自有域名根目录：`https://weather.example.com/`
   - 可设置 `VITE_SITE_BASE=/`
 - 其他子路径：设置 `VITE_SITE_BASE=/子路径/`
@@ -27,11 +27,11 @@ VITE_SITE_BASE=./
 
 ## HTTPS
 
-Geolocation 与 Service Worker 都只在 HTTPS secure context 下可用。Gitee Pages 自带 HTTPS；自有服务器请配置 TLS 证书，并使用 [deploy/nginx.conf](deploy/nginx.conf) 的 80→443 跳转。
+Geolocation 与 Service Worker 都只在 HTTPS secure context 下可用。GitHub Pages 自带 HTTPS；自有服务器请配置 TLS 证书，并使用 [deploy/nginx.conf](deploy/nginx.conf) 的 80→443 跳转。
 
 ## 安全响应头
 
-Gitee Pages 不允许自定义响应头；仓库已提供：
+静态托管平台对响应头的支持不一致，GitHub Pages 不允许自定义响应头；仓库已提供：
 
 - `weatherApp-VUE3/public/_headers`：Netlify、Cloudflare Pages 等平台可直接识别
 - [deploy/nginx.conf](deploy/nginx.conf)：自有 Nginx 部署的完整 CSP、缓存和 HTTPS 配置
@@ -52,7 +52,7 @@ Gitee Pages 不允许自定义响应头；仓库已提供：
 发布目录中应包含：
 
 - `index.html`
-- `404.html`（由部署流水线从 `index.html` 复制；SPA fallback）
+- `404.html`（构建时自动从 `index.html` 复制；SPA fallback）
 - `robots.txt`
 - `sitemap.xml`
 - `manifest.webmanifest`
@@ -62,12 +62,33 @@ Gitee Pages 不允许自定义响应头；仓库已提供：
 
 ## CI / CD
 
-- [.github/workflows/quality.yml](../.github/workflows/quality.yml)：推送和 PR 时运行 test / lint / build
-- [.github/workflows/deploy.yml](../.github/workflows/deploy.yml)：GitHub Pages 部署流水线（仓库镜像到 GitHub 时适用）
-- [deploy-gitee.sh](deploy-gitee.sh)：按 tag/确定 ref 构建并推送 `gh-pages` 分支
-- [gitee-pages.md](gitee-pages.md)：Gitee Pages 首次开启、自动发布与排错说明
+- [.github/workflows/quality.yml](../.github/workflows/quality.yml)：推送与 PR 时运行 test / lint / build
+- [.github/workflows/deploy.yml](../.github/workflows/deploy.yml)：打 `v*` tag（或手动触发）时运行 test / lint / build，把 `dist` 提交推送到 `gh-pages` 分支（GitHub Pages 从该分支发布），并用 `gh release create --generate-notes` 自动创建对应 Release
 
-自动部署到 Gitee 需要 `GITEE_USERNAME` 与 `GITEE_TOKEN`；未配置时会跳过推送并正常结束。Gitee Pages 服务需在仓库后台开启；若「服务」菜单里没有 Gitee Pages，说明账号未实名认证或平台未开放该入口，详见 [gitee-pages.md](gitee-pages.md) 的替代方案。
+### 发布一个版本
+
+本地只需要提交代码和打 tag，剩下的交给 CI：
+
+```bash
+git tag -a v0.1.12 -m v0.1.12
+git push github master --tags
+```
+
+流水线会依次执行：
+
+1. `fetch-depth: 0` 拉全历史（`vite.config.js` 用 `git describe --tags --exact-match` 注入版本号）
+2. `npm ci` → `npm test` → `npm run lint` → `npm run build`（`VITE_SITE_BASE=./`）
+3. 打印 `dist/deploy.json` 作为构建身份凭据
+4. `actions/upload-artifact` 传产物，再用 `gh-pages` 分支工作区覆盖内容并 `git push origin HEAD:gh-pages` 发布
+5. tag 触发时创建 Release；已存在同名 Release 则跳过
+
+发布完成后可直接核对线上身份：
+
+```bash
+curl -s https://masaka26.github.io/weatherApp/deploy.json
+```
+
+注意：仓库 Pages 设置保持 **Deploy from a branch → `gh-pages` / 根目录** 即可，不需要改成 GitHub Actions，也不需要给仓库额外授权。每次发布会在 `gh-pages` 上新增一条 `deploy: <tag> (<sha>)` 提交，历史提交天然保留，可随时回滚。
 
 ## 部署前检查
 
