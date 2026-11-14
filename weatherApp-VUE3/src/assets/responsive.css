@@ -345,7 +345,28 @@
     /* 「上下」排：文字 + 表盘 + 上下留白 */
     --cards-row-h: 176px;
   }
-  .weather-content .current-weather { width: 360px; padding-top: 4px; }
+  /* 头图区：左「地点 / 温度 / 时钟」，右「城市预警」。
+     预警与时钟平行（同一水平带、垂直居中），不再压在温度和时间的下面。
+     这里只加一层 flex 行，current-weather 仍是原来的 360px 块，
+     移动端 .hero-row 是 display: contents，子块按原纵向流排布，逐像素不变。
+     桌面端预警卡改竖排（图片独占一行、文字在下），见 WeatherAlert.vue 的 1024 块。 */
+  .weather-content .hero-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(28px, 4vw, 56px);
+    width: 100%;
+    padding: 4px 0 10px;
+  }
+  .weather-content .hero-row .current-weather {
+    flex: 0 0 auto;
+    width: 360px;
+    padding-top: 0;
+  }
+  .weather-content .hero-row .weather-alert-slot {
+    flex: 0 1 340px;
+    min-width: 0;
+  }
   .weather-content .current-body { --clock-split: 9px; }
   .weather-content .clock-time { font-size: 2rem; }
   .weather-content .clock-date, .weather-content .clock-doy { font-size: 0.8125rem; }

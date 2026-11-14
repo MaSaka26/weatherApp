@@ -124,30 +124,36 @@ onBeforeUnmount(() => {
       class="weather-content active"
       data-reveal-root
     >
-      <CurrentWeather
-        v-reveal
-        v-if="store.current"
-        :city-name="store.cityName"
-        :city-detail="store.cityDetail"
-        :current="store.current"
-        :today-high="todayHigh"
-        :today-low="todayLow"
-        :data-ready="store.hasWeatherData"
-        :timezone="store.data?.timezone || ''"
-      />
-
-      <!-- 城市预警：放在天气详情 6/9 卡上方。
-           指令挂在包装层真实 DOM 上：WeatherAlert 内部 idle 时显示等高 loading 骨架，
-           晚到内容不会抢档、不会挤压下方组件。 -->
-      <div v-reveal class="weather-alert-slot">
-        <WeatherAlert
-          :alerts="store.alerts"
-          :status="store.alertStatus"
-          :error="store.alertError"
-          :country-code="store.cityCountryCode"
-          :refreshing="store.alertRefreshing"
-          @refresh="store.retryAlerts()"
+      <!-- 桌面端首页头图区：温度块与城市预警并排（预警在时钟右侧）。
+           这里只是加一层包装，不做任何视觉改动 —— 移动端 .hero-row 是 display: contents，
+           子元素仍按原来的纵向顺序堆叠，布局与改动前逐像素一致。
+           桌面端的并排规则全部在 responsive.css 的 min-width:1024 里。 -->
+      <div class="hero-row">
+        <CurrentWeather
+          v-reveal
+          v-if="store.current"
+          :city-name="store.cityName"
+          :city-detail="store.cityDetail"
+          :current="store.current"
+          :today-high="todayHigh"
+          :today-low="todayLow"
+          :data-ready="store.hasWeatherData"
+          :timezone="store.data?.timezone || ''"
         />
+
+        <!-- 城市预警：移动端仍是一列（详情卡上方）的等高条，桌面端挪到时钟右侧。
+             指令挂在包装层真实 DOM 上：WeatherAlert 内部 idle 时显示等高 loading 骨架，
+             晚到内容不会抢档、不会挤压下方组件。 -->
+        <div v-reveal class="weather-alert-slot">
+          <WeatherAlert
+            :alerts="store.alerts"
+            :status="store.alertStatus"
+            :error="store.alertError"
+            :country-code="store.cityCountryCode"
+            :refreshing="store.alertRefreshing"
+            @refresh="store.retryAlerts()"
+          />
+        </div>
       </div>
 
       <DetailCards

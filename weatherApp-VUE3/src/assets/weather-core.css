@@ -1,3 +1,9 @@
+/* ===== Hero row（首页头图区：地点/温度/时钟 + 城市预警） =====
+   移动端 display: contents —— 包装层不生成盒子，子块照旧按纵向流排布，
+   与把预警包起来之前逐像素一致（预警仍在温度下方、详情卡上方）。
+   桌面端的并排规则在 responsive.css 的 min-width: 1024 里。 */
+.hero-row { display: contents; }
+
 /* ===== Current Weather ===== */
 /* 两层结构：地名单独一行居中；温度块与时间块在其下方并排、作为整体水平居中 */
 .current-weather {

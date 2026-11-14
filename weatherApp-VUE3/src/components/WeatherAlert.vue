@@ -80,7 +80,11 @@ function open(link) {
         :title="item.title"
         @click="open(item.link)"
       >
-        <img v-if="item.pic" class="alert-icon" :src="item.pic" :alt="item.type" loading="lazy" />
+        <!-- 桌面端这条下面这层 wrapper 会把图片与文字拆成上下两段（图片独占一行）；
+             移动端 .alert-item 仍是横向一行，「图标 + 文字块」，与改动前一致。 -->
+        <span class="alert-media">
+          <img v-if="item.pic" class="alert-icon" :src="item.pic" :alt="item.type" loading="lazy" />
+        </span>
         <span class="alert-body">
           <span class="alert-line">
             <span class="alert-type">{{ item.type }}</span>
@@ -263,6 +267,15 @@ function open(link) {
   --alert-rgb: 240, 118, 118;
 }
 
+/* 图片容器：移动端只是一个行内盒子（图片 + 文字横向并排，与改动前一致）。
+   桌面端在下面的 min-width: 1024 里把它撑成整行、让图片独占一行。 */
+.alert-media {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .alert-icon {
   flex: 0 0 auto;
   width: 34px;
@@ -383,6 +396,57 @@ function open(link) {
 @media (prefers-reduced-motion: reduce) {
   .alert-retry-icon.spinning {
     animation: none;
+  }
+}
+
+/* ===== 桌面端：图片独占一行，文字在图片下方 =====
+   1024 起预警挪到了时钟右侧（见 responsive.css 的 .hero-row），
+   横向的「图标 + 文字」在 340px 宽的栏里显得局促，改成竖版卡片：
+   预览图整行居中，类型/级别与发布时间依次排在下面。
+   槽高随之抬高（--alert-slot-h），loading 骨架、空态、失败态用同一个值，
+   这样预警数据到达时卡片不会突然长高。 */
+@media (min-width: 1024px) {
+  /* 桌面端竖排（图片一行 + 文字两行）后条目自然高度约 115px，
+     槽高取 136px：留 ~21px 余量，够 alert-line 多折一行，
+     又不至于像 148px 那样四周空一大圈。loading / 空态 / 失败态共用同一槽高。 */
+  .alert-section {
+    --alert-slot-h: 136px;
+  }
+  .alert-list {
+    gap: 10px;
+  }
+  .alert-item {
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 16px;
+    text-align: center;
+  }
+  .alert-media {
+    width: 100%;
+  }
+  .alert-icon {
+    width: 56px;
+    height: 42px;
+  }
+  .alert-body {
+    align-items: center;
+    gap: 3px;
+  }
+  .alert-line {
+    justify-content: center;
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .alert-meta {
+    max-width: 100%;
+  }
+  .alert-empty,
+  .alert-foreign {
+    padding: 12px 16px;
+  }
+  .alert-fail {
+    padding: 12px 16px;
   }
 }
 

@@ -432,6 +432,24 @@ test('alert loading skeleton is exactly as tall as a real alert item', async () 
   assert.equal(cssPad, ALERT_PAD_Y, 'WeatherAlert.vue .alert-loading padding drifted from utils/alertSlot.js')
 })
 
+test('desktop alert card puts the picture on its own line above the text', async () => {
+  // 桌面端预警卡从「左图右文」改成「图上文下」（见 WeatherAlert.vue 的 1024 块）。
+  // 这条测试盯住三处容易回退的地方：竖排声明、图片独占一行、槽高被抬到能装下两行文字。
+  const { readFileSync } = await import('node:fs')
+  const vue = readFileSync(new URL('../src/components/WeatherAlert.vue', import.meta.url), 'utf8')
+  const desktop = (vue.match(/@media \(min-width: 1024px\)[\s\S]*?\n\}/) || [''])[0]
+  assert.ok(desktop, 'WeatherAlert.vue 少了桌面端 1024 媒体查询块')
+  assert.match(desktop, /\.alert-item\s*\{[^}]*flex-direction:\s*column/, '桌面端预警卡必须是竖排')
+  assert.match(desktop, /\.alert-media\s*\{[^}]*width:\s*100%/, '图片容器必须独占一行')
+  const desktopSlot = Number((desktop.match(/--alert-slot-h:\s*(\d+)px/) || [])[1])
+  assert.ok(desktopSlot >= ALERT_ITEM_CONTENT_H, `桌面端槽高 ${desktopSlot}px 装不下内容`)
+  // 桌面槽高也必须是文件里的第一处之外的那一处，别误改了移动端基准
+  const firstSlot = Number((vue.match(/--alert-slot-h:\s*(\d+)px/) || [])[1])
+  assert.equal(firstSlot, ALERT_SLOT_H, '移动端 --alert-slot-h 不能动')
+  // 模板里必须有 .alert-media 包裹层，否则桌面端没有可撑满整行的元素
+  assert.match(vue, /<span class="alert-media">/, '模板缺少 .alert-media 包裹层')
+})
+
 test('spinning squares loader keeps the framer-motion geometry and the button size', async () => {
   // 刷新按钮里的动画：React 版 SpinningSquares 是 40×40 容器里 16px 方块跑 24px 行程，
   // 即 方块占 40%、行程占 60%（translate 百分比相对方块自身，故 40% × 150% = 60%）。
