@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'weather-shell-'
-const BUILD_ID = '0f3b37e7a5e1'
+const BUILD_ID = '403ae2a74a46'
 const FALLBACK_CACHE = `${CACHE_PREFIX}fallback`
 let CACHE = FALLBACK_CACHE
 
