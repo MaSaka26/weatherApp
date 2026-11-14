@@ -1063,3 +1063,40 @@ test('update probe keeps the quota source on a leash instead of burning it every
   assert.ok(perHour <= 12, `GitHub API 一小时最多用 ${perHour} 次`)
   assert.ok(perHour > 0)
 })
+
+test('desktop sixteen day list fills the card instead of scrolling', async () => {
+  // 桌面端 16 天要一屏铺开：两列 × 8 行，行高 1fr 均分容器高度。
+  // 以前是 grid-template-rows: repeat(8, auto)，8 行自然高 456 > 容器 448，
+  // 差 8px 就生出那条没必要的滚动条，列表视图还比曲线视图高 8px。
+  const { readFileSync } = await import('node:fs')
+  const read = (rel) => readFileSync(new URL('../' + rel, import.meta.url), 'utf8')
+  const desktop = read('src/assets/responsive.css')
+  const base = read('src/assets/forecast.css')
+  const desktopBlock = (desktop.match(/@media \(min-width: 1024px\)[\s\S]*\n\}/) || [''])[0]
+  assert.ok(desktopBlock, 'responsive.css 少了桌面端 1024 媒体查询块')
+
+  // 行高必须是 1fr（随容器均分），不能退回 auto（按内容撑高就会溢出）
+  assert.match(
+    desktopBlock,
+    /\.daily-list\s*\{[^}]*grid-template-rows:\s*repeat\(8,\s*minmax\(0,\s*1fr\)\)/,
+    '桌面端 8 行必须用 1fr 均分容器高度',
+  )
+  assert.doesNotMatch(
+    desktopBlock,
+    /\.daily-list\s*\{[^}]*grid-template-rows:\s*repeat\(8,\s*auto\)/,
+    'auto 行高会按内容撑高，8 行加起来比容器高，滚动条又回来了',
+  )
+  assert.match(desktopBlock, /\.daily-list\s*\{[^}]*overflow-y:\s*hidden/, '桌面端列表不该能纵向滚动')
+
+  // 容器高度要装得下 8 行：下限至少 8 × 60（条目 60px 才能放稳一行文字）
+  const D_MIN_ROW = 60
+  const clampArg = (desktopBlock.match(/--daily-view-h:\s*clamp\(([^)]+)\)/) || [])[1]
+  assert.ok(clampArg, '桌面端 --daily-view-h 应该用 clamp 跟视口连续变化')
+  const minH = Number((clampArg.match(/^\s*(\d+)px/) || [])[1])
+  assert.ok(minH >= 8 * D_MIN_ROW, `桌面端最小高度 ${minH}px 装不下 8 行 × ${D_MIN_ROW}px`)
+
+  // 移动端保持原样：仍然是 376px 固定高 + 纵向滚动，一行一天
+  const baseSection = (base.match(/\.daily-section\s*\{[^}]*\}/) || [''])[0]
+  assert.match(baseSection, /--daily-view-h:\s*376px/, '移动端基准高度不能被桌面改动带走')
+  assert.match(base, /\.daily-list\s*\{[^}]*overflow-y:\s*auto/, '移动端列表仍要能滚动')
+})

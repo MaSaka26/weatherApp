@@ -484,7 +484,15 @@
   .weather-content .details-grid.layout-row .sun-times { font-size: clamp(0.5625rem, 0.75vw, 0.625rem); }
 
   .weather-content .hourly-section { width: 100%; margin: 0; }
-  .weather-content .daily-section { width: 100%; margin: 0; --daily-view-h: 448px; }
+  /* 桌面一屏放下全部 16 天：两列 × 8 行，行高由网格 1fr 均分到容器，
+     所以容器多高卡片就多高，永远铺满、永远不出滚动条。
+     原来的 448px 装不下 8 行（实测 8×57=456），差 8px 才生成那条多余的滚动条。
+     下限 480 = 每行 60px（条目有 1px 分隔线，再矮就贴边），上限 528 防止大屏拉得过稀 */
+  .weather-content .daily-section {
+    width: 100%;
+    margin: 0;
+    --daily-view-h: clamp(480px, 34vw, 528px);
+  }
   .weather-content .location-hint { width: 100%; }
 
   /* 生活指数：桌面一行六列（穿衣/防晒/户外/洗车/带伞/疾病） */
@@ -494,14 +502,22 @@
     gap: 12px;
   }
   .weather-content .life-card { padding: 15px 18px 23px; }
-  /* 双列填写：先读满左列 8 天，再读右列，符合「列表」的阅读顺序 */
+  /* 双列填写：先读满左列 8 天，再读右列，符合「列表」的阅读顺序。
+     行高用 1fr 而非 auto：卡片高度跟着 --daily-view-h 均分，窗口越高每行越舒展，
+     行数固定 8 行所以高度永远等于容器，不需要滚动条（auto 会因边框多出 8px 生出滚动条） */
   .daily-list {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: repeat(8, auto);
+    grid-template-rows: repeat(8, minmax(0, 1fr));
     grid-auto-flow: column;
     gap: 0 28px;
+    overflow-y: hidden;
   }
+  /* 行高由网格决定，条目撑满整行、内容垂直居中；左右内边距保留原来的呼吸感 */
+  .daily-item { padding-top: 0; padding-bottom: 0; }
+  /* 左列末行（第 8 天）不画分隔线，和右列末行（第 16 天，:last-child 已处理）对称，
+     否则两条竖列的底边一有一无，看着像少了一条 */
+  .daily-list > .daily-item:nth-child(8) { border-bottom: none; }
   .daily-item .day-temps { gap: 14px; }
   .daily-item .temp-bar-wrap { width: 96px; }
 }
