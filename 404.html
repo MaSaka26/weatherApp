@@ -25,8 +25,11 @@
     <!-- 提前建连，缩短首次接口握手耗时 -->
     <link rel="preconnect" href="https://api.open-meteo.com" crossorigin>
     <link rel="preconnect" href="https://api.bigdatacloud.net" crossorigin>
-    <script type="module" crossorigin src="./assets/index-BFhpQ0-W.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-B0S5XrPx.css">
+    <!-- 版本探测源：主动发现新版本时最先连的就是这两个域名 -->
+    <link rel="preconnect" href="https://raw.githubusercontent.com" crossorigin>
+    <link rel="preconnect" href="https://api.github.com" crossorigin>
+    <script type="module" crossorigin src="./assets/index-ImFz19X7.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-fPh_OKuq.css">
   </head>
   <body>
     <div id="app"></div>
