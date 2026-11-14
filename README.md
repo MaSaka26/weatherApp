@@ -278,7 +278,7 @@ weatherApp-VUE3/
 - 常用城市保存在本机，按国内/国外分组，支持批量删除、当前城市绿点标记，可从顶部菜单快速切换或回到当前位置。
 - 生产环境注册 Service Worker，按构建产物指纹预缓存应用 HTML 与资源；提供 Web App Manifest、192/512 安装图标，离线时可打开已缓存应用并显示天气缓存时间。天气 API 与实时雷达仍需联网。
 - 核心规则测试通过 `npm test` 运行；GitHub Actions 会在推送与 PR 时运行测试、lint 和生产构建。
-- 发布全自动：推一个 `v*` tag，CI 依次跑质量门、构建、把产物推到 `gh-pages`，并自动创建同名 Release；本地不再需要手动构建或手动推 `gh-pages`。
+- 发布全自动：推一个 `v*` tag，CI 依次跑质量门、构建、把产物推到 `gh-pages`，并自动创建同名 Release（正文取自本文件「更新日志」里该版本的小节）；本地不再需要手动构建或手动推 `gh-pages`。
 - 全局样式入口保留在 `weatherApp-VUE3/src/assets/weather.css`，按基础令牌/页面区块/预报/响应式规则拆分到相邻文件。
 - 雷达帧时间取整、URL 与时间轴组装抽到 `weatherApp-VUE3/src/composables/useRadarFrames.js`，播放器与 UI 仍由 `RainRadarPreview.vue` 管理。
 

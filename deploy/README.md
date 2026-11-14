@@ -80,7 +80,9 @@ git push github master --tags
 2. `npm ci` → `npm test` → `npm run lint` → `npm run build`（`VITE_SITE_BASE=./`）
 3. 打印 `dist/deploy.json` 作为构建身份凭据
 4. `actions/upload-artifact` 传产物，再用 `gh-pages` 分支工作区覆盖内容并 `git push origin HEAD:gh-pages` 发布
-5. tag 触发时创建 Release；已存在同名 Release 则跳过
+5. tag 触发时创建 Release：说明文字取自根 README「## 更新日志」里对应版本的小节（[.github/scripts/release-notes.mjs](../.github/scripts/release-notes.mjs)），该版本没有条目时回退到 `--generate-notes`；已存在同名 Release 则跳过
+
+所以发版前记得先在根 README 的更新日志里写好这一版，Release 正文会自动跟它一致。
 
 发布完成后可直接核对线上身份：
 
