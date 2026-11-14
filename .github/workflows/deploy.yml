@@ -106,5 +106,32 @@ jobs:
             echo "release $tag already exists, skip"
             exit 0
           fi
-          gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
-            --title "$tag" --generate-notes --verify-tag
+
+          # 优先用根 README 的「## 更新日志」小节做发布说明：那里是按版本手写的
+          # 新增 / 修复 / 工程三段，比 compare 链接可读。找不到该版本时退回 --generate-notes。
+          notes_file="$RUNNER_TEMP/release-notes.md"
+          awk -v ver="$tag" '
+            { sub(/\r$/, "") }
+            $1 == "###" && $2 == ver { found = 1; next }
+            found && ($1 == "###" || $0 == "---") { exit }
+            found {
+              if (match($0, /^\*\*(.+)\*\*$/)) {
+                heading = substr($0, RSTART + 2, RLENGTH - 4)
+                print "### " heading
+              } else {
+                print
+              }
+            }
+          ' README.md | sed -e '/./,$!d' > "$notes_file"
+
+          if [ -s "$notes_file" ]; then
+            printf '%s\n' "" "### 在线预览" "- https://masaka26.github.io/weatherApp/" >> "$notes_file"
+            echo "--- release notes ---"
+            cat "$notes_file"
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
+              --title "$tag" --notes-file "$notes_file" --verify-tag
+          else
+            echo "no changelog entry for $tag in README.md, fall back to generate-notes"
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
+              --title "$tag" --generate-notes --verify-tag
+          fi
