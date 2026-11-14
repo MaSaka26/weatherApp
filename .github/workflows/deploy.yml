@@ -96,6 +96,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          # Release 正文由 .github/scripts/release-notes.mjs 生成，需要 node 在 PATH 上。
+          node-version: '22.18'
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

@@ -289,7 +289,7 @@ weatherApp-VUE3/
 ### v0.1.12 — 2026-11-14
 
 **新增**
-- 发布流程全面交给 CI：推 `v*` tag（或手动 `workflow_dispatch`）触发 `deploy.yml`，依次执行 test / lint / build，把 `dist` 覆盖到 `gh-pages` 分支并推送，再由 `gh release create --generate-notes` 自动创建对应 Release
+- 发布流程全面交给 CI：推 `v*` tag（或手动 `workflow_dispatch`）触发 `deploy.yml`，依次执行 test / lint / build，把 `dist` 覆盖到 `gh-pages` 分支并推送，再自动创建对应 Release
 - 发布任务加了 `concurrency: pages-deploy` 串行锁与 `permissions: contents: write`，连续打 tag 不会互相覆盖产物
 
 **修复**
@@ -298,6 +298,7 @@ weatherApp-VUE3/
 **工程**
 - 删除仅用于 Gitee Pages 的 `deploy/deploy-gitee.sh` 与 `deploy/gitee-pages.md`，`deploy/README.md` 的部署说明改为 GitHub Pages 单一路径，仓库内不再出现 Gitee 引用
 - `deploy.yml` 的 Gitee 推送步骤（secrets 从未配置、永远走 skip 分支）一并移除
+- Release 正文改由根 README 更新日志里该版本的小节生成（`.github/scripts/release-notes.mjs`），没有条目时回退到 `--generate-notes`
 
 ### v0.1.11 — 2026-11-14
 
